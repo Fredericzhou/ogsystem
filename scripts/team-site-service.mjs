@@ -115,6 +115,8 @@ export async function installService({ prepare = true, host = process.env.OGS_SI
   await writeFile(launchAgentPath, createLaunchdPlist({ host, port }), "utf8");
   const domain = guiDomain();
   await stopService();
+  // A prior launchd disable persists across bootout, so re-enable the job before bootstrap.
+  launchctl(["enable", serviceDomain()]);
   launchctl(["bootstrap", domain, launchAgentPath]);
   launchctl(["kickstart", "-k", serviceDomain()]);
   await waitForReady();

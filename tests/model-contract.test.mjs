@@ -13,15 +13,13 @@ import {
   refreshModelCatalog
 } from "../dist/runtime/model-catalog.js";
 import {
-  loadModelSelection,
   resolveModelSelectionForSystem,
   validateModelSelection,
   withDefaultModelSelection
 } from "../dist/runtime/model-selection.js";
-import { discoverConfiguredPiModels } from "../dist/runtime/pi-adapter.js";
+import { assertPiOutputWithinLimit, discoverConfiguredPiModels, mapPiEffectiveTools } from "../dist/runtime/pi-adapter.js";
 import { discoverConfiguredKimiModels } from "../dist/runtime/kimi-adapter.js";
 import { discoverConfiguredQwenModels } from "../dist/runtime/qwen-adapter.js";
-import { syncProjectModels } from "../dist/runtime/project-lifecycle.js";
 import { BackendRegistry, opencodeBackendAdapter } from "../dist/runtime/model-backend-registry.js";
 
 const fixturePath = path.resolve("tests/fixtures/opencode-models-verbose.txt");
@@ -155,6 +153,27 @@ test("native CLI configuration discovery keeps Pi, Kimi, and Qwen model IDs back
   }
 });
 
+test("Pi projects the frozen v2 tool set into native CLI tool names", () => {
+  assert.deepEqual(mapPiEffectiveTools(["workspace.write", "workspace.run", "workspace.search", "workspace.list", "workspace.glob", "workspace.patch_text"]), [
+    "bash",
+    "edit",
+    "find",
+    "grep",
+    "ls",
+    "write"
+  ]);
+  assert.deepEqual(mapPiEffectiveTools([]), []);
+  assert.equal(mapPiEffectiveTools(undefined), undefined);
+});
+
+test("Pi fails closed when assistant output exceeds the frozen byte quota", () => {
+  assert.doesNotThrow(() => assertPiOutputWithinLimit("ok", 2));
+  assert.throws(
+    () => assertPiOutputWithinLimit("超出", 3),
+    /V2_OUTPUT_QUOTA_EXCEEDED: Pi output exceeded maxOutputBytes \(3\)/
+  );
+});
+
 test("OpenCode discovery reports stable actionable errors", async () => {
   await assert.rejects(
     () => refreshModelCatalog({ workdir: process.cwd(), commandRunner: async () => ({ stdout: "", exitCode: 0 }) }),
@@ -190,25 +209,13 @@ test("OpenCode discovery retries a transient truncated verbose response", async 
   assert.ok(result.models.length > 0);
 });
 
-test("catalog freshness is explicit and does not rewrite the pinned selection", async () => {
+test("catalog freshness is explicit and preserves unrelated local model entries", async () => {
   const staleAt = new Date(Date.now() - MODEL_CATALOG_STALE_AFTER_MS - 1).toISOString();
   assert.equal(isModelCatalogStale(catalog([], staleAt)), true);
   assert.equal(isModelCatalogStale(catalog([], new Date().toISOString())), false);
-
-  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-model-sync-"));
-  await writeFile(path.join(workdir, ".marker"), "fixture", "utf8");
-  await import("node:fs/promises").then(({ mkdir }) => mkdir(path.join(workdir, ".ogs"), { recursive: true }));
-  const selection = { configVersion: "3", defaults: { backend: "opencode", modelId: "provider/pinned" } };
-  await writeFile(path.join(workdir, ".ogs", "model-selection.json"), JSON.stringify(selection), "utf8");
-  await syncProjectModels({
-    workdir,
-    commandRunner: async () => ({
-      stdout: `provider/new\n${JSON.stringify({ capabilities: { toolcall: true, input: { text: true }, output: { text: true } }, status: "active" })}`,
-      exitCode: 0
-    })
-  });
-  const loadedSelection = await loadModelSelection(path.join(workdir, ".ogs", "model-selection.json"));
-  assert.equal(loadedSelection.defaults.modelId, selection.defaults.modelId);
+  const stored = catalog([model("provider/local-only")]);
+  const unchanged = mergeModelCatalogWithLiveSnapshot(stored, []);
+  assert.deepEqual(unchanged.models.map((entry) => entry.modelId), ["provider/local-only"]);
 });
 
 test("catalog loading preserves backend-local model IDs for OpenCode models", async () => {
@@ -323,18 +330,19 @@ test("fresh discovery fails closed for unavailable and incapable pinned models",
   );
 });
 
-test("system.mmd model bindings are rejected and selection is the only model source", () => {
+test("Harness normalization rejects Business Graph model bindings", () => {
   assert.throws(() => resolveModelSelectionForSystem({
     system: system(["writer"], { writer: "provider/offline" }),
-    selection: { configVersion: "3", roles: { writer: { backend: "opencode", modelId: "provider/offline" } } }
-  }), (error) => error?.envelope?.errorCode === "MODEL_BINDING_UNRESOLVED" && /model-selection/.test(error.message));
+    selection: { configVersion: "3", roles: { writer: { backend: "opencode", modelId: "provider/offline" } } },
+    sourceLabel: "Harness Template"
+  }), (error) => error?.envelope?.errorCode === "MODEL_BINDING_UNRESOLVED" && /Harness Template/.test(error.message));
   assert.throws(() => resolveModelSelectionForSystem({
     system: system(["writer"]),
     selection: { configVersion: "1", defaults: { model: "provider/old" } }
   }), /unsupported version/);
 });
 
-test("roles without a configured backend and model remain unbound for law-level noop validation", () => {
+test("roles without a synthesized Harness remain unbound for readiness validation", () => {
   const result = resolveModelSelectionForSystem({
     system: system(["writer"])
   });

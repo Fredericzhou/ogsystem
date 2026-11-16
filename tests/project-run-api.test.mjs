@@ -58,7 +58,7 @@ test("visualizer run plan endpoint exposes immutable execution inputs and qualit
 
     const started = await startVisualizationServer({ workdir, host: "127.0.0.1", port: 0 });
     try {
-      const response = await fetch(`${started.url}/api/v1/ogs/runs/${runId}/plan`);
+      const response = await fetch(`${started.url}/api/v2/ogs/runs/${runId}/plan`);
       assert.equal(response.status, 200);
       const body = await response.json();
       assert.deepEqual(body.runPlan.entryNodeIds, ["writer"]);

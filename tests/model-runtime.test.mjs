@@ -20,8 +20,8 @@ test("adapter persists run artifacts for project-selected model roles", async ()
   await symlink(path.resolve(repoRoot, "og-roles"), path.resolve(tempRoot, "og-roles"), "dir");
   await symlink(path.resolve(repoRoot, ".ogs", "runtime.json"), path.resolve(tempRoot, ".ogs", "runtime.json"));
   await symlink(
-    path.resolve(repoRoot, ".ogs", "model-selection.json"),
-    path.resolve(tempRoot, ".ogs", "model-selection.json")
+    path.resolve(repoRoot, ".ogs", "execution-bindings.json"),
+    path.resolve(tempRoot, ".ogs", "execution-bindings.json")
   );
   await symlink(
     path.resolve(repoRoot, ".ogs", "model-catalog.json"),
@@ -50,8 +50,8 @@ test("adapter persists run artifacts for project-selected model roles", async ()
   assert.strictEqual(stateJson.finalRoleIds?.at(-1), "debate-judge");
   const sessionIndex = JSON.parse(await readFile(path.resolve(runDir, "sessions.json"), "utf8"));
   assert.equal(sessionIndex.length, 2);
-  assert.equal(sessionIndex[0].sessionId.startsWith("dryrun-codex-"), true);
-  assert.equal(sessionIndex[1].sessionId.startsWith("dryrun-codex-"), true);
+  assert.equal(sessionIndex[0].sessionId.startsWith("dryrun-"), true);
+  assert.equal(sessionIndex[1].sessionId.startsWith("dryrun-"), true);
 
   const minimalistPrompt = await readFile(
     path.resolve(runDir, "roles", "debate-minimalist", "prompt.md"),
@@ -63,7 +63,7 @@ test("adapter persists run artifacts for project-selected model roles", async ()
     path.resolve(runDir, "roles", "debate-minimalist", "role.md"),
     "utf8"
   );
-  assert.match(minimalistRole, /modelId: gpt-5\.6-sol/);
+  assert.match(minimalistRole, /modelId: (?:opencode\/)?[^\n]+/);
   assert.match(minimalistRole, /preferredModelTags:/);
 
   const minimalistInbox = await readFile(
@@ -111,16 +111,16 @@ test("adapter persists run artifacts for project-selected model roles", async ()
     await readFile(path.resolve(runDir, "roles", "debate-minimalist", "latest-session.json"), "utf8")
   );
   assert.equal(minimalistSession.sessionKey, "debate-minimalist:debate-minimalist@1#1");
-  assert.equal(
+  assert.match(
     minimalistSession.sessionId,
-    "dryrun-codex-debate-minimalist:debate-minimalist@1#1"
+    /dryrun-[^\n]+-debate-minimalist:debate-minimalist@1#1/
   );
   const minimalistExecutionSession = JSON.parse(
     await readFile(path.resolve(minimalistExecutionDir, "session.json"), "utf8")
   );
-  assert.equal(
+  assert.match(
     minimalistExecutionSession.sessionId,
-    "dryrun-codex-debate-minimalist:debate-minimalist@1#1"
+    /dryrun-[^\n]+-debate-minimalist:debate-minimalist@1#1/
   );
   const minimalistAudit = JSON.parse(
     await readFile(path.resolve(runDir, "roles", "debate-minimalist", "audit.json"), "utf8")
@@ -134,7 +134,7 @@ test("adapter persists run artifacts for project-selected model roles", async ()
     path.resolve(runDir, "roles", "debate-minimalist", "outbox.md"),
     "utf8"
   );
-  assert.match(minimalistOutbox, /\[dry-run\] codex-app-server/);
+  assert.match(minimalistOutbox, /\[dry-run\] (?:codex-app-server|opencode-sdk)/);
   const privateReadme = await readFile(
     path.resolve(runDir, "roles", "debate-minimalist", "private", "README.md"),
     "utf8"

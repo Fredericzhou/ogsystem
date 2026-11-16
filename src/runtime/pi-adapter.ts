@@ -1,10 +1,11 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { access, readFile, realpath } from "node:fs/promises";
 import { homedir } from "node:os";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { dirname } from "node:path";
+import { pathToFileURL } from "node:url";
 import { boundedText, modelFromEnv, resolveExecutable, schemaInstruction } from "./cli-adapter-support.js";
 import { createAgentEventEmitter } from "./agent-client-types.js";
 import { terminateChildProcessTree, waitForChildExit } from "./child-process-lifecycle.js";
@@ -148,6 +149,68 @@ function piReasoningCapability(value: unknown): ReasoningCapability | undefined 
   return { supported: true, kind: "effort", levels: [...new Set(supported)], ...(defaultValue && supported.includes(defaultValue as never) ? { default: defaultValue as Exclude<ReasoningEffort, "auto" | "on"> } : {}) };
 }
 
+const PI_CLI_TOOL_NAMES = ["read", "bash", "edit", "write", "grep", "find", "ls"] as const;
+
+type PiToolDiscovery = {
+  names: string[];
+  source: "pi-sdk" | "pi-cli-contract";
+};
+
+async function piPackageRoot(command: string): Promise<string | undefined> {
+  const roots: string[] = [];
+  const managedRoot = process.env.PI_MANAGED_INSTALL_ROOT?.trim();
+  if (managedRoot) {
+    try {
+      const version = (await readFile(join(managedRoot, "current-version"), "utf8")).trim();
+      if (version) roots.push(join(managedRoot, "releases", version));
+    } catch { /* Fall through to the executable and default managed paths. */ }
+  }
+  try {
+    const executable = await realpath(command);
+    const binDirectory = dirname(executable);
+    const agentDirectory = dirname(dirname(binDirectory));
+    const installRoot = join(agentDirectory, "install");
+    const version = (await readFile(join(installRoot, "current-version"), "utf8")).trim();
+    if (version) roots.push(join(installRoot, "releases", version));
+  } catch { /* A system-installed Pi may not expose a managed release layout. */ }
+  const piHome = process.env.PI_HOME?.trim() || join(homedir(), ".pi", "agent");
+  try {
+    const version = (await readFile(join(piHome, "install", "current-version"), "utf8")).trim();
+    if (version) roots.push(join(piHome, "install", "releases", version));
+  } catch { /* Use the CLI contract fallback below. */ }
+  for (const root of [...new Set(roots)]) {
+    const packageRoot = join(root, "node_modules", "@earendil-works", "pi-coding-agent");
+    try {
+      await access(join(packageRoot, "dist", "index.js"));
+      return packageRoot;
+    } catch { /* Try the next installation candidate. */ }
+  }
+  return undefined;
+}
+
+async function discoverPiNativeToolNames(command: string): Promise<PiToolDiscovery> {
+  const packageRoot = await piPackageRoot(command);
+  if (packageRoot) {
+    try {
+      // These are the public SDK constructors used by Pi itself. Calling them
+      // only creates definitions; it does not start a model or execute a tool.
+      const sdk = await import(pathToFileURL(join(packageRoot, "dist", "index.js")).href) as {
+        createCodingTools?: (cwd: string) => Array<{ name?: unknown }>;
+        createReadOnlyTools?: (cwd: string) => Array<{ name?: unknown }>;
+      };
+      const tools = [
+        ...(sdk.createCodingTools?.(process.cwd()) ?? []),
+        ...(sdk.createReadOnlyTools?.(process.cwd()) ?? [])
+      ];
+      const names = [...new Set(tools.map((tool) => typeof tool.name === "string" ? tool.name : "").filter(Boolean))].sort();
+      if (names.length > 0) return { names, source: "pi-sdk" };
+    } catch { /* Fall back to the installed CLI's documented contract. */ }
+  }
+  // Pi documents these names in `--help` and accepts them through `--tools`.
+  // The list intentionally excludes MCP and extension tools, which are dynamic.
+  return { names: [...PI_CLI_TOOL_NAMES], source: "pi-cli-contract" };
+}
+
 function modelsFromPi(value: unknown, reasoning?: ReasoningCapability, status = "discovered", runnable = true): ModelCatalogEntry[] {
   const data = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
   const raw = Array.isArray(data.models) ? data.models : [];
@@ -190,6 +253,17 @@ export async function discoverConfiguredPiModels(reasoning?: ReasoningCapability
   } catch {
     return [];
   }
+}
+
+/**
+ * Pi resolves bare model names across every configured provider. A Harness
+ * model may stay backend-local (for example `gpt-6-luna`), but the adapter
+ * must pass the provider-qualified ID required by Pi when one is configured.
+ */
+export async function resolvePiModelId(modelId?: string): Promise<string | undefined> {
+  if (!modelId || modelId === "default" || modelId.includes("/")) return modelId;
+  const configured = await discoverConfiguredPiModels();
+  return configured.find((model) => model.modelId.endsWith(`/${modelId}`))?.modelId ?? modelId;
 }
 
 export const piBackendDescriptor: BackendDescriptor = {
@@ -249,58 +323,12 @@ export const piBackendAdapter: BackendAdapter = {
   async discoverNativeTools({ modelId, workdir, timeoutMs }) {
     const command = await resolveExecutable("pi", [join(homedir(), ".local", "bin", "pi")]);
     if (!command) throw new Error("Pi CLI is not installed.");
-    const root = await mkdtemp(join(tmpdir(), "ogs-pi-capability-"));
-    const writePath = join(root, "probe-write.txt");
-    const bashPath = join(root, "probe-bash.txt");
-    const observed = new Set<string>();
-    let client: PiRpcSession | undefined;
-    let unsubscribe: (() => void) | undefined;
-    try {
-      client = await PiRpcSession.start(command, root, modelId);
-      unsubscribe = client.onMessage((message) => {
-        if ((message.type === "tool_execution_start" || message.type === "tool_execution_end") && typeof message.toolName === "string") {
-          observed.add(message.toolName);
-        }
-      });
-      const settled = new Promise<void>((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error(`Pi capability probe timed out after ${timeoutMs}ms`)), timeoutMs);
-        let stop: (() => void) | undefined;
-        stop = client?.onMessage((message) => {
-          if (message.type !== "agent_settled") return;
-          clearTimeout(timer);
-          stop?.();
-          resolve();
-        });
-      });
-      await client.request("prompt", {
-        message: [
-          "This is a native Pi tool capability probe in a disposable workspace.",
-          `Use the native write tool to create ${writePath} containing exactly PI_WRITE_OK.`,
-          `Use the native bash tool to create ${bashPath} containing exactly PI_BASH_OK.`,
-          "Complete both tool calls, then finish."
-        ].join("\n")
-      }, timeoutMs);
-      await settled;
-      const [writeContents, bashContents] = await Promise.all([
-        readFile(writePath, "utf8"),
-        readFile(bashPath, "utf8")
-      ]);
-      if (writeContents.trim() !== "PI_WRITE_OK" || bashContents.trim() !== "PI_BASH_OK") {
-        throw new Error("Pi capability probe wrote unexpected sentinel contents");
-      }
-      if (!observed.has("write") || !observed.has("bash")) {
-        throw new Error(`Pi capability probe did not observe both native tool events: ${[...observed].sort().join(", ") || "none"}`);
-      }
-      return {
-        verifiedTools: [...observed].sort(),
-        detail: "Pi native tool probe verified observed RPC tool events and sentinel files.",
-        resources: this.getResourceCapabilities?.()
-      };
-    } finally {
-      unsubscribe?.();
-      await client?.close();
-      await rm(root, { recursive: true, force: true });
-    }
+    const discovered = await discoverPiNativeToolNames(command);
+    return {
+      verifiedTools: discovered.names,
+      detail: `Pi ${discovered.source} verified ${discovered.names.length} built-in tool${discovered.names.length === 1 ? "" : "s"}; MCP and extension tools require a separate dynamic refresh.`,
+      resources: this.getResourceCapabilities?.()
+    };
   },
   async startRun({ targetDir, runContext }): Promise<BackendRunSession> {
     const command = await resolveExecutable("pi", [join(homedir(), ".local", "bin", "pi")]);
@@ -308,9 +336,10 @@ export const piBackendAdapter: BackendAdapter = {
     const clients = new Map<string, PiRpcSession>();
     const getClient = async (modelId: string, sessionKey: string, executionDirectory: string, sessionId?: string, effectiveTools?: string[]) => {
       const nativeTools = mapPiEffectiveTools(effectiveTools);
-      const key = `${modelId || modelFromEnv("OGS_PI_MODEL")}:${sessionKey}:${executionDirectory}:${nativeTools?.join(",") ?? "default"}`;
+      const resolvedModelId = await resolvePiModelId(modelId || modelFromEnv("OGS_PI_MODEL"));
+      const key = `${resolvedModelId}:${sessionKey}:${executionDirectory}:${nativeTools?.join(",") ?? "default"}`;
       let client = clients.get(key);
-      if (!client) { client = await PiRpcSession.start(command, executionDirectory, modelId, sessionId, nativeTools); clients.set(key, client); }
+      if (!client) { client = await PiRpcSession.start(command, executionDirectory, resolvedModelId, sessionId, nativeTools); clients.set(key, client); }
       return client;
     };
     return {
@@ -406,7 +435,7 @@ export const piBackendAdapter: BackendAdapter = {
   async probe({ modelId, workdir, timeoutMs }) {
     const command = await resolveExecutable("pi", [join(homedir(), ".local", "bin", "pi")]);
     if (!command) throw new Error("Pi CLI is not installed.");
-    const client = await PiRpcSession.start(command, workdir, modelId);
+    const client = await PiRpcSession.start(command, workdir, await resolvePiModelId(modelId));
     try { await client.request("prompt", { message: 'Return exactly {"ok":true}' }, timeoutMs); } finally { await client.close(); }
   }
 };

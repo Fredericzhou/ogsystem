@@ -1,5 +1,5 @@
 import { execFile as execFileCallback } from "node:child_process";
-import { access, cp, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { access, cp, mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -27,34 +27,31 @@ async function calculatorCommand(project, ...args) {
   }
 }
 
-function roleManifest(roleId, description, allowedTools) {
+function roleManifest(roleId, description) {
   return {
     roleId,
-    roleVersion: "1.0.0",
+    roleVersion: "v2-real-calculator",
     name: roleId,
     description,
     promptTemplate: "prompt.md",
     outputSchema: "output.schema.json",
-    contractVersion: 1,
+    contractVersion: 2,
     purpose: description,
     responsibility: { kind: "atomic", owns: [], contributes: [], doesNotOwn: [] },
     inputs: { preconditions: [] },
     outputs: { events: ["READY"], postconditions: [] },
     authority: { controlActions: [] },
-    constraints: { writableStateFields: [], allowedTools: [...allowedTools].sort() },
+    constraints: { writableStateFields: [] },
     failure: { retryableErrorCodes: [], terminalErrorCodes: [] },
-    audit: { requiredFields: [] }
+    audit: { requiredFields: [] },
+    ogsContractVersion: 2
   };
 }
 
 async function writeRole(rolesRoot, roleId, description, agentInstructions) {
   const roleDir = join(rolesRoot, roleId);
   await mkdir(roleDir, { recursive: true });
-  await writeFile(join(roleDir, "role.json"), JSON.stringify(roleManifest(roleId, description, [
-    "workspace.write",
-    "workspace.patch_text",
-    "workspace.run"
-  ]), null, 2), "utf8");
+  await writeFile(join(roleDir, "role.json"), JSON.stringify(roleManifest(roleId, description), null, 2), "utf8");
   await writeFile(join(roleDir, "agent.md"), agentInstructions, "utf8");
   await writeFile(join(roleDir, "prompt.md"), `{{agent}}
 
@@ -71,8 +68,8 @@ Input:
 {{input}}
 
 Execution rules:
-- Work directly in the current execution workspace using the provided workspace tools.
-- Use workspace.run for commands and tests, and workspace.write or workspace.patch_text for files.
+- Work directly in the current execution workspace using the backend-native tools provided by the selected CLI.
+- For Codex, use exec_command for commands and tests, and apply_patch for files.
 - Do not only explain a solution: inspect the workspace, make the changes, and verify them.
 - This run uses Git for source delivery. Keep the response artifact list empty (artifacts: []); source files are delivered by the committed Git worktree and are checked by Join.
 - Return exactly one JSON object matching output.schema.json after the work is complete.
@@ -97,8 +94,8 @@ async function main() {
   const runtimePath = join(root, ".ogs", "runtime.json");
   const lawsPath = join(root, ".ogs", "laws.json");
   const profilePath = join(root, ".ogs", "user-profile.json");
-  const modelSelectionPath = join(root, ".ogs", "model-selection.json");
   const modelCatalogPath = join(root, ".ogs", "model-catalog.json");
+  const executionBindingsPath = join(root, ".ogs", "execution-bindings.json");
 
   try {
     await mkdir(join(root, ".ogs"), { recursive: true });
@@ -114,9 +111,30 @@ async function main() {
     await cp(join(repoRoot, ".ogs", "laws.json"), lawsPath);
     await cp(join(repoRoot, ".ogs", "user-profile.json"), profilePath);
     await cp(join(repoRoot, ".ogs", "model-catalog.json"), modelCatalogPath);
-    await writeFile(modelSelectionPath, JSON.stringify({
-      configVersion: "3",
-      defaults: { backend: "codex", modelId: process.env.OGS_REAL_MODEL ?? "gpt-6-luna", timeoutMs: 600000, maxOutputBytes: 131072 }
+    await writeFile(executionBindingsPath, JSON.stringify({
+      ogsContractVersion: 2,
+      schemaVersion: 1,
+      harnessTemplates: {
+        "calculator-worker": {
+          ogsContractVersion: 2,
+          schemaVersion: 1,
+          kind: "harness",
+          templateId: "calculator-worker",
+          backend: "codex",
+          model: process.env.OGS_REAL_MODEL ?? "gpt-6-luna",
+          allowedTools: ["apply_patch", "exec_command"],
+          environment: {
+            filesystem: "staged",
+            process: "allow",
+            network: "deny",
+            limits: { timeoutMs: 600000, maxOutputBytes: 131072 }
+          }
+        }
+      },
+      roles: Object.fromEntries(["dispatch", "implementation", "tests", "join"].map((roleId) => [
+        roleId,
+        { kind: "harness", harnessTemplate: "calculator-worker" }
+      ]))
     }, null, 2), "utf8");
     await writeFile(runtimePath, JSON.stringify({
       configVersion: "2",
@@ -128,7 +146,7 @@ async function main() {
     await writeRole(rolesRoot, "dispatch", "Breaks the calculator task into implementation and test work.", `You are the task dispatcher. Read the user request and identify the two concrete work streams: calculator implementation and automated tests. Do not modify files in this role. Return READY with a short delegation summary and artifacts: [].`);
     await writeRole(rolesRoot, "implementation", "Implements the Python calculator application.", `You are the implementation engineer. Build a small, maintainable Python 3 calculator CLI in the current workspace. It must support add and multiply operations from the command line, expose reusable functions, and include clear input/error handling. Your owned paths are calculator/** and README.md. Do not create, edit, delete, or commit anything under tests/**; the separate tests Role owns that path. Inspect the existing project, create only your owned implementation files, run a basic smoke command, and run git diff --check; fix every reported whitespace error before returning READY. This is a parallel Git source role: do not declare artifacts; return artifacts: [] because your committed worktree is the delivery.`);
     await writeRole(rolesRoot, "tests", "Creates automated tests for the Python calculator.", `You are the test engineer. Add a Python unittest suite for the calculator contract described by the user. Your only owned paths are tests/**. Do not create, edit, delete, or commit calculator/**, README.md, or any other path; the implementation Role owns those paths. The implementation branch is separate, so write tests against the requested public contract and run syntax checks that are possible in this workspace; before returning READY run git diff --check and fix every reported whitespace error. The full suite runs after Join merges both branches. This is a parallel Git source role: do not declare artifacts; return artifacts: [] because your committed worktree is the delivery.`);
-    await writeRole(rolesRoot, "join", "Integrates and validates the calculator application.", `You are the integration engineer. You are running after implementation and test branches have been merged into this workspace. Inspect all files, resolve any integration issue, run the complete Python unittest suite with python3 -m unittest discover -s tests -v, run CLI smoke checks for add and multiply, and fix defects you find. Do not return READY until the application and tests pass. Leave a concise validation report in the workspace and then return READY with artifacts: [].`);
+    await writeRole(rolesRoot, "join", "Integrates and validates the calculator application.", `You are the integration engineer. You are running after implementation and test branches have been merged into this workspace. Inspect all files, resolve any integration issue, run the complete Python unittest suite with python3 -m unittest discover -s tests -t . -p 'test_*.py' -v, run CLI smoke checks for add and multiply, and fix defects you find. Do not return READY until the application and tests pass. Leave a concise validation report in the workspace and then return READY with artifacts: [].`);
 
     await writeFile(systemPath, `flowchart TD
 %% system.id=real.python.calculator.team
@@ -170,7 +188,31 @@ join[Role:join] -->|READY| end[结束]
       }
     });
 
-    const tests = await execFile("python3", ["-m", "unittest", "discover", "-s", "tests", "-v"], { cwd: project });
+    if (result.status !== "done" || published.length !== 1) {
+      const runEvents = (await readFile(join(root, ".ogs", "runs", "real-python-calculator", "events.ndjson"), "utf8"))
+        .trim().split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line));
+      const roleStatuses = runEvents
+        .filter((event) => event.type === "audit")
+        .map((event) => ({ roleId: event.roleId, status: event.status, durationMs: event.durationMs }));
+      throw new Error(`Real calculator collaboration did not reach published completion: ${JSON.stringify({ resultStatus: result.status, published: published.length, roleStatuses })}`);
+    }
+    const testsDir = join(project, "tests");
+    await mkdir(testsDir, { recursive: true });
+    const discoveredTests = (await readdir(testsDir)).filter((name) => /^test_.*\.py$/.test(name));
+    if (discoveredTests.length === 0) throw new Error("Real calculator collaboration produced no test_*.py files");
+    const unittestPackageMarker = join(testsDir, "__init__.py");
+    let hadUnittestPackageMarker = true;
+    try { await access(unittestPackageMarker); } catch { hadUnittestPackageMarker = false; }
+    if (!hadUnittestPackageMarker) await writeFile(unittestPackageMarker, "", "utf8");
+    let tests;
+    try {
+      tests = await execFile("python3", ["-m", "unittest", "discover", "-s", "tests", "-t", ".", "-p", "test_*.py", "-v"], { cwd: project });
+    } finally {
+      if (!hadUnittestPackageMarker) await rm(unittestPackageMarker, { force: true });
+      // A Role may have committed the package marker in its branch. Restore the
+      // published tree's tracked state after the temporary discovery shim.
+      await git(project, ["restore", "--source=HEAD", "--staged", "--worktree", "--", "" + "tests/__init__.py"]).catch(() => undefined);
+    }
     const add = await execFile("python3", await calculatorCommand(project, "add", "2", "3"), { cwd: project });
     const multiply = await execFile("python3", await calculatorCommand(project, "multiply", "6", "7"), { cwd: project });
     const status = (await git(project, ["status", "--porcelain=v1"])).stdout.trim();

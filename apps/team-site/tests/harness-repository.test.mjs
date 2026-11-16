@@ -50,3 +50,41 @@ test("Harness repository allows unverified tools in drafts for later verificatio
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("Harness verification checks the discovered tool set without invoking a model", async () => {
+  const root = await mkdtemp(join(tmpdir(), "ogs-harness-repository-"));
+  try {
+    const repository = createFileHarnessRepositoryStore({ path: join(root, "harness-repository.json") });
+    const modelCatalog = {
+      discoverBackend: async () => ({
+        source: { backend: "codex", status: "runnable" },
+        models: [{ modelId: "gpt-6-luna", status: "active" }],
+        nativeTools: { status: "ready", verifiedTools: ["apply_patch", "exec_command"] }
+      })
+    };
+    let probes = 0;
+    const backendRegistry = {
+      getAdapter: () => ({
+        getResourceCapabilities: () => ({ filesystem: true, process: true, network: false }),
+        discoverNativeTools: async () => ({ verifiedTools: ["apply_patch", "exec_command"] })
+      }),
+      listDescriptors: () => []
+    };
+    const useCases = createHarnessRepositoryUseCases({
+      repository,
+      modelCatalog,
+      backendRegistry,
+      computeDigest: (value) => JSON.stringify(value),
+      validateContract: async () => undefined,
+      probeModelAvailability: async () => { probes += 1; throw new Error("model prompt must not run"); },
+      workdir: root
+    });
+    await useCases.saveTemplate({ template: { ...template(), allowedTools: ["apply_patch"] } });
+    const verified = await useCases.verifyTemplate("harness.test");
+    assert.equal(verified.status, "verified");
+    assert.equal(probes, 0);
+    assert.equal(verified.verification.evidence.checks.at(-1).name, "model-catalog");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

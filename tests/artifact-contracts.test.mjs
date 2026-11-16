@@ -83,6 +83,18 @@ test("ArtifactResolver verifies manifest/file hashes and audits rejected reads",
     readManifest: () => manifestFor(artifactRef),
     readFile: () => "hello"
   });
+  const manifest = resolver.resolveManifest(artifactRef, {
+    consumerRoleId: "consumer",
+    allowedArtifactIds: new Set([artifactRef.artifactId])
+  });
+  assert.deepEqual(manifest.files[0], {
+    path: "output.txt",
+    sha256: createHash("sha256").update("hello").digest("hex"),
+    sizeBytes: 5,
+    mediaType: "text/plain"
+  });
+  assert.equal(typeof manifest.manifestSha256, "string");
+  assert.equal(manifest.manifestSha256.length, 64);
   assert.equal(resolver.readFile(artifactRef, "output.txt", { consumerRoleId: "consumer", allowedArtifactIds: new Set([artifactRef.artifactId]), audit: (entry) => audits.push(entry) }), "hello");
   const tamperedResolver = createArtifactResolver([result], { readManifest: () => manifestFor(artifactRef), readFile: () => "tampered" });
   assert.throws(() => tamperedResolver.readFile(artifactRef, "output.txt", { consumerRoleId: "consumer", allowedArtifactIds: new Set([artifactRef.artifactId]), audit: (entry) => audits.push(entry) }), /ARTIFACT_FILE_DIGEST_MISMATCH/);

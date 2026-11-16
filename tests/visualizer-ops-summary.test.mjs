@@ -11,7 +11,6 @@ async function seedOpsProject(workdir) {
   await mkdir(path.resolve(workdir, ".ogs", "runs"), { recursive: true });
   await symlink(path.resolve(repoRoot, "og-roles"), path.resolve(workdir, "og-roles"), "dir");
   for (const file of [
-    "model-selection.json",
     "model-catalog.json",
     "laws.json",
     "user-profile.json"

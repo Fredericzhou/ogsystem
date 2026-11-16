@@ -84,8 +84,8 @@ test("model runtime artifacts match the documented contract", async () => {
     path.resolve(tempRoot, ".ogs", "laws.json")
   );
   await symlink(
-    path.resolve(repoRoot, ".ogs", "model-selection.json"),
-    path.resolve(tempRoot, ".ogs", "model-selection.json")
+    path.resolve(repoRoot, ".ogs", "execution-bindings.json"),
+    path.resolve(tempRoot, ".ogs", "execution-bindings.json")
   );
 
   await runSystemWithAdapter({
@@ -117,6 +117,9 @@ test("model runtime artifacts match the documented contract", async () => {
   await readFile(path.resolve(runDir, "audit", "summary.md"), "utf8");
   await readFile(path.resolve(runDir, "audit", "transitions.md"), "utf8");
   assert.equal(resolvedConfig.effective?.invocation?.dryRun, true);
+  assert.equal(resolvedConfig.sources?.modelSelectionPath, undefined);
+  assert.equal(resolvedConfig.effective?.resolvedModelSelection, undefined);
+  assert.ok(resolvedConfig.effective?.resolvedHarnessBindings);
   await readFile(path.resolve(runDir, "roles", "debate-minimalist", "role.md"), "utf8");
   await readFile(path.resolve(runDir, "roles", "debate-minimalist", "latest-session.json"), "utf8");
 

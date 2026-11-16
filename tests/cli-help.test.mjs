@@ -53,7 +53,7 @@ test("ogs help command surfaces layered guidance", async () => {
   assert.match(compatibilityHelp.stdout, /current CLI input boundary/);
   assert.match(compatibilityHelp.stdout, /No automatic compatibility handling or data migration is provided for older formats/);
   assert.match(compatibilityHelp.stdout, /future\/unknown config or schema versions/);
-  assert.match(compatibilityHelp.stdout, /docs\/development\/release-compatibility-policy\.md/);
+  assert.match(compatibilityHelp.stdout, /docs\/development\/archive\/v1\/release-compatibility-policy\.md/);
 
   const doctorHelp = await runNodeCli(runtimeCliPath, ["doctor", "--help"]);
   assert.strictEqual(doctorHelp.code, 0);
@@ -125,6 +125,17 @@ test("ogs help command surfaces layered guidance", async () => {
   const version = await runNodeCli(runtimeCliPath, ["--version"]);
   assert.strictEqual(version.code, 0);
   assert.match(version.stdout, /^ogs \d+\.\d+\.\d+\s*$/);
+});
+
+test("models capabilities prints the v2 read-only Backend directory", async () => {
+  const result = await runNodeCli(runtimeCliPath, ["models", "capabilities"]);
+  assert.strictEqual(result.code, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.contractVersion, 2);
+  assert.deepEqual(payload.userConfigurable, ["backend", "model", "allowedTools", "environment"]);
+  assert.deepEqual(payload.readOnlyDiagnostics, ["capabilities", "resources", "permission", "modes", "adapterVersion", "nativeTools"]);
+  assert.equal(payload.backends.some((entry) => entry.backendId === "claude"), false);
+  assert.equal(payload.backends.find((entry) => entry.backendId === "codex").permission.configurable, false);
 });
 
 test("nl2mmd help command highlights base entrypoint and defaults", async () => {

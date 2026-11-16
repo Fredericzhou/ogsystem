@@ -7,7 +7,9 @@ import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import {
   appendEvent,
   flushBufferedRunArtifacts,
-  loadAuditTrailFromEvents
+  loadAuditTrailFromEvents,
+  persistHumanReviewDecision,
+  persistHumanReviewRequest
 } from "../dist/runtime/run-artifacts.js";
 import {
   loadTimelineSnapshot,
@@ -220,6 +222,14 @@ test("appendEvent keeps redacted events as single-line jsonl records", async () 
   const record = JSON.parse(eventsLines[0]);
   assert.equal(record.type, "audit");
   assert.equal(record.at, "2026-04-18T00:00:00.000Z");
+  assert.equal(record.ogsContractVersion, 2);
+  assert.equal(record.schemaVersion, 1);
+  assert.equal(record.eventType, "audit");
+  assert.equal(record.runId, "unknown");
+  assert.equal(record.recordedAt, "2026-04-18T00:00:00.000Z");
+  assert.equal(record.payload.type, "audit");
+  assert.equal(record.payload.roleId, "role-a");
+  assert.equal(typeof record.eventId, "string");
   assert.equal(record.roleId, "role-a");
   assert.equal(record.status, "ok");
   assert.equal(typeof record.stdoutPreview, "string");
@@ -250,4 +260,54 @@ test("appendEvent de-duplicates a stable result commit event id", async () => {
   const lines = (await readFile(runContext.eventsPath, "utf8")).trim().split("\n");
   assert.equal(lines.length, 1);
   assert.equal(JSON.parse(lines[0]).eventId, event.eventId);
+});
+
+test("human review persistence writes v2 request and decision metadata", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-review-v2-persistence-"));
+  const context = {
+    runId: "run-review-v2",
+    reviewsDir: path.resolve(tempRoot, "control", "reviews")
+  };
+  const review = {
+    reviewId: "review.branch-1.r1",
+    roleId: "writer",
+    branchId: "branch-1",
+    lineageId: "lineage-1",
+    loopIteration: 0,
+    executionId: "exec-1",
+    draftResult: { content: "draft", data: {} },
+    requestedAt: "2026-04-18T00:00:00.000Z",
+    requestedByExecutionId: "exec-1",
+    status: "pending",
+    round: 1,
+    spec: { mode: "required", timeoutAction: "pause", terminateScope: "run" },
+    stateVersion: 1
+  };
+  await persistHumanReviewRequest({ context, review });
+  const request = JSON.parse(await readFile(path.resolve(context.reviewsDir, "review.branch-1.r1.request.json"), "utf8"));
+  assert.equal(request.ogsContractVersion, 2);
+  assert.equal(request.schemaVersion, 1);
+  assert.equal(request.trigger, "explicit");
+  assert.equal(request.status, "pending");
+
+  await persistHumanReviewDecision({
+    context,
+    decision: {
+      reviewId: review.reviewId,
+      round: 1,
+      lineageId: review.lineageId,
+      branchId: review.branchId,
+      loopIteration: 0,
+      stateVersion: 1,
+      committedAt: "2026-04-18T00:00:01.000Z",
+      decidedAt: "2026-04-18T00:00:01.000Z",
+      decision: "approve"
+    }
+  });
+  const decision = JSON.parse(await readFile(path.resolve(context.reviewsDir, "review.branch-1.r1.decision.json"), "utf8"));
+  assert.equal(decision.ogsContractVersion, 2);
+  assert.equal(decision.schemaVersion, 1);
+  assert.equal(decision.status, "resolved");
+  assert.equal(decision.decision, "approve");
+  assert.equal(decision.payload.reviewId, review.reviewId);
 });

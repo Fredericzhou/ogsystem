@@ -1,14 +1,14 @@
 export function latestRoleContract(options = {}) {
   const events = [...new Set(options.events ?? [])].sort();
-  const allowedTools = [...new Set(options.allowedTools ?? [])].sort();
   return {
-    contractVersion: 1,
+    ogsContractVersion: 2,
+    schemaVersion: 2,
     purpose: options.purpose ?? "Test role responsibility",
     responsibility: { kind: "atomic", owns: [], contributes: [], doesNotOwn: [] },
     inputs: { preconditions: [] },
-    outputs: { events, postconditions: [] },
+    outputs: { decisionCriteria: [], postconditions: [] },
     authority: { controlActions: [] },
-    constraints: { writableStateFields: [], allowedTools },
+    constraints: { writableStateFields: [] },
     failure: { retryableErrorCodes: [], terminalErrorCodes: [] },
     audit: { requiredFields: [] }
   };

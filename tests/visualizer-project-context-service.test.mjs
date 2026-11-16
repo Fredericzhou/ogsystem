@@ -57,8 +57,28 @@ async function createProject() {
     "utf8"
   );
   await writeFile(
-    path.join(workdir, ".ogs", "model-selection.json"),
-    JSON.stringify({ configVersion: "3", defaults: { backend: "opencode", modelId: "opencode/test-model" } }),
+    path.join(workdir, ".ogs", "execution-bindings.json"),
+    JSON.stringify({
+      ogsContractVersion: 2,
+      schemaVersion: 1,
+      defaults: { harnessTemplate: "harness.test" },
+      harnessTemplates: {
+        "harness.test": {
+          ogsContractVersion: 2,
+          schemaVersion: 1,
+          kind: "harness",
+          templateId: "harness.test",
+          backend: "opencode",
+          model: "opencode/test-model",
+          allowedTools: [],
+          environment: { filesystem: { read: true, write: true }, process: "allow", network: "deny" }
+        }
+      },
+      roles: {
+        planner: { kind: "harness", harnessTemplate: "harness.test" },
+        writer: { kind: "harness", harnessTemplate: "harness.test" }
+      }
+    }),
     "utf8"
   );
   await writeRolePackage(workdir, "planner");

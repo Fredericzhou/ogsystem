@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { buildProjectedContext } from "../dist/runtime/role-input-projector.js";
+import { buildProjectedContext, buildRolePromptInput } from "../dist/runtime/role-input-projector.js";
 import { buildArtifactReference } from "../dist/runtime/artifact-access.js";
 
 const roleResult = (roleId, data, lineageId = "lineage-1") => ({
@@ -60,6 +60,87 @@ test("direct and join artifact selectors project opaque references with optional
   const producer = { ...roleResult("producer", { findings: ["A"] }), artifactRef, provenance: { runId: "run-1", executionId: "exec-1", producerRoleId: "producer", branchId: "producer@1#1", lineageId: "lineage-1", loopIteration: 1, mediaType: "text/plain" } };
   assert.deepEqual(project({ artifact: "direct.artifact" }, { roleResults: { "producer@1#1": producer } }), { artifact: artifactRef });
   assert.deepEqual(project({ artifact: "direct.artifact?" }, { parentBranchId: null }), {});
+});
+
+test("handoff projection preserves business and artifact metadata without technical execution fields", () => {
+  const artifactRef = buildArtifactReference({ runId: "run-1", executionId: "exec-1", mediaType: "application/json" });
+  const producer = {
+    ...roleResult("producer", {
+      decision: "publish",
+      artifact: {
+        path: "reports/brief.json",
+        mediaType: "application/json",
+        sizeBytes: 42,
+        sha256: "a".repeat(64)
+      }
+    }),
+    artifactRef,
+    provenance: {
+      runId: "run-1",
+      executionId: "exec-1",
+      producerRoleId: "producer",
+      branchId: "producer@1#1",
+      lineageId: "lineage-1",
+      loopIteration: 1,
+      mediaType: "application/json"
+    },
+    // These fields model accidental technical metadata attached by an adapter.
+    backend: "opencode",
+    model: "codex-gateway/gpt-6-luna",
+    harnessTemplate: "workspace-writer",
+    allowedTools: ["read", "write"],
+    effectiveTools: ["read", "write"],
+    effectiveEnvironmentPolicy: { filesystem: { write: true } },
+    policyDigest: "policy-digest",
+    capabilityDigest: "capability-digest",
+    workspaceRoot: "/host/private/staging"
+  };
+  const state = {
+    userPrompt: "publish the brief",
+    roleResults: { "producer@1#1": producer },
+    humanReviewContextByBranchId: {}
+  };
+  const node = {
+    contextMap: {
+      business: "direct.data",
+      artifact: "direct.artifact"
+    },
+    outgoing: []
+  };
+  const branch = {
+    branchId: "consumer@1#3",
+    roleId: "consumer",
+    loopIteration: 1,
+    lineageId: "lineage-1",
+    parentBranchId: "producer@1#1"
+  };
+
+  const prompt = buildRolePromptInput({ roleId: "consumer", node, branch, state });
+  const projected = JSON.parse(prompt.input);
+  assert.deepEqual(projected.business, {
+    decision: "publish",
+    artifact: {
+      path: "reports/brief.json",
+      mediaType: "application/json",
+      sizeBytes: 42,
+      sha256: "a".repeat(64)
+    }
+  });
+  assert.deepEqual(projected.artifact, artifactRef);
+  for (const forbidden of [
+    "backend",
+    "model",
+    "harnessTemplate",
+    "allowedTools",
+    "effectiveTools",
+    "effectiveEnvironmentPolicy",
+    "policyDigest",
+    "capabilityDigest",
+    "workspaceRoot"
+  ]) {
+    assert.equal(Object.hasOwn(projected, forbidden), false, forbidden);
+    assert.equal(prompt.input.includes(forbidden), false, forbidden);
+  }
 });
 
 test("optional join source selectors omit missing source data while required selectors fail closed", () => {

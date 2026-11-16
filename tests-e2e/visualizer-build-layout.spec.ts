@@ -20,26 +20,27 @@ async function seedProject(workdir: string): Promise<void> {
   await symlink(path.resolve(repoRoot, "og-roles"), path.resolve(workdir, "og-roles"), "dir");
   for (const file of [
     "runtime.json",
-    "model-selection.json",
+    "execution-bindings.json",
     "model-catalog.json",
     "laws.json",
     "user-profile.json"
   ]) {
     await symlink(path.resolve(repoRoot, ".ogs", file), path.resolve(workdir, ".ogs", file));
   }
+  await writeFile(path.resolve(workdir, ".ogs", "capability-previews.json"), JSON.stringify({
+    ogsContractVersion: 2,
+    schemaVersion: 1,
+    refreshedAt: "2026-11-16T00:00:00.000Z",
+    backends: [{
+      backendId: "codex",
+      modelId: "gpt-6-luna",
+      readiness: "ready",
+      nativeTools: { status: "ready", verifiedTools: ["apply_patch", "exec_command"] }
+    }]
+  }, null, 2), "utf8");
   await writeFile(
     path.resolve(workdir, ".ogs", "project.json"),
     JSON.stringify({ projectId: "viz.build.layout", projectName: "Build Layout Test", createdAt: "2026-05-08T00:00:00.000Z" }, null, 2),
-    "utf8"
-  );
-  await writeFile(
-    path.resolve(workdir, "profiles.json"),
-    JSON.stringify([{ profileId: "profile.review", toolRef: "tool.review" }], null, 2),
-    "utf8"
-  );
-  await writeFile(
-    path.resolve(workdir, "tools.json"),
-    JSON.stringify({ tools: [{ toolRef: "tool.review", runner: "local_shell", command: "echo", argsTemplate: [], stdinMode: "none" }] }, null, 2),
     "utf8"
   );
   await writeFile(
@@ -235,7 +236,7 @@ test("localized release warnings render without breaking project loading", async
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
   try {
-    await page.route("**/api/v1/ogs/workspace/readiness", async (route) => {
+    await page.route("**/api/v2/ogs/workspace/readiness", async (route) => {
       const response = await route.fetch();
       const readiness = await response.json();
       readiness.warnings = [

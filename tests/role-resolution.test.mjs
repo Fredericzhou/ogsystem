@@ -115,18 +115,19 @@ test("loadRolePackage fails fast when agent.md is missing", async () => {
     JSON.stringify(
       {
         roleId: "missing-agent",
+        ogsContractVersion: 2,
         roleVersion: "1.0.0",
         name: "Missing Agent",
           description: "fixture",
           promptTemplate: "prompt.md",
           outputSchema: "output.schema.json",
-          contractVersion: 1,
+          schemaVersion: 2,
           purpose: "Validate a stable fixture responsibility",
           responsibility: { kind: "atomic", owns: [], contributes: [], doesNotOwn: [] },
           inputs: { preconditions: [] },
-          outputs: { events: [], postconditions: [] },
+          outputs: { postconditions: [], decisionCriteria: [] },
           authority: { controlActions: [] },
-          constraints: { writableStateFields: [], allowedTools: [] },
+          constraints: { writableStateFields: [] },
           failure: { retryableErrorCodes: [], terminalErrorCodes: [] },
           audit: { requiredFields: [] }
       },
@@ -169,6 +170,16 @@ test("role manifests reject removed inputSchema fields", () => {
       ),
     /unknown field/
   );
+});
+
+test("role contracts keep Runtime exception actions out of business authority", async () => {
+  const base = JSON.parse(await readFile(path.resolve(roleRootDir, "hello-ogsystem", "role.json"), "utf8"));
+  for (const action of ["pause", "terminate", "continue", "retry"]) {
+    assert.throws(
+      () => validateRolePackageManifest({ ...base, authority: { controlActions: [action] } }, `invalid-${action}-authority/role.json`),
+      /unsupported business review action/
+    );
+  }
 });
 
 test("role manifests require the current Role Contract sections", () => {
@@ -271,20 +282,20 @@ test("output schema rejects invalid payload", async () => {
   );
 });
 
-test("error-handler compensation output requires a declared verified action", async () => {
+test("v2 error-handler output accepts only declared events", async () => {
   const rolePackage = await loadRolePackage({
     roleId: "error-handler-base",
-    roleRootDir: path.resolve("examples/ogs-gstacklike/og-roles/roles")
+    roleRootDir: path.resolve("og-roles/roles")
   });
   const base = { event: "READY", content: "restored" };
 
-  assert.throws(() => validateRoleOutputSchema({
+  assert.doesNotThrow(() => validateRoleOutputSchema({
     output: base,
     schema: rolePackage.outputSchema,
     roleId: "error-handler-base"
   }));
   assert.throws(() => validateRoleOutputSchema({
-    output: { ...base, data: { compensation: { action: "restore" } } },
+    output: { ...base, event: "UNKNOWN" },
     schema: rolePackage.outputSchema,
     roleId: "error-handler-base"
   }));

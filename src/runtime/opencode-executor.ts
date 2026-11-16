@@ -932,7 +932,7 @@ export async function discoverOpencodeNativeTools(
     }
     const response = await toolApi.ids({ directory: args.workdir });
     const ids = Array.isArray(response?.data)
-      ? response.data.filter((id): id is string => typeof id === "string" && id.trim().length > 0)
+      ? response.data.filter((id): id is string => typeof id === "string" && id.trim().length > 0 && id !== "invalid")
       : [];
     if (!Array.isArray(response?.data)) {
       throw new Error("OpenCode native tool discovery returned an invalid tool ID payload");

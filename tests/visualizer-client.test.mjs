@@ -232,7 +232,8 @@ test("Studio defaults new role binding to Agent and prefers OpenCode when availa
       ]
     }
   });
-  assert.match(html, /data-role-config-field="bindingKind"[\s\S]*?<option value="model" selected/);
+  assert.match(html, /Harness \/ model/);
+  assert.doesNotMatch(html, /data-role-config-field="bindingKind"/);
   assert.match(html, /<option value="opencode" selected>OpenCode \(opencode\)<\/option>/);
 });
 
@@ -394,7 +395,7 @@ function testTranslator(_key, vars, fallback) {
 test("visualizer client script injects Studio authoring editor renderers", () => {
   const script = buildClientAppScript("/api/v1");
   assert.match(script, /const renderStudioRoleConfigEditor = /);
-  assert.match(script, /const renderStudioExecutionConfigEditor = /);
+  assert.doesNotMatch(script, /const renderStudioExecutionConfigEditor = /);
   assert.match(script, /const renderStudioFlowConfigEditor = /);
   assert.match(script, /const asRecordCollection = /);
   assert.match(script, /let studioCanvasSaveChain = Promise\.resolve\(\)/);
@@ -2033,13 +2034,13 @@ function createBackend(options = {}) {
             },
             {
               roleId: "qa",
-              bindingKind: "profile",
-              declaredBinding: "profile:review",
-              resolvedBinding: "profile:review",
-              effectiveBinding: "profile:review",
+              bindingKind: "harness",
+              declaredBinding: "harness:review",
+              resolvedBinding: "opencode/gpt-5-nano",
+              effectiveBinding: "opencode/gpt-5-nano",
               timeoutMs: 60000,
               maxOutputBytes: 8192,
-              source: ".ogs/model-selection.json"
+              source: ".ogs/execution-bindings.json"
             }
           ]
         });
@@ -4774,7 +4775,7 @@ test("visualizer client opens Studio Bridge and keeps authoring affordances on t
   assert.ok(latestMount);
   const addRoleAuthoring = cloneJson(latestMount.authoring);
   const addRoleCanvas = cloneJson(latestMount.canvas);
-  addRoleAuthoring.roles["new-role"] = { roleId: "new-role", title: "New role", bindingKind: "exec", profileId: "profile.new-role" };
+  addRoleAuthoring.roles["new-role"] = { roleId: "new-role", title: "New role", bindingKind: "model", backend: "codex", modelId: "gpt-6-luna" };
   addRoleAuthoring.layout.nodes["new-role"] = { x: 380, y: 120, width: 180, height: 84 };
   addRoleCanvas.nodes.push({
     id: "new-role",
@@ -4785,19 +4786,16 @@ test("visualizer client opens Studio Bridge and keeps authoring affordances on t
     height: 84,
     label: "New role",
     badges: [],
-    bindingKind: "exec"
+    bindingKind: "model"
   });
   await latestMount.onApplyCommand({
     authoring: addRoleAuthoring,
     canvas: addRoleCanvas,
     selectedRoleId: "new-role",
-    profileDrafts: [{ profileId: "profile.new-role", toolRef: "tool.new-role", timeoutMs: 30000 }],
-    toolDrafts: [{ toolRef: "tool.new-role", runner: "local_shell", command: "node", argsTemplate: ["scripts/console-print.mjs"], stdinMode: "text" }]
+    harnessBindings: [{ roleId: "new-role", kind: "harness", harnessTemplate: "harness.codex.gpt-6-luna" }]
   });
   await settle();
-  assert.equal(harness.backend.lastExecutionConfigUpsertBody.profiles[0].profileId, "profile.new-role");
-  assert.equal(harness.backend.lastExecutionConfigUpsertBody.tools[0].toolRef, "tool.new-role");
-  assert.equal(harness.backend.lastAuthoringApplyCanvasBody.authoring.roles["new-role"].bindingKind, "exec");
+  assert.equal(harness.backend.lastAuthoringApplyCanvasBody.authoring.roles["new-role"].bindingKind, "model");
   assert.equal(
     Object.hasOwn(harness.backend.lastAuthoringApplyCanvasBody.authoring.layout.nodes, "new-role"),
     true
@@ -4834,27 +4832,24 @@ test("visualizer client shows role config labels and opens role I/O modal from s
       data: {
         roleId: "demo-analyst",
         title: "Demo analyst",
-        bindingKind: "exec",
-        profileId: "profile.review",
+        bindingKind: "model",
+        backend: "codex",
+        modelId: "gpt-6-luna",
         contextMap: {
           summary: "source(writer).data.output.summary"
         },
-        generatedProfileId: "profile.demo-analyst",
-        generatedToolRef: "tool.demo-analyst"
+        harnessTemplate: "harness.codex.gpt-6-luna"
       }
     },
-    projectConfig: {
-      profiles: [{ profileId: "profile.review", toolRef: "tool.review" }]
-    },
+    projectConfig: { executionBindings: { harnessTemplates: { "harness.codex.gpt-6-luna": { templateId: "harness.codex.gpt-6-luna" } } } },
     contracts: {
       contracts: [{ kind: "role_input", roleId: "demo-analyst", schemaPath: "contracts/schemas/input.json" }],
       schemaFiles: [{ path: "contracts/schemas/input.json", content: JSON.stringify({ type: "object", required: ["summary", "issueId"], additionalProperties: false, properties: { summary: { type: "string" }, issueId: { type: "string" } } }) }]
     },
     t: testTranslator
   });
-  assert.match(roleConfigHtml, /Agent/);
-  assert.match(roleConfigHtml, /Tool/);
-  assert.match(roleConfigHtml, /Noop/);
+  assert.match(roleConfigHtml, /Harness \/ model/);
+  assert.doesNotMatch(roleConfigHtml, /Noop|local_shell|Execution profile/);
   assert.match(roleConfigHtml, /data-context-map-row/);
   assert.match(roleConfigHtml, /value="output\.summary"/);
   assert.equal((roleConfigHtml.match(/data-context-map-path/g) || []).length, 2);

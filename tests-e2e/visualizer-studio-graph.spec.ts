@@ -24,26 +24,27 @@ async function seedProject(workdir: string): Promise<void> {
   await symlink(path.resolve(repoRoot, "og-roles"), path.resolve(workdir, "og-roles"), "dir");
   for (const file of [
     "runtime.json",
-    "model-selection.json",
+    "execution-bindings.json",
     "model-catalog.json",
     "laws.json",
     "user-profile.json"
   ]) {
     await symlink(path.resolve(repoRoot, ".ogs", file), path.resolve(workdir, ".ogs", file));
   }
+  await writeFile(path.resolve(workdir, ".ogs", "capability-previews.json"), JSON.stringify({
+    ogsContractVersion: 2,
+    schemaVersion: 1,
+    refreshedAt: "2026-11-16T00:00:00.000Z",
+    backends: [{
+      backendId: "codex",
+      modelId: "gpt-6-luna",
+      readiness: "ready",
+      nativeTools: { status: "ready", verifiedTools: ["apply_patch", "exec_command"] }
+    }]
+  }, null, 2), "utf8");
   await writeFile(
     path.resolve(workdir, ".ogs", "project.json"),
     JSON.stringify({ projectId: "viz.studio.graph", createdAt: "2026-04-30T00:00:00.000Z" }, null, 2),
-    "utf8"
-  );
-  await writeFile(
-    path.resolve(workdir, "profiles.json"),
-    JSON.stringify([{ profileId: "profile.review", toolRef: "tool.review" }], null, 2),
-    "utf8"
-  );
-  await writeFile(
-    path.resolve(workdir, "tools.json"),
-    JSON.stringify({ tools: [{ toolRef: "tool.review", runner: "local_shell", command: "echo", argsTemplate: [], stdinMode: "none" }] }, null, 2),
     "utf8"
   );
   await writeFile(
@@ -142,9 +143,10 @@ async function seedContractProject(workdir: string): Promise<void> {
 async function seedConditionalProject(workdir: string): Promise<void> {
   await seedProject(workdir);
   await mkdir(path.resolve(workdir, ".ogs/contracts"), { recursive: true });
-  await writeFile(path.resolve(workdir, ".ogs/contracts/state.json"), JSON.stringify({ version: "1", type: "object" }), "utf8");
+  await writeFile(path.resolve(workdir, ".ogs/contracts/state.json"), JSON.stringify({ version: "2", type: "object" }), "utf8");
   await writeFile(path.resolve(workdir, ".ogs/semantics.yaml"), [
-    "version: '1'",
+    "ogsContractVersion: 2",
+    "version: '2'",
     "system:",
     "  systemId: viz.studio.graph",
     "  systemVersion: 1.0.0",
@@ -480,7 +482,7 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await expect(debugPanel.locator("#workbench-run-runtime-path")).toBeVisible();
     await expect(debugPanel.locator("#workbench-run-user-profile-path")).toBeVisible();
     await expect(debugPanel.locator("#workbench-run-laws-path")).toBeVisible();
-    await expect(debugPanel).toContainText(/Select an exec role|请选择一个 exec 角色/);
+    await expect(debugPanel).toContainText(/Start a dry run|启动试运行/);
     await expectDockedSelectionAligned(page);
     await setWorkbenchView(page, "source");
     await expect(page.locator("#workbench-editor")).toBeVisible();
@@ -537,11 +539,14 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await page.locator('#studio-graph-root [data-cell-id="__studio_pending_role__"]').click();
     const addRoleForm = page.locator('form[data-studio-command-form="add-role"]');
     await expect(addRoleForm).toBeVisible();
-    await expect(addRoleForm.locator('select[name="bindingKind"]')).toHaveValue("model");
     await addRoleForm.locator('input[name="mode"][value="custom"]').check();
     await addRoleForm.locator('input[name="roleId"]').fill("new-role");
     await addRoleForm.locator('input[name="title"]').fill("需求分析");
-    await addRoleForm.locator('select[name="bindingKind"]').selectOption("noop");
+    const modelSelect = addRoleForm.locator('select[name="modelRef"]');
+    if (await modelSelect.count()) {
+      const modelValues = await modelSelect.locator("option").evaluateAll((options) => options.map((option) => (option as HTMLOptionElement).value).filter(Boolean));
+      if (modelValues[0]) await modelSelect.selectOption(modelValues[0]);
+    }
     await addRoleForm.locator('button[type="submit"]').click();
     await expect(page.locator("#studio-graph-root")).toBeVisible();
     await expect(page.locator('#studio-graph-root [data-cell-id="new-role"]').first()).toBeVisible();
@@ -564,7 +569,7 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await newFlowEditor.locator("[data-flow-config-delete]").click();
     await expect.poll(() => page.locator("#studio-graph-root .x6-edge").count()).toBe(edgeCountBeforeConnect);
 
-    await page.route("**/api/v1/ogs/workspace/studio/chat", async (route) => {
+    await page.route("**/api/v2/ogs/workspace/studio/chat", async (route) => {
       const request = route.request();
       if (request.method() !== "POST") {
         await route.fallback();
@@ -581,8 +586,10 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
         "qa-reviewer": {
           roleId: "qa-reviewer",
           title: "QA Reviewer",
-          bindingKind: "profile",
-          profileRef: "profile.review"
+          bindingKind: "model",
+          backend: "codex",
+          modelId: "gpt-6-luna",
+          modelRef: "codex/gpt-6-luna"
         }
       };
       nextAuthoring.flows = {
@@ -679,8 +686,8 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await page.locator('#studio-graph-root [data-studio-graph-action="undo"]').click();
     await expect(page.locator('#studio-graph-root [data-cell-id="qa-reviewer"]')).toHaveCount(0);
 
-    await page.unroute("**/api/v1/ogs/workspace/studio/chat");
-    await page.route("**/api/v1/ogs/workspace/studio/chat", async (route) => {
+    await page.unroute("**/api/v2/ogs/workspace/studio/chat");
+    await page.route("**/api/v2/ogs/workspace/studio/chat", async (route) => {
       const request = route.request();
       if (request.method() !== "POST") {
         await route.fallback();
@@ -696,7 +703,7 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await expect(page.locator("#studio-chat-close")).toBeEnabled();
     await page.locator("#studio-chat-close").click();
     await expect(page.locator(".studio-chat-panel.is-open")).toHaveCount(0);
-    await page.unroute("**/api/v1/ogs/workspace/studio/chat");
+    await page.unroute("**/api/v2/ogs/workspace/studio/chat");
 
     const roleNodeForDrag = page.locator('#studio-graph-root [data-cell-id="demo-analyst"]').first();
     const box = await roleNodeForDrag.boundingBox();
@@ -1103,7 +1110,7 @@ test("Run, review, and resume are operable through the visual workflow", async (
     await debugPanel.locator("#workbench-start-run").click();
 
     await page.waitForFunction(async () => {
-      const response = await fetch("/api/v1/ogs/runs");
+      const response = await fetch("/api/v2/ogs/runs");
       const payload = await response.json();
       return payload.runs?.[0]?.runId || false;
     }, undefined, { timeout: 30000 });
@@ -1217,12 +1224,12 @@ test("Design shows the latest dry-run trace and keeps it separate from Run selec
     await debugPanel.locator("#workbench-start-run").click();
 
     await expect.poll(async () => page.evaluate(async () => {
-      const response = await fetch("/api/v1/ogs/runs");
+      const response = await fetch("/api/v2/ogs/runs");
       const payload = await response.json();
       return payload.runs?.find((run) => run.isSimulation === true)?.runId || "";
     }), { timeout: 30000 }).not.toBe("");
     const runId = await page.evaluate(async () => {
-      const response = await fetch("/api/v1/ogs/runs");
+      const response = await fetch("/api/v2/ogs/runs");
       const payload = await response.json();
       return payload.runs.find((run) => run.isSimulation === true).runId;
     });
@@ -1898,6 +1905,7 @@ test("contract workspace supports keyboard editing and validation on a narrow vi
     await openSystemSettings.focus();
     await page.keyboard.press("Enter");
     const reopenedContractEditor = page.locator(".studio-contract-editor");
+    await expect(reopenedContractEditor).toBeAttached({ timeout: 10000 });
     if (await reopenedContractEditor.getAttribute("open") === null) {
       await reopenedContractEditor.locator("summary").first().focus();
       await page.keyboard.press("Enter");
@@ -2009,7 +2017,7 @@ test("mapping UAT covers nested direct and Join sources plus quorum source gatin
       roles: { "test-operator": { contextMap: { reviewSummary: "source(demo-intake).data.result.summary?" } } }
     });
     const savedAuthoring = JSON.parse(await readFile(authoringDraftPath, "utf8"));
-    const generateResponse = await page.request.post(new URL("/api/v1/ogs/workspace/studio/authoring/generate-mmd", started.url).toString(), {
+    const generateResponse = await page.request.post(new URL("/api/v2/ogs/workspace/studio/authoring/generate-mmd", started.url).toString(), {
       data: { authoring: savedAuthoring }
     });
     expect(generateResponse.status()).toBe(200);
@@ -2020,7 +2028,7 @@ test("mapping UAT covers nested direct and Join sources plus quorum source gatin
       Object.entries(role.contextMap || {}).map(([field, selector]) => `%% context.map.${roleId}.${field}=${selector}`)
     ).sort();
     expect(generatedContextMapLines.sort()).toEqual(expectedContextMapLines);
-    const importResponse = await page.request.post(new URL("/api/v1/ogs/workspace/studio/authoring/import-mmd", started.url).toString(), {
+    const importResponse = await page.request.post(new URL("/api/v2/ogs/workspace/studio/authoring/import-mmd", started.url).toString(), {
       data: { systemSource: generated.systemSource, systemPath: "system.mmd" }
     });
     expect(importResponse.status()).toBe(200);
@@ -2191,7 +2199,7 @@ test("studio graph stays readable and its toolbar remains reachable on mobile", 
     const roleMarkerText = roleNode.locator("text").first();
     await expect(roleMarker).toBeVisible();
     await expect(roleMarkerText).toBeVisible();
-    const flowLabel = graph.locator(".x6-edge-label text").filter({ hasText: "READY" }).first();
+    const flowLabel = graph.locator(".x6-edge-label").filter({ hasText: "READY" }).first();
     await expect.poll(async () => Boolean(await flowLabel.boundingBox())).toBe(true);
     const markerBounds = await roleMarker.boundingBox();
     const markerTextBounds = await roleMarkerText.boundingBox();

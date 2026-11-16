@@ -22,7 +22,7 @@ function baseDesign() {
   design.seats.intake = {
     seatId: "intake",
     rolePackageRef: "intake",
-    binding: { kind: "noop" }
+    binding: { kind: "harness", harnessTemplate: "harness.codex" }
   };
   design.bindings.intake = structuredClone(design.seats.intake.binding);
   design.transitions.push({ transitionId: "start-intake", fromSeatId: "__system_start__", toSeatId: "intake", eventType: "START" });
@@ -35,7 +35,7 @@ test("System Design validates the role-seat graph and exports deterministic Merm
   design.seats.review = {
     seatId: "review",
     rolePackageRef: "review",
-    binding: { kind: "model", modelRef: "openai/gpt-5" },
+    binding: { kind: "harness", harnessTemplate: "harness.review" },
     review: { mode: "required", timeoutAction: "pause" }
   };
   design.bindings.review = structuredClone(design.seats.review.binding);
@@ -67,7 +67,7 @@ test("ChangeSet application is revisioned and rejects stale proposals", () => {
     summary: "Add a reviewer",
     operations: [{
       type: "addSeat",
-      seat: { seatId: "review", rolePackageRef: "review", binding: { kind: "noop" } },
+      seat: { seatId: "review", rolePackageRef: "review", binding: { kind: "harness", harnessTemplate: "harness.codex" } },
       layout: { x: 320, y: 120 }
     }]
   });
@@ -103,16 +103,25 @@ test("Design validation rejects missing, mismatched, and extra binding index ent
   assert.ok(missingResult.diagnostics.some((item) => item.code === "DESIGN_BINDING_INDEX_MISSING" && item.path === "bindings.intake"));
 
   const mismatched = baseDesign();
-  mismatched.bindings.intake = { kind: "exec", profileId: "different-profile" };
+  mismatched.bindings.intake = { kind: "harness", harnessTemplate: "different-harness" };
   const mismatchResult = validateSystemDesign(mismatched);
   assert.equal(mismatchResult.ok, false);
   assert.ok(mismatchResult.diagnostics.some((item) => item.code === "DESIGN_BINDING_INDEX_MISMATCH" && item.path === "bindings.intake"));
 
   const extra = baseDesign();
-  extra.bindings.unknown = { kind: "noop" };
+  extra.bindings.unknown = { kind: "harness", harnessTemplate: "extra-harness" };
   const extraResult = validateSystemDesign(extra);
   assert.equal(extraResult.ok, false);
   assert.ok(extraResult.diagnostics.some((item) => item.code === "DESIGN_BINDING_INDEX_EXTRA" && item.path === "bindings.unknown"));
+});
+
+test("Design validation rejects retired model and profile bindings", () => {
+  const legacy = baseDesign();
+  legacy.seats.intake.binding = { kind: "model", modelRef: "codex/gpt-6-luna" };
+  legacy.bindings.intake = structuredClone(legacy.seats.intake.binding);
+  const result = validateSystemDesign(legacy);
+  assert.equal(result.ok, false);
+  assert.ok(result.diagnostics.some((item) => item.code === "DESIGN_LEGACY_BINDING_REJECTED"));
 });
 
 test("setBindings rejects an inconsistent design instead of applying it", () => {
@@ -129,19 +138,19 @@ test("setBindings rejects an inconsistent design instead of applying it", () => 
   assert.equal(result.ok, false);
   assert.ok(result.diagnostics.some((item) => item.code === "DESIGN_BINDING_INDEX_MISSING"));
   assert.equal(design.revision, 0);
-  assert.deepEqual(design.bindings.intake, { kind: "noop" });
+  assert.deepEqual(design.bindings.intake, { kind: "harness", harnessTemplate: "harness.codex" });
 });
 
-test("canonical design compiles profile bindings and produces a reviewable diff", () => {
+test("canonical design compiles model bindings and produces a reviewable diff", () => {
   const current = baseDesign();
-  current.seats.intake.binding = { kind: "exec", profileId: "profile.intake" };
+  current.seats.intake.binding = { kind: "harness", harnessTemplate: "harness.codex" };
   current.bindings.intake = structuredClone(current.seats.intake.binding);
   const proposed = structuredClone(current);
   proposed.revision = 1;
   proposed.seats.intake.contextMap = { task: "global.task" };
   proposed.intent.objective = "Route a one-sentence request through the intake team.";
   const compiled = designToSystemDefinition(current);
-  assert.equal(compiled.executionBinding.intake, "profile.intake");
+  assert.equal(compiled.modelBinding.intake, undefined);
   const changeSet = diffSystemDesign({
     current,
     proposed,
@@ -191,12 +200,28 @@ intake[Role:intake] -->|READY| end[结束]
   assert.match(exportDesignToMermaid(design), /end\[结束\]/);
 });
 
+test("System Design import projects only Harness Template references", () => {
+  const system = parseSystemFromMermaidSource(`flowchart TD
+%% system.id=harness.project
+%% system.version=1.0.0
+%% law.global=law.global
+start[开始] -->|START| r1[Role:intake]
+r1[Role:intake] -->|READY| end[结束]
+`);
+  const design = systemDefinitionToDesign(system, {
+    harnessTemplateByRoleId: { intake: "codex.default" }
+  });
+  assert.deepEqual(design.seats.intake.binding, { kind: "harness", harnessTemplate: "codex.default" });
+  assert.equal("modelRef" in design.seats.intake.binding, false);
+  assert.equal(validateSystemDesign(design).ok, true);
+});
+
 test("design diff applies state, contracts, policies, and bindings without drift", () => {
   const current = baseDesign();
   current.bindings.intake = structuredClone(current.seats.intake.binding);
   const proposed = structuredClone(current);
   proposed.revision = 1;
-  proposed.seats.intake.binding = { kind: "exec", profileId: "profile.intake" };
+  proposed.seats.intake.binding = { kind: "harness", harnessTemplate: "harness.review" };
   proposed.bindings.intake = structuredClone(proposed.seats.intake.binding);
   proposed.state = {
     schemaVersion: 2,
@@ -232,12 +257,12 @@ test("seat operations keep the top-level bindings index synchronized", () => {
       summary: "Add bound seat",
       operations: [{
         type: "addSeat",
-        seat: { seatId: "worker", rolePackageRef: "worker", binding: { kind: "exec", profileId: "worker-profile" } }
+        seat: { seatId: "worker", rolePackageRef: "worker", binding: { kind: "harness", harnessTemplate: "harness.codex" } }
       }]
     })
   });
   assert.equal(added.ok, true);
-  assert.deepEqual(added.design?.bindings.worker, { kind: "exec", profileId: "worker-profile" });
+  assert.deepEqual(added.design?.bindings.worker, { kind: "harness", harnessTemplate: "harness.codex" });
 
   const deleted = applyChangeSet({
     design: added.design,

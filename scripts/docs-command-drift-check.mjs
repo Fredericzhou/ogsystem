@@ -14,33 +14,35 @@ const DOCS = [
 ];
 
 const REQUIRED_COMMANDS = [
-  "npm install -g ogsystem",
-  "pnpm add -g ogsystem",
-  "npm uninstall -g ogsystem",
-  "pnpm remove -g ogsystem",
-  "ogs project create demo-app --template minimal",
-  "ogs project init",
-  "ogs run start --system system.mmd --input \"smoke\" --dry-run",
-  "ogs run list",
-  "ogs run status <run-id>",
-  "ogs run logs <run-id> --engine --tail 50",
-  "ogs visualizer --ogs-dir ."
+  { command: "npm install -g ogsystem", files: ["README.md"] },
+  { command: "pnpm add -g ogsystem", files: ["README.md"] },
+  { command: "npm uninstall -g ogsystem", files: ["README.md"] },
+  { command: "pnpm remove -g ogsystem", files: ["README.md"] },
+  { command: "ogs project create demo-app --template minimal", files: ["README.md"] },
+  { command: "ogs project init", files: ["README.md"] },
+  { command: "ogs run start --system system.mmd --input \"smoke\" --dry-run", files: ["README.md"] },
+  { command: "ogs run list", files: ["README.md"] },
+  { command: "ogs run status <run-id>", files: ["README.md"] },
+  { command: "ogs run logs <run-id> --engine --tail 50", files: ["README.md"] },
+  { command: "ogs visualizer --ogs-dir .", files: ["README.md"] },
+  { command: "pnpm build", files: ["docs/usage/usage-manual.md"] },
+  { command: "pnpm test", files: ["docs/usage/usage-manual.md"] }
 ];
 
 const REQUIRED_TEXT = [
   {
-    label: "retention tiers",
-    pattern: /Retention tiers:/,
+    label: "v2 contract marker",
+    pattern: /ogsContractVersion[^\n]*2/,
     files: ["docs/usage/usage-manual.md"]
   },
   {
-    label: "provider health stable codes",
-    pattern: /DOCTOR_PROVIDER_ONLINE_SKIPPED/,
+    label: "Harness binding",
+    pattern: /Harness Template/,
     files: ["docs/usage/usage-manual.md"]
   },
   {
-    label: "redaction authorization boundary",
-    pattern: /authorization headers/,
+    label: "run freeze",
+    pattern: /resolved-config\.json/,
     files: ["docs/usage/usage-manual.md"]
   }
 ];
@@ -75,8 +77,8 @@ for (const doc of DOCS) {
   const markdown = await readFile(doc.path, "utf8");
   const commands = extractShellCommands(markdown);
   for (const required of REQUIRED_COMMANDS) {
-    if (!commands.has(required)) {
-      failures.push(`${doc.label}: missing shell command block line: ${required}`);
+    if (required.files.includes(doc.label) && !commands.has(required.command)) {
+      failures.push(`${doc.label}: missing shell command block line: ${required.command}`);
     }
   }
   for (const required of REQUIRED_TEXT) {

@@ -16,7 +16,7 @@ const validSource = `flowchart TD
 %% system.id=test.parser
 %% system.version=0.1.0
 %% law.global=law.test
-%% exec.bind.intake=profile.parser
+%% model.bind.intake=model.fast
 start[开始] -->|START| intake[Role:intake]
 intake[Role:intake] -->|COMPLETE| end[结束]
 `;
@@ -71,8 +71,8 @@ const cycleWithoutLoopBudgetSource = `flowchart TD
 %% system.id=test.cycle.no-budget
 %% system.version=0.1.0
 %% law.global=law.test
-%% exec.bind.a=profile.a
-%% exec.bind.b=profile.b
+%% model.bind.a=model.fast
+%% model.bind.b=model.fast
 start[开始] -->|START| a[Role:a]
 a[Role:a] -->|READY| b[Role:b]
 b[Role:b] -->|NEEDS_REWORK| a[Role:a]
@@ -84,8 +84,8 @@ const cycleWithLoopBudgetSource = `flowchart TD
 %% system.version=0.1.0
 %% law.global=law.test
 %% loop.max.a=2
-%% exec.bind.a=profile.a
-%% exec.bind.b=profile.b
+%% model.bind.a=model.fast
+%% model.bind.b=model.fast
 start[开始] -->|START| a[Role:a]
 a[Role:a] -->|READY| b[Role:b]
 b[Role:b] -->|NEEDS_REWORK| a[Role:a]
@@ -96,10 +96,10 @@ const joinSourcesWithoutJoinModeSource = `flowchart TD
 %% system.id=test.join.sources.without-mode
 %% system.version=0.1.0
 %% law.global=law.test
-%% exec.bind.dispatch=profile.dispatch
-%% exec.bind.worker_a=profile.worker
-%% exec.bind.worker_b=profile.worker
-%% exec.bind.review=profile.review
+%% model.bind.dispatch=model.fast
+%% model.bind.worker_a=model.fast
+%% model.bind.worker_b=model.fast
+%% model.bind.review=model.fast
 %% join.sources.review=worker_a,worker_b
 start[开始] -->|START| dispatch[Role:dispatch]
 dispatch[Role:dispatch] -->|A| worker_a[Role:worker_a]
@@ -164,8 +164,8 @@ test("parser accepts a minimal system", () => {
   assert.deepEqual(system.entryRoleIds, ["intake"]);
   assert.ok(system.flows.length >= 1);
   assert.strictEqual(system.lawBinding.globalLawRef, "law.test");
-  assert.strictEqual(system.executionBinding.intake, "profile.parser");
-  assert.strictEqual(system.modelBinding.intake, undefined);
+  assert.strictEqual(system.executionBinding.intake, undefined);
+  assert.strictEqual(system.modelBinding.intake, "model.fast");
   assert.deepStrictEqual(system.graph?.routingModeByRoleId ?? {}, {});
 });
 
@@ -206,8 +206,8 @@ test("parser accepts review metadata with defaults and explicit overrides", () =
 %% system.id=test.review.metadata
 %% system.version=0.1.0
 %% law.global=law.test
-%% exec.bind.writer=profile.writer
-%% exec.bind.reviewer=profile.reviewer
+%% model.bind.writer=model.fast
+%% model.bind.reviewer=model.fast
 %% review.mode.reviewer=required
 %% review.timeout.reviewer=3600
 %% review.rework.target.reviewer=writer
@@ -233,7 +233,7 @@ test("parser accepts optional human review selectors in context.map", () => {
 %% system.id=test.review.selector.optional
 %% system.version=0.1.0
 %% law.global=law.test
-%% exec.bind.writer=profile.writer
+%% model.bind.writer=model.fast
 %% context.map.writer.review_comment=global.human_review.current.comment?
 %% context.map.writer.previous_content=global.human_review.current.previous_output.content?
 start[开始] -->|START| writer[Role:writer]
@@ -252,8 +252,8 @@ test("parser rejects review metadata without review.mode", () => {
 %% system.id=test.review.missing.mode
 %% system.version=0.1.0
 %% law.global=law.test
-%% exec.bind.writer=profile.writer
-%% exec.bind.reviewer=profile.reviewer
+%% model.bind.writer=model.fast
+%% model.bind.reviewer=model.fast
 %% review.timeout.reviewer=120
 start[开始] -->|START| writer[Role:writer]
 writer[Role:writer] -->|READY| reviewer[Role:reviewer]
@@ -272,7 +272,7 @@ test("parser rejects handoff.contracts without handoff.mode", () => {
 %% system.version=0.1.0
 %% law.global=law.test
 %% handoff.contracts=contracts/handoff.json
-%% exec.bind.intake=profile.parser
+%% model.bind.intake=model.fast
 start[开始] -->|START| intake[Role:intake]
 intake[Role:intake] -->|COMPLETE| end[结束]
 `;
@@ -306,7 +306,7 @@ test("loadSystemFromMermaid resolves handoff contract paths relative to the syst
 %% law.global=law.test
 %% handoff.mode=strict
 %% handoff.contracts=contracts/handoff.json
-%% exec.bind.intake=profile.parser
+%% model.bind.intake=model.fast
 start[开始] -->|START| intake[Role:intake]
 intake[Role:intake] -->|READY| end[结束]
 `,
@@ -500,7 +500,7 @@ intake[Role:intake] -->|READY| end[结束]
   );
 });
 
-test("parser rejects role binding conflicts when model.bind and exec.bind coexist", () => {
+test("parser rejects legacy exec.bind metadata", () => {
   const bindingConflictSource = `flowchart TD
 %% system.id=test.binding.conflict
 %% system.version=0.1.0
@@ -513,7 +513,7 @@ intake[Role:intake] -->|READY| end[结束]
 
   assert.throws(
     () => parseSystemFromMermaidSource(bindingConflictSource),
-    /defines both model\.bind\.intake=model\.fast and exec\.bind\.intake=profile\.parser/
+    /MERMAID_LEGACY_EXEC_BINDING|exec\.bind\.intake.*v1 binding/
   );
 });
 
@@ -543,7 +543,7 @@ test("parser rejects non-structural events declared from Start", () => {
 %% system.id=test.error.input
 %% system.version=0.1.0
 %% law.global=law.test
-%% exec.bind.intake=profile.intake
+%% model.bind.intake=model.fast
 start[开始] -->|ERROR| intake[Role:intake]
 intake[Role:intake] -->|READY| end[结束]
 `;
@@ -559,9 +559,9 @@ test("parser rejects duplicate ERROR fallback edges from the same role", () => {
 %% system.id=test.error.fallback.duplicate
 %% system.version=0.1.0
 %% law.global=law.test
-%% exec.bind.worker=profile.worker
-%% exec.bind.comp_a=profile.worker
-%% exec.bind.comp_b=profile.worker
+%% model.bind.worker=model.fast
+%% model.bind.comp_a=model.fast
+%% model.bind.comp_b=model.fast
 start[开始] -->|START| worker[Role:worker]
 worker[Role:worker] -->|ERROR| comp_a[Role:comp_a]
 worker[Role:worker] -->|ERROR| comp_b[Role:comp_b]
@@ -579,9 +579,9 @@ test("parser rejects duplicate ERROR.<code> edges from the same role", () => {
 %% system.id=test.error.code.duplicate
 %% system.version=0.1.0
 %% law.global=law.test
-%% exec.bind.worker=profile.worker
-%% exec.bind.retry_a=profile.worker
-%% exec.bind.retry_b=profile.worker
+%% model.bind.worker=model.fast
+%% model.bind.retry_a=model.fast
+%% model.bind.retry_b=model.fast
 start[开始] -->|START| worker[Role:worker]
 worker[Role:worker] -->|ERROR.TOOL_EXECUTION_TIMEOUT| retry_a[Role:retry_a]
 worker[Role:worker] -->|ERROR.TOOL_EXECUTION_TIMEOUT| retry_b[Role:retry_b]
@@ -601,7 +601,7 @@ for (const invalidErrorEdgeEventCase of [
 %% system.id=test.error.invalid.prefix
 %% system.version=0.1.0
 %% law.global=law.test
-%% exec.bind.worker=profile.worker
+%% model.bind.worker=model.fast
 start[开始] -->|START| worker[Role:worker]
 worker[Role:worker] -->|ERROR_SPAWN| end[结束]
 `,
@@ -613,7 +613,7 @@ worker[Role:worker] -->|ERROR_SPAWN| end[结束]
 %% system.id=test.error.invalid.empty
 %% system.version=0.1.0
 %% law.global=law.test
-%% exec.bind.worker=profile.worker
+%% model.bind.worker=model.fast
 start[开始] -->|START| worker[Role:worker]
 worker[Role:worker] -->|ERROR.| end[结束]
 `,
@@ -634,6 +634,15 @@ test("nl2mmd validator ignores ERROR* edges when checking role output event enum
   const modelRootDir = path.join(tempRoot, "models");
   await mkdir(roleRootDir, { recursive: true });
   await mkdir(modelRootDir, { recursive: true });
+  await mkdir(path.join(tempRoot, ".ogs"), { recursive: true });
+  await writeFile(path.join(tempRoot, ".ogs", "model-selection.json"), JSON.stringify({
+    configVersion: "3",
+    defaults: { backend: "codex", modelId: "gpt-test" },
+    roles: {
+      worker: { backend: "codex", modelId: "gpt-test" },
+      compensate: { backend: "codex", modelId: "gpt-test" }
+    }
+  }), "utf8");
 
   const writeRolePackage = async (roleId, eventEnum) => {
     const roleDir = path.join(roleRootDir, roleId);
@@ -689,8 +698,6 @@ test("nl2mmd validator ignores ERROR* edges when checking role output event enum
 %% system.id=test.nl2mmd.error.edge
 %% system.version=0.1.0
 %% law.global=law.test
-%% exec.bind.worker=profile.worker
-%% exec.bind.compensate=profile.compensate
 start[开始] -->|START| worker[Role:worker]
 worker[Role:worker] -->|READY| end[结束]
 worker[Role:worker] -->|ERROR.TOOL_EXECUTION_TIMEOUT| compensate[Role:compensate]
@@ -703,6 +710,13 @@ compensate[Role:compensate] -->|RECOVERED| end[结束]
       workdir: tempRoot,
       roleRootDir,
       modelRootDir,
+      modelSelection: {
+        configVersion: "3",
+        roles: {
+          worker: { backend: "codex", modelId: "gpt-test" },
+          compensate: { backend: "codex", modelId: "gpt-test" }
+        }
+      },
       roleCatalog: [],
       modelCatalog: [],
       lawIds: [],
@@ -731,6 +745,10 @@ test("Start flows define entry roles and only roles directly connected to End co
 %% law.global=law.test
 %% end.join.mode=quorum_of
 %% end.join.min=2
+%% model.bind.alpha=model.fast
+%% model.bind.beta=model.fast
+%% model.bind.gamma=model.fast
+%% model.bind.orphan=model.fast
 start[开始] -->|START| alpha[Role:alpha]
 start[开始] -->|START| beta[Role:beta]
 alpha[Role:alpha] -->|READY| end[结束]

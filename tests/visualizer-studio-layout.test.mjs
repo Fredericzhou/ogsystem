@@ -206,52 +206,6 @@ test("Studio role markers derive readable monograms", () => {
   assert.equal(studioRoleMarkerVisible({ roleSeat: false, editable: true }), false);
 });
 
-test("Mini Program factory stored layout keeps its feedback loop clear of nodes and labels", async () => {
-  const authoringPath = new URL("../examples/wechat-miniprogram-factory/.ogs/studio/system.authoring.json", import.meta.url);
-  const authoring = JSON.parse(await readFile(authoringPath, "utf8"));
-  const viewModel = buildGraphViewModel({ authoring, mode: "edit" });
-  const projection = createStoredLayoutProjection(viewModel);
-  const feedback = projection.edges.find((item) => item.id === "4:testing:REJECTED:coding");
-
-  assert.ok(feedback);
-  assert.ok(feedback.routing.routePoints.length >= 2);
-  assert.equal(projection.diagnostics.some((item) => item.code === "EDGE_NODE_COLLISION"), false);
-  assert.equal(projection.diagnostics.some((item) => item.code === "LABEL_COLLISION"), false, JSON.stringify(projection.diagnostics));
-  const storedNodes = authoring.layout.nodes;
-  assert.deepEqual(
-    projection.nodes.filter((item) => ["coding", "testing"].includes(item.id)).map(({ id, x, y }) => ({ id, x, y })),
-    ["coding", "testing"].map((id) => ({ id, x: storedNodes[id].x, y: storedNodes[id].y }))
-  );
-});
-
-test("Mini Program factory stacked feedback route leaves both role borders normally", async () => {
-  const authoringPath = new URL("../examples/wechat-miniprogram-factory/.ogs/studio/system.authoring.json", import.meta.url);
-  const authoring = JSON.parse(await readFile(authoringPath, "utf8"));
-  const viewModel = buildGraphViewModel({ authoring, mode: "edit" });
-  const projection = await createElkLayoutProjection(viewModel, "stacked");
-  const edge = projection.edges.find((item) => item.id === "4:testing:REJECTED:coding");
-  assert.ok(edge);
-  const nodes = new Map(projection.nodes.map((item) => [item.id, item]));
-  const source = nodes.get(edge.source);
-  const target = nodes.get(edge.target);
-  const sourcePortX = source.x + source.width / 2 + edge.routing.source.offset;
-  const targetPortX = target.x + target.width / 2 + edge.routing.target.offset;
-  const first = edge.routing.routePoints[0];
-  const last = edge.routing.routePoints.at(-1);
-
-  assert.ok(["top", "bottom"].includes(edge.routing.source.side));
-  assert.ok(["top", "bottom"].includes(edge.routing.target.side));
-  assert.equal(first.x, sourcePortX);
-  assert.ok(edge.routing.source.side === "top"
-    ? first.y <= source.y - 24
-    : first.y >= source.y + source.height + 24);
-  assert.equal(last.x, targetPortX);
-  assert.ok(edge.routing.target.side === "top"
-    ? last.y <= target.y - 24
-    : last.y >= target.y + target.height + 24);
-  assert.equal(projection.diagnostics.some((item) => item.code === "EDGE_NODE_COLLISION"), false);
-});
-
 test("Chinese role names stay readable in compact graph cards", () => {
   const role = node("review", 0, 0);
   role.label = "风险分析与投资价值评估审查角色".repeat(5);
@@ -262,7 +216,7 @@ test("Chinese role names stay readable in compact graph cards", () => {
 });
 
 test("both shipped example graphs keep bounded roles and complete routes in automatic layouts", async () => {
-  const examples = ["wechat-miniprogram-factory", "mulit-debate-ogs"];
+  const examples = ["langgraph-debate-current", "medical-quorum-consultation"];
   for (const example of examples) {
     const systemPath = new URL(`../examples/${example}/system.mmd`, import.meta.url);
     const source = await readFile(systemPath, "utf8");

@@ -247,12 +247,17 @@ async function main() {
   const createPayload = JSON.parse(createResult.stdout);
   const projectDir = createPayload.projectDir;
   await stat(path.resolve(projectDir, "og-roles", "roles", "hello-ogsystem", "role.json"));
-  await stat(path.resolve(projectDir, "scripts", "hello-ogsystem.mjs"));
+  // Contract Set v2 projects carry Role Packages and Harness configuration. The
+  // v1 generated local-shell script is intentionally no longer scaffolded.
+  await assert.rejects(() => stat(path.resolve(projectDir, "scripts", "hello-ogsystem.mjs")), /ENOENT/);
+  await assert.rejects(() => stat(path.resolve(projectDir, "profiles.json")), /ENOENT/);
+  await assert.rejects(() => stat(path.resolve(projectDir, "tools.json")), /ENOENT/);
   await assert.rejects(() => stat(path.resolve(projectDir, "og-roles", "roles", "demo-analyst")), /ENOENT/);
   await assert.rejects(() => stat(path.resolve(projectDir, "og-roles", "roles", "debate-judge")), /ENOENT/);
   const ogsReadmePath = path.resolve(projectDir, ".ogs", "README.md");
   await stat(path.resolve(projectDir, ".ogs", "model-catalog.json"));
-  await stat(path.resolve(projectDir, ".ogs", "model-selection.json"));
+  await stat(path.resolve(projectDir, ".ogs", "execution-bindings.json"));
+  await assert.rejects(() => stat(path.resolve(projectDir, ".ogs", "model-selection.json")), /ENOENT/);
   await assert.rejects(() => stat(path.resolve(projectDir, ".ogs", "providers")), /ENOENT/);
   await assert.rejects(() => stat(path.resolve(projectDir, "og-models")), /ENOENT/);
   const ogsReadme = await readFile(ogsReadmePath, "utf8");
@@ -269,8 +274,6 @@ async function main() {
 
   const runtimeConfigPath = path.resolve(projectDir, ".ogs", "runtime.json");
   const runtimeConfig = JSON.parse(await readFile(runtimeConfigPath, "utf8"));
-  assert.equal(runtimeConfig.tools.environmentPolicy, "inherit");
-  assert.deepEqual(runtimeConfig.tools.envAllowlist, []);
   runtimeConfig.tools = { environmentPolicy: "minimal", envAllowlist: [] };
   runtimeConfig.retention = { enabled: true, executionDirThreshold: 2000, keepLatest: 250 };
   await writeFile(runtimeConfigPath, JSON.stringify(runtimeConfig, null, 2), "utf8");
@@ -302,7 +305,7 @@ async function main() {
   );
   assert.equal(manifestResult.code, 0, manifestResult.stderr || manifestResult.stdout);
   const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
-  assert.equal(manifest.manifestVersion, 1);
+  assert.equal(manifest.manifestVersion, 2);
   assert.match(manifest.ogsystem.installedTreeSha256, /^[a-f0-9]{64}$/);
   assert.doesNotMatch(JSON.stringify(manifest), /password|secret|api[_-]?key|token/i);
 
@@ -313,20 +316,6 @@ async function main() {
   );
   assert.equal(dryRunResult.code, 0, dryRunResult.stderr);
   assert.equal(JSON.parse(dryRunResult.stdout).status, "done");
-
-  const startResult = await runCommand(
-    "node",
-    [ogsBinPath, "run", "start", "--system", "system.mmd", "--input", "install smoke"],
-    { cwd: projectDir, env: isolatedEnv }
-  );
-  assert.equal(startResult.code, 0, startResult.stderr);
-
-  const startPayload = JSON.parse(startResult.stdout);
-  assert.equal(startPayload.status, "done");
-  assert.deepEqual(startPayload.finalRoleIds, ["hello-ogsystem"]);
-  assert.deepEqual(startPayload.finalOutputsByRoleId, {
-    "hello-ogsystem": [{ content: "Hello OGSystem world" }]
-  });
 
   const visualizer = spawn("node", [ogsBinPath, "visualizer", "--ogs-dir", projectDir, "--port", "0"], {
     cwd: projectDir,

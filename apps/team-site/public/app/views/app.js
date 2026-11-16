@@ -1297,6 +1297,10 @@ async function renderHarnessRepository() {
     const toolHost = dialog.querySelector("[data-harness-tools]");
     const capHost = dialog.querySelector("[data-harness-capabilities]");
     const statusHost = dialog.querySelector("[data-harness-editor-status]");
+    const toolHint = dialog.querySelector("[data-harness-tool-hint]");
+    if (toolHint) toolHint.textContent = en
+      ? "Choose from the Backend tool catalog. Saving does not run a model; template verification performs the minimal contract checks."
+      : "从底座工具清单中选择；保存不会调用模型，模板验证只执行最小合同检查。";
     const backendSelect = form.elements.backend;
     const selectedTools = new Set(item.allowedTools || []);
     const showDiscovery = async () => {
@@ -1305,8 +1309,14 @@ async function renderHarnessRepository() {
         const payload = await discover(backendSelect.value, form.elements.model.value);
         const sourceInfo = payload.source || payload.sources?.find((entry) => entry.backend === backendSelect.value) || {};
         const capabilities = sourceInfo.capabilities || payload.capabilities || {};
-        const tools = payload.verifiedTools || payload.nativeTools?.verifiedTools || payload.nativeTools?.tools || payload.tools || [];
-        toolHost.innerHTML = tools.length ? tools.map((tool) => { const name = typeof tool === "string" ? tool : tool.name || tool.id; return `<label class="harness-tool-option"><input type="checkbox" name="allowedTools" value="${esc(name)}"${selectedTools.has(name) ? " checked" : ""}><span>${esc(name)}</span></label>`; }).join("") : `<span class="empty-note">${en ? "No verified native tools. Empty tool set is valid." : "没有已验证原生工具；空工具集仍可使用。"}</span>`;
+        const nativeStatus = payload.nativeTools?.status || "ready";
+        const nativeDetail = payload.nativeTools?.detail || "";
+        const tools = Array.isArray(payload.nativeTools?.verifiedTools)
+          ? payload.nativeTools.verifiedTools.filter((tool) => typeof tool === "string" && tool.trim())
+          : [];
+        toolHost.innerHTML = tools.length
+          ? tools.map((tool) => { const name = typeof tool === "string" ? tool : tool.name || tool.id; return `<label class="harness-tool-option"><input type="checkbox" name="allowedTools" value="${esc(name)}"${selectedTools.has(name) ? " checked" : ""}><span>${esc(name)}</span></label>`; }).join("")
+          : `<span class="empty-note">${nativeStatus === "unavailable" && nativeDetail ? esc(nativeDetail) : (en ? "No verified native tools. Empty tool set is valid." : "没有已验证原生工具；空工具集仍可使用。")}</span>`;
         capHost.innerHTML = Object.entries({ ...(sourceInfo.resources || {}), ...(sourceInfo.permission || {}), ...(sourceInfo.modes || {}), ...capabilities }).filter(([, value]) => value !== undefined && value !== null).map(([key, value]) => `<span><strong>${esc(key)}</strong> ${esc(typeof value === "object" ? JSON.stringify(value) : String(value))}</span>`).join("") || `<span class="empty-note">${en ? "No capability details reported." : "底座未报告更多能力。"}</span>`;
       } catch (error) { toolHost.innerHTML = `<span class="harness-template-error">${esc(error.message || (en ? "Discovery failed." : "能力发现失败。"))}</span>`; capHost.innerHTML = ""; }
     };
@@ -7476,8 +7486,8 @@ function syncRoute() {
   else if (path === "/teams") { state.view = "workspace"; void renderProjectLibrary(pageRequest); }
   else if (path === "/studio") { state.view = "studio"; renderPageFrame($("#studio-view"), "A", renderStudioOverview(pageRequest)); }
   else if (path === "/platform/role-sources") { state.view = "platform"; renderPageFrame($("#platform-view"), "D", renderPlatformRoleSources($("#platform-view"), state.locale)); }
-  else if (path === "/platform/harnesses") { state.view = "platform"; renderPageFrame($("#platform-view"), "D", renderHarnessRepository()); }
-  else if (path === "/platform/models") { history.replaceState({}, "", "/platform/harnesses"); state.view = "platform"; renderPageFrame($("#platform-view"), "D", renderHarnessRepository()); }
+  else if (path === "/platform/harnesses") { state.view = "platform"; renderHarnessRepository(); }
+  else if (path === "/platform/models") { history.replaceState({}, "", "/platform/harnesses"); state.view = "platform"; renderHarnessRepository(); }
   else if (path === "/platform") { state.view = "platform"; renderPageFrame($("#platform-view"), "D", renderPlatformConfig(pageRequest)); }
   else if (path === "/examples") state.view = "examples";
   else if (path === "/history") { state.view = "history"; const historyView = $("#history-view"); if (historyView) historyView.dataset.template = "A"; void renderHistory(pageRequest); }

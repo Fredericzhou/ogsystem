@@ -943,7 +943,7 @@ The current project-level mapping is:
 | Codex | registered and runnable | App Server `sandboxPolicy` / `approvalPolicy`; execution staging becomes the writable root | filesystem and command only when the corresponding policy is enforceable; network stays denied unless explicitly verified |
 | OpenCode | registered for text-only execution; filesystem/process degraded | SDK session tools and provider protocol; native cwd does not prove absolute-path/symlink isolation | filesystem/process tools are denied until a staging sandbox is verified; network stays denied |
 | ACP-capable Backend | protocol-compatible when the Adapter and probe are present | ACP session, capability discovery, and permission request callbacks | `request` protocol is normalized to allow/deny; missing resource enforcement remains denied |
-| Pi | registered for text-only execution; filesystem/process degraded | RPC/ACP session and native capability probe | filesystem/process tools are denied until per-execution staging isolation is verified; unknown tools and network remain denied |
+| Pi | registered for text-only execution; filesystem/process degraded | Pi public SDK tool definitions plus RPC session mapping | filesystem/process tools are denied until per-execution staging isolation is verified; unknown, MCP, extension tools and network remain denied |
 | Kimi | registered, Adapter/probe required per installed CLI or protocol | Backend-native or ACP session mapping | unavailable capabilities remain unverified until the selected mapping passes readiness |
 | Claude | no adapter currently registered | no OGS native mapping yet | unavailable in the verified Backend catalog until an adapter and probe exist |
 

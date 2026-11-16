@@ -36,6 +36,18 @@ OGSystem 的核心定位是**多智能体拓扑编排、企业法则（Law）治
 
 当前后端注册表实际包含 `opencode`、`codex`、`ollama`、`pi`、`qwen` 和 `kimi`。Claude Code、Cursor Agent 等可作为外部对照，不代表 OGS 已经提供对应 adapter。
 
+### Discovery implementation contract
+
+Harness 编辑器展示的是 Backend 的工具目录，不是模型调用结果。每个 Adapter 必须使用底座公开的 SDK 或协议能力完成目录发现，并把动态扩展与可冻结的内置工具分开：
+
+| Backend | Official discovery source | OGS projection rule |
+| --- | --- | --- |
+| Codex | `codex app-server` JSON-RPC protocol and its documented `item/started`/`item/completed` native item kinds | The app-server has no tool-list RPC, so the Adapter exposes the protocol-defined `apply_patch` and `exec_command` IDs. No model prompt or API key is required for discovery. |
+| OpenCode | `@opencode-ai/sdk/v2` `client.tool.ids({ directory })` | Use the running server's native registry, de-duplicate and discard the reserved `invalid` entry. Provider/model inference is not used to build the list. |
+| Pi | `@earendil-works/pi-coding-agent` public `createCodingTools` and `createReadOnlyTools` definitions; CLI `--tools` contract as fallback | Project only built-in SDK/CLI tool names (`read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`; platform-specific additions may be reported). MCP and extension tools remain dynamic and require a separate refresh. |
+
+Discovery is read-only and must be bounded. Saving a Harness draft never runs a model. Template verification performs only the minimum contract checks: selected Backend/model exists in the local catalog, requested resources are enforceable, and `allowedTools` is a subset of the discovered Backend tool IDs. A model prompt probe is not a tool-discovery mechanism.
+
 本文的两个语义区必须分开阅读。本文不定义 Role Contract、Semantic IR、Flow 或 Harness
 的核心对象；这些定义只能来自 [Role Execution Architecture](role-execution-architecture.md)：
 

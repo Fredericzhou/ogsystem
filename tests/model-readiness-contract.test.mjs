@@ -45,8 +45,25 @@ async function createFixture(options = {}) {
     await writeFile(path.join(workdir, ".ogs", "model-catalog.json"), JSON.stringify(options.catalog), "utf8");
   }
   await writeFile(
-    path.join(workdir, ".ogs", "model-selection.json"),
-    JSON.stringify({ configVersion: "3", roles: { writer: { backend: "opencode", modelId: "pinned" } } }),
+    path.join(workdir, ".ogs", "execution-bindings.json"),
+    JSON.stringify({
+      ogsContractVersion: 2,
+      schemaVersion: 1,
+      harnessTemplates: {
+        pinned: {
+          ogsContractVersion: 2,
+          schemaVersion: 1,
+          kind: "harness",
+          templateId: "pinned",
+          backend: "opencode",
+          model: "pinned",
+          allowedTools: [],
+          environment: { filesystem: "staged", process: "allow", network: "deny", limits: { timeoutMs: 120000, maxOutputBytes: 65536 } }
+        }
+      },
+      defaults: { harnessTemplate: "pinned" },
+      roles: { writer: { kind: "harness", harnessTemplate: "pinned" } }
+    }),
     "utf8"
   );
   return workdir;

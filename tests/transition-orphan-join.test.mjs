@@ -7,18 +7,27 @@ import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { runSystemWithAdapter } from "../dist/runtime/adapter.js";
 import { latestRoleContract } from "../tests-support/role-fixture.mjs";
 
-async function writeDefaultModelSelection(workdir) {
+async function writeDefaultHarnessBindings(workdir, roleIds) {
   await writeFile(
-    path.resolve(workdir, ".ogs", "model-selection.json"),
+    path.resolve(workdir, ".ogs", "execution-bindings.json"),
     JSON.stringify(
       {
-        configVersion: "3",
-        defaults: {
-          backend: "opencode",
-          modelId: "opencode/gpt-5-nano",
-          timeoutMs: 120000,
-          maxOutputBytes: 65536
-        }
+        ogsContractVersion: 2,
+        schemaVersion: 1,
+        harnessTemplates: {
+          "test-opencode": {
+            ogsContractVersion: 2,
+            schemaVersion: 1,
+            kind: "harness",
+            templateId: "test-opencode",
+            backend: "codex",
+            model: "gpt-6-luna",
+            allowedTools: [],
+            environment: { filesystem: "staged", process: "allow", network: "deny", limits: { timeoutMs: 120000, maxOutputBytes: 65536 } }
+          }
+        },
+        defaults: { harnessTemplate: "test-opencode" },
+        roles: Object.fromEntries(roleIds.map((roleId) => [roleId, { kind: "harness", harnessTemplate: "test-opencode" }]))
       },
       null,
       2
@@ -124,7 +133,7 @@ test("transition mode fails closed when a skipped flow leaves a join orphaned", 
     ),
     "utf8"
   );
-  await writeDefaultModelSelection(tempRoot);
+  await writeDefaultHarnessBindings(tempRoot, ["dispatcher", "a", "b", "review"]);
 
   await writeModelBoundRole({
     rolesRoot,

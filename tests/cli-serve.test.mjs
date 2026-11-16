@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
-import { mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 
 const cliPath = path.resolve("dist/runtime/cli.js");
 
@@ -11,6 +11,8 @@ test("ogs serve starts from ogs-dir defaults and exposes persisted Sessions", as
   const ogsDir = await mkdtemp(path.join(os.tmpdir(), "ogs-serve-cli-root-"));
   const workspaceDir = await mkdtemp(path.join(os.tmpdir(), "ogs-serve-cli-workspace-"));
   await writeFile(path.resolve(ogsDir, "system.mmd"), await readFile(path.resolve("examples/target-model-binding-system.mmd"), "utf8"), "utf8");
+  await mkdir(path.resolve(ogsDir, ".ogs"), { recursive: true });
+  await writeFile(path.resolve(ogsDir, ".ogs", "execution-bindings.json"), await readFile(path.resolve(".ogs/execution-bindings.json"), "utf8"), "utf8");
   const child = spawn(process.execPath, [cliPath, "serve", "--ogs-dir", ogsDir, "--workspace-dir", workspaceDir, "--port", "0"], {
     cwd: process.cwd(),
     stdio: ["ignore", "pipe", "pipe"]
@@ -35,7 +37,7 @@ test("ogs serve starts from ogs-dir defaults and exposes persisted Sessions", as
     });
     const health = await fetch(`${url}/healthz`);
     assert.equal(health.status, 200);
-    const created = await fetch(`${url}/api/v1/sessions`, { method: "POST" });
+    const created = await fetch(`${url}/api/v2/sessions`, { method: "POST" });
     assert.equal(created.status, 201);
     const session = await created.json();
     const sessionFiles = await readdir(path.resolve(ogsDir, ".ogs", "sessions", session.sessionId));

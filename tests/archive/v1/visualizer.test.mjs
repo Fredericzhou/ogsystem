@@ -2301,6 +2301,8 @@ test("visualizer server exposes Mermaid workbench APIs and project export", asyn
     assert.equal(exportResponse.status, 200);
     const exported = await exportResponse.json();
     assert.equal(exported.mode, "team-v2");
+    assert.equal(exported.ogsContractVersion, 2);
+    assert.equal(exported.releaseManifest.ogsContractVersion, 2);
     assert.equal(exported.releaseManifest.manifestVersion, 1);
     assert.equal(exported.releaseManifest.systemPath, "system.mmd");
     assert.match(exported.releaseManifest.systemHash, /^[a-f0-9]{64}$/);
@@ -3459,6 +3461,7 @@ test("project persistence keeps Save As and bundle import from replacing canonic
       workdir,
       bundle: {
         mode: "team-v2",
+        ogsContractVersion: 2,
         team: { systemSource: canonicalSource, executableFiles: [] }
       }
     });
@@ -3467,6 +3470,19 @@ test("project persistence keeps Save As and bundle import from replacing canonic
   } finally {
     await rm(workdir, { recursive: true, force: true });
   }
+});
+
+test("Team Package rejects a container without the v2 contract marker", async () => {
+  await assert.rejects(
+    () => loadTeamPackage({
+      workdir: "/tmp/ogsystem-v2-package-rejection",
+      bundle: {
+        mode: "team-v2",
+        team: { systemSource: "flowchart TD\nstart --> end\n", executableFiles: [] }
+      }
+    }),
+    { message: "PROJECT_PACKAGE_VERSION_UNSUPPORTED: expected team-v2 with ogsContractVersion=2." }
+  );
 });
 
 test("Team Package carries project-local execution helpers into isolated runs", async () => {

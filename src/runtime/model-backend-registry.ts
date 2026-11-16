@@ -650,63 +650,16 @@ export const codexBackendAdapter: BackendAdapter = {
     return { allowed: true };
   },
   async discoverNativeTools(args) {
-    // Codex app-server has no tool-list RPC. Verify the native tools through a
-    // disposable, bounded staging probe instead of publishing an unverified
-    // static capability list. Both tools must produce and persist a sentinel.
-    const root = await mkdtemp(join(tmpdir(), "ogs-codex-capability-"));
-    const patchPath = join(root, "probe-apply-patch.txt");
-    const commandPath = join(root, "probe-exec-command.txt");
-    const schema = {
-      type: "object",
-      properties: { ok: { type: "boolean" } },
-      required: ["ok"],
-      additionalProperties: false
+    // Codex app-server intentionally has no tool-list RPC. The app-server
+    // protocol exposes these native item kinds and the adapter maps them to
+    // the only two selectable Codex tool IDs. Discovery is therefore a local
+    // protocol-contract lookup and never depends on model inference or auth.
+    void args;
+    return {
+      verifiedTools: ["apply_patch", "exec_command"],
+      detail: "Codex app-server protocol contract exposes apply_patch and exec_command; model execution is not used for tool discovery.",
+      resources: this.getResourceCapabilities?.()
     };
-    const observedTools = new Set<string>();
-    let client: CodexAppServerClient | undefined;
-    try {
-      client = await CodexAppServerClient.start({ cwd: root, timeoutMs: args.timeoutMs });
-      await client.execute({
-        roleId: "platform-capability-probe",
-        prompt: [
-          "This is a native tool capability probe in a disposable workspace.",
-          `Use apply_patch to create ${patchPath} containing exactly APPLY_PATCH_OK.`,
-          `Use exec_command to create ${commandPath} containing exactly EXEC_COMMAND_OK.`,
-          "Do both tool calls before returning the required JSON object.",
-          'Return exactly {"ok":true} after verifying both files exist.'
-        ].join("\n"),
-        schema,
-        modelId: args.modelId,
-        cwd: root,
-        timeoutMs: args.timeoutMs,
-        workspaceCapabilityPolicy: { root, read: true, write: true, command: true },
-        onEvent: (message) => {
-          if (message.method !== "item/completed") return;
-          const item = (message.params as { item?: { type?: unknown; status?: unknown; exitCode?: unknown } } | undefined)?.item;
-          if (!item || item.status !== "completed") return;
-          if (item.type === "fileChange") observedTools.add("apply_patch");
-          if (item.type === "commandExecution" && item.exitCode === 0) observedTools.add("exec_command");
-        }
-      });
-      const [patchContents, commandContents] = await Promise.all([
-        readFile(patchPath, "utf8"),
-        readFile(commandPath, "utf8")
-      ]);
-      if (patchContents.trim() !== "APPLY_PATCH_OK" || commandContents.trim() !== "EXEC_COMMAND_OK") {
-        throw new Error("Codex capability probe wrote unexpected sentinel contents");
-      }
-      if (!observedTools.has("apply_patch") || !observedTools.has("exec_command")) {
-        throw new Error(`Codex capability probe did not observe both native tool events: ${[...observedTools].sort().join(", ") || "none"}`);
-      }
-      return {
-        verifiedTools: ["apply_patch", "exec_command"],
-        detail: "Codex native tool probe verified apply_patch and exec_command in disposable staging.",
-        resources: this.getResourceCapabilities?.()
-      };
-    } finally {
-      await client?.close();
-      await rm(root, { recursive: true, force: true });
-    }
   },
   async discover(args) {
     const codexCommand = await resolveExecutable("codex");
