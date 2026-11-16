@@ -1690,6 +1690,9 @@ export function planHumanReviewDecisionTransition(args: ReviewDecisionTransition
   if (args.review.kind === "loop_budget") {
     return buildLoopBudgetDecisionTransition(args);
   }
+  if (args.decision.decision === "retry") {
+    throw new Error(`[GRAPH_REVIEW_RETRY_UNAVAILABLE] Human review ${args.review.reviewId} has no retry grant or exception policy binding`);
+  }
   const node = getExecutionPlanNode(args.plan, args.review.roleId);
   const rolePackage = args.rolePackagesByRoleId.get(args.review.roleId);
   if (!rolePackage) throw new Error(`[IR_CONTRACT_INVALID] Role Contract is missing for review role ${args.review.roleId}`);
@@ -1819,7 +1822,12 @@ export function planHumanReviewDecisionTransition(args: ReviewDecisionTransition
     };
   }
 
-  const targetRoleId = args.review.spec.reworkTargetRoleId;
+  const routedEvent = args.decision.decision === "reject" ? "REJECTED" : "NEEDS_REWORK";
+  const routedTargets = selectRoutingTargets({ node, selectedEvent: routedEvent, mode: "ok" });
+  if (routedTargets.length !== 1) {
+    throw new Error(`[GRAPH_REVIEW_ROUTE_AMBIGUOUS] Human review ${args.review.reviewId} decision ${args.decision.decision} must resolve exactly one ${routedEvent} edge`);
+  }
+  const targetRoleId = routedTargets[0];
   const nextLoopIteration = getTargetLoopIteration({
     targetRoleId,
     currentLoopIteration: args.review.loopIteration,
@@ -1848,7 +1856,7 @@ export function planHumanReviewDecisionTransition(args: ReviewDecisionTransition
     sessionLineageId,
     parentBranchId: args.review.branchId,
     activatedByRoleId: args.review.roleId,
-    activatedByEvent: "NEEDS_REWORK"
+    activatedByEvent: routedEvent
   });
   return {
     update: {
@@ -1906,7 +1914,7 @@ export function planHumanReviewDecisionTransition(args: ReviewDecisionTransition
     },
     events: [
       {
-        type: "human_review_rework_requested",
+        type: args.decision.decision === "reject" ? RUNTIME_EVENT_HUMAN_REVIEW_REJECTED : "human_review_rework_requested",
         at: args.decision.decidedAt,
         roleId: args.review.roleId,
         branchId: args.review.branchId,
