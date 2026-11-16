@@ -1,0 +1,26 @@
+{
+  "ogsContractVersion": 2,
+  "schemaVersion": 1,
+  "harnessTemplates": {
+    "default-codex": {
+      "ogsContractVersion": 2,
+      "schemaVersion": 1,
+      "kind": "harness",
+      "templateId": "default-codex",
+      "backend": "codex",
+      "model": "gpt-6-luna",
+      "allowedTools": [],
+      "environment": {
+        "filesystem": "staged",
+        "process": "allow",
+        "network": "deny",
+        "limits": { "timeoutMs": 600000, "maxOutputBytes": 131072 }
+      }
+    }
+  },
+  "defaults": { "harnessTemplate": "default-codex" },
+  "roles": {
+    "debate-minimalist": { "kind": "harness", "harnessTemplate": "default-codex" },
+    "debate-judge": { "kind": "harness", "harnessTemplate": "default-codex" }
+  }
+}

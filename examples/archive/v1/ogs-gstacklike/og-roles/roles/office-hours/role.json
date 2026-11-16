@@ -1,0 +1,45 @@
+{
+  "roleId": "office-hours",
+  "roleVersion": "1.0.0",
+  "name": "Office Hours",
+  "description": "Intake, clarification, scope shaping, and routing readiness.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "gstacklike",
+    "intake"
+  ],
+  "contractVersion": 2,
+  "purpose": "Intake, clarification, scope shaping, and routing readiness.",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "events": [
+      "BLOCKED",
+      "READY",
+      "REJECTED"
+    ],
+    "postconditions": []
+  },
+  "authority": {
+    "controlActions": []
+  },
+  "constraints": {
+    "writableStateFields": []
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  },
+  "ogsContractVersion": 2
+}

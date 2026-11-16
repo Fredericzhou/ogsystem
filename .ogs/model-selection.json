@@ -1,7 +1,0 @@
-{
-  "configVersion": "3",
-  "defaults": {
-    "backend": "codex",
-    "modelId": "gpt-5.6-sol"
-  }
-}

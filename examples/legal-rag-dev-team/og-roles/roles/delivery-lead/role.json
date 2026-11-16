@@ -9,7 +9,6 @@
     "legal-rag",
     "delivery"
   ],
-  "contractVersion": 1,
   "purpose": "Merge the specialist workstreams into a phased implementation plan, staffing proposal, and delivery roadmap.",
   "responsibility": {
     "kind": "atomic",
@@ -21,22 +20,18 @@
     "preconditions": []
   },
   "outputs": {
-    "events": [
-      "READY"
-    ],
-    "postconditions": []
+    "postconditions": [],
+    "decisionCriteria": []
   },
   "authority": {
     "controlActions": [
       "approve",
-      "pause",
-      "rework",
-      "terminate"
+      "reject",
+      "rework"
     ]
   },
   "constraints": {
-    "writableStateFields": [],
-    "allowedTools": []
+    "writableStateFields": []
   },
   "failure": {
     "retryableErrorCodes": [],
@@ -44,5 +39,7 @@
   },
   "audit": {
     "requiredFields": []
-  }
+  },
+  "ogsContractVersion": 2,
+  "schemaVersion": 2
 }

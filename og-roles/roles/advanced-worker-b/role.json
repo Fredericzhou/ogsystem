@@ -14,7 +14,6 @@
     "starter",
     "parallel"
   ],
-  "contractVersion": 1,
   "purpose": "Completes branch B for the advanced starter template.",
   "responsibility": {
     "kind": "atomic",
@@ -26,19 +25,14 @@
     "preconditions": []
   },
   "outputs": {
-    "events": [
-      "READY"
-    ],
-    "postconditions": []
+    "postconditions": [],
+    "decisionCriteria": []
   },
   "authority": {
     "controlActions": []
   },
   "constraints": {
-    "writableStateFields": [],
-    "allowedTools": [
-      "tool.console.print"
-    ]
+    "writableStateFields": []
   },
   "failure": {
     "retryableErrorCodes": [],
@@ -46,5 +40,7 @@
   },
   "audit": {
     "requiredFields": []
-  }
+  },
+  "ogsContractVersion": 2,
+  "schemaVersion": 2
 }

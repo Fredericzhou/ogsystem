@@ -1,0 +1,39 @@
+{
+  "roleId": "planner",
+  "roleVersion": "gate-c-1",
+  "name": "Software Planner",
+  "description": "Plans a small software change with explicit acceptance criteria.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "purpose": "Define an implementable software change and its acceptance checks.",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [
+      "acceptance plan"
+    ],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "postconditions": [],
+    "decisionCriteria": []
+  },
+  "authority": {
+    "controlActions": []
+  },
+  "constraints": {
+    "writableStateFields": []
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  },
+  "ogsContractVersion": 2,
+  "schemaVersion": 2
+}

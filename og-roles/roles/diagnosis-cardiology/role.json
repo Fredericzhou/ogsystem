@@ -13,7 +13,6 @@
     "diagnosis",
     "cardiology"
   ],
-  "contractVersion": 1,
   "purpose": "Analyzes the case from a cardiology perspective and emits structured findings.",
   "responsibility": {
     "kind": "atomic",
@@ -25,17 +24,14 @@
     "preconditions": []
   },
   "outputs": {
-    "events": [
-      "READY"
-    ],
-    "postconditions": []
+    "postconditions": [],
+    "decisionCriteria": []
   },
   "authority": {
     "controlActions": []
   },
   "constraints": {
-    "writableStateFields": [],
-    "allowedTools": []
+    "writableStateFields": []
   },
   "failure": {
     "retryableErrorCodes": [],
@@ -43,5 +39,7 @@
   },
   "audit": {
     "requiredFields": []
-  }
+  },
+  "ogsContractVersion": 2,
+  "schemaVersion": 2
 }

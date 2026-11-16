@@ -1,0 +1,39 @@
+{
+  "roleId": "writer",
+  "roleVersion": "gate-c-1",
+  "name": "Documentation Writer",
+  "description": "Writes a reviewable Markdown business document in staged storage.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "purpose": "Produce a structured and traceable Markdown document for its audience.",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [
+      "document draft"
+    ],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "postconditions": [],
+    "decisionCriteria": []
+  },
+  "authority": {
+    "controlActions": []
+  },
+  "constraints": {
+    "writableStateFields": []
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  },
+  "ogsContractVersion": 2,
+  "schemaVersion": 2
+}

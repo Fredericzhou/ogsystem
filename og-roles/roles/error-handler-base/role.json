@@ -10,7 +10,6 @@
     "error-edge",
     "compensation"
   ],
-  "contractVersion": 1,
   "purpose": "Template role for handling runtime failures and deciding compensation actions.",
   "responsibility": {
     "kind": "atomic",
@@ -22,21 +21,14 @@
     "preconditions": []
   },
   "outputs": {
-    "events": [
-      "BLOCKED",
-      "READY",
-      "REJECTED"
-    ],
-    "postconditions": []
+    "postconditions": [],
+    "decisionCriteria": []
   },
   "authority": {
     "controlActions": []
   },
   "constraints": {
-    "writableStateFields": [],
-    "allowedTools": [
-      "tool.error-handler"
-    ]
+    "writableStateFields": []
   },
   "failure": {
     "retryableErrorCodes": [],
@@ -44,5 +36,7 @@
   },
   "audit": {
     "requiredFields": []
-  }
+  },
+  "ogsContractVersion": 2,
+  "schemaVersion": 2
 }

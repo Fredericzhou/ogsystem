@@ -13,7 +13,6 @@
     "debate",
     "coordination"
   ],
-  "contractVersion": 1,
   "purpose": "Frames the debate round and dispatches one shared brief to both debaters.",
   "responsibility": {
     "kind": "atomic",
@@ -25,17 +24,14 @@
     "preconditions": []
   },
   "outputs": {
-    "events": [
-      "READY"
-    ],
-    "postconditions": []
+    "postconditions": [],
+    "decisionCriteria": []
   },
   "authority": {
     "controlActions": []
   },
   "constraints": {
-    "writableStateFields": [],
-    "allowedTools": []
+    "writableStateFields": []
   },
   "failure": {
     "retryableErrorCodes": [],
@@ -43,5 +39,7 @@
   },
   "audit": {
     "requiredFields": []
-  }
+  },
+  "ogsContractVersion": 2,
+  "schemaVersion": 2
 }

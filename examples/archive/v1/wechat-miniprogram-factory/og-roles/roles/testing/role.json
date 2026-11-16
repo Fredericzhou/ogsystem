@@ -1,0 +1,45 @@
+{
+  "roleId": "testing",
+  "roleVersion": "1.0.0",
+  "name": "Testing",
+  "description": "Checks project structure and exercises page state and local persistence.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "contractVersion": 2,
+  "purpose": "Return READY only when all mini-program acceptance checks pass.",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [
+      "test evidence"
+    ],
+    "contributes": [],
+    "doesNotOwn": [
+      "source edits",
+      "waiving failed checks"
+    ]
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "events": [
+      "READY",
+      "REJECTED"
+    ],
+    "postconditions": []
+  },
+  "authority": {
+    "controlActions": []
+  },
+  "constraints": {
+    "writableStateFields": []
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  },
+  "ogsContractVersion": 2
+}

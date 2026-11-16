@@ -1,0 +1,41 @@
+{
+  "roleId": "implementer",
+  "roleVersion": "gate-c-1",
+  "name": "Software Implementer",
+  "description": "Implements and verifies a small software change in staged storage.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "purpose": "Implement a tested software change and publish its source artifact.",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [
+      "software change"
+    ],
+    "contributes": [
+      "verification"
+    ],
+    "doesNotOwn": []
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "postconditions": [],
+    "decisionCriteria": []
+  },
+  "authority": {
+    "controlActions": []
+  },
+  "constraints": {
+    "writableStateFields": []
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  },
+  "ogsContractVersion": 2,
+  "schemaVersion": 2
+}

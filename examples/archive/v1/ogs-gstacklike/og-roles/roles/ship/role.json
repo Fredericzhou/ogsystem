@@ -1,0 +1,49 @@
+{
+  "roleId": "ship",
+  "roleVersion": "1.0.0",
+  "name": "Ship",
+  "description": "Pre-release ship coordination that produces deploy-ready output for runtime review.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "gstacklike",
+    "ship"
+  ],
+  "contractVersion": 2,
+  "purpose": "Pre-release ship coordination that produces deploy-ready output for runtime review.",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "events": [
+      "BLOCKED",
+      "READY"
+    ],
+    "postconditions": []
+  },
+  "authority": {
+    "controlActions": [
+      "approve",
+      "pause",
+      "rework",
+      "terminate"
+    ]
+  },
+  "constraints": {
+    "writableStateFields": []
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  },
+  "ogsContractVersion": 2
+}

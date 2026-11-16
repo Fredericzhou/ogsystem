@@ -8,7 +8,6 @@
   "tags": [
     "test"
   ],
-  "contractVersion": 1,
   "purpose": "Terminal branch B role used by tests.",
   "responsibility": {
     "kind": "atomic",
@@ -20,17 +19,14 @@
     "preconditions": []
   },
   "outputs": {
-    "events": [
-      "READY"
-    ],
-    "postconditions": []
+    "postconditions": [],
+    "decisionCriteria": []
   },
   "authority": {
     "controlActions": []
   },
   "constraints": {
-    "writableStateFields": [],
-    "allowedTools": []
+    "writableStateFields": []
   },
   "failure": {
     "retryableErrorCodes": [],
@@ -38,5 +34,7 @@
   },
   "audit": {
     "requiredFields": []
-  }
+  },
+  "ogsContractVersion": 2,
+  "schemaVersion": 2
 }

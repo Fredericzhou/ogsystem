@@ -1,0 +1,41 @@
+{
+  "ogsContractVersion": 2,
+  "schemaVersion": 1,
+  "harnessTemplates": {
+    "document-writer": {
+      "ogsContractVersion": 2,
+      "schemaVersion": 1,
+      "kind": "harness",
+      "templateId": "document-writer",
+      "backend": "codex",
+      "model": "gpt-6-luna",
+      "allowedTools": ["apply_patch", "exec_command"],
+      "environment": {
+        "filesystem": "staged",
+        "process": "allow",
+        "network": "deny",
+        "limits": { "timeoutMs": 600000, "maxOutputBytes": 131072 }
+      }
+    },
+    "document-reviewer": {
+      "ogsContractVersion": 2,
+      "schemaVersion": 1,
+      "kind": "harness",
+      "templateId": "document-reviewer",
+      "backend": "codex",
+      "model": "gpt-6-luna",
+      "allowedTools": [],
+      "environment": {
+        "filesystem": "read_only",
+        "process": "deny",
+        "network": "deny",
+        "limits": { "timeoutMs": 600000, "maxOutputBytes": 131072 }
+      }
+    }
+  },
+  "roles": {
+    "researcher": { "kind": "harness", "harnessTemplate": "document-reviewer" },
+    "writer": { "kind": "harness", "harnessTemplate": "document-writer" },
+    "reviewer": { "kind": "harness", "harnessTemplate": "document-reviewer" }
+  }
+}

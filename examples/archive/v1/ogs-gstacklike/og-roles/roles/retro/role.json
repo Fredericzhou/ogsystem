@@ -1,0 +1,43 @@
+{
+  "roleId": "retro",
+  "roleVersion": "1.0.0",
+  "name": "Retro",
+  "description": "Post-release retrospective stage.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "gstacklike",
+    "retro"
+  ],
+  "contractVersion": 2,
+  "purpose": "Post-release retrospective stage.",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "events": [
+      "READY"
+    ],
+    "postconditions": []
+  },
+  "authority": {
+    "controlActions": []
+  },
+  "constraints": {
+    "writableStateFields": []
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  },
+  "ogsContractVersion": 2
+}

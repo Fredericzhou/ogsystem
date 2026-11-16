@@ -8,7 +8,6 @@
   "tags": [
     "test"
   ],
-  "contractVersion": 1,
   "purpose": "Branch selector used by parser and transition tests.",
   "responsibility": {
     "kind": "atomic",
@@ -20,21 +19,14 @@
     "preconditions": []
   },
   "outputs": {
-    "events": [
-      "APPROVED",
-      "REJECTED"
-    ],
-    "postconditions": []
+    "postconditions": [],
+    "decisionCriteria": []
   },
   "authority": {
     "controlActions": []
   },
   "constraints": {
-    "writableStateFields": [],
-    "allowedTools": [
-      "tool.branch",
-      "tool.repair"
-    ]
+    "writableStateFields": []
   },
   "failure": {
     "retryableErrorCodes": [],
@@ -42,5 +34,7 @@
   },
   "audit": {
     "requiredFields": []
-  }
+  },
+  "ogsContractVersion": 2,
+  "schemaVersion": 2
 }

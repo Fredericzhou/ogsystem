@@ -13,7 +13,6 @@
     "debate",
     "minimalism"
   ],
-  "contractVersion": 1,
   "purpose": "Argues that the current build should stay minimal and defer complex alignment.",
   "responsibility": {
     "kind": "atomic",
@@ -25,19 +24,14 @@
     "preconditions": []
   },
   "outputs": {
-    "events": [
-      "READY"
-    ],
-    "postconditions": []
+    "postconditions": [],
+    "decisionCriteria": []
   },
   "authority": {
     "controlActions": []
   },
   "constraints": {
-    "writableStateFields": [],
-    "allowedTools": [
-      "tool.console.print"
-    ]
+    "writableStateFields": []
   },
   "failure": {
     "retryableErrorCodes": [],
@@ -45,5 +39,7 @@
   },
   "audit": {
     "requiredFields": []
-  }
+  },
+  "ogsContractVersion": 2,
+  "schemaVersion": 2
 }

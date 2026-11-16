@@ -1,6 +1,6 @@
 {
   "catalogVersion": "4",
-  "generatedAt": "2026-11-08T15:54:39.002Z",
+  "generatedAt": "2026-11-15T17:43:31.784Z",
   "sources": [
     {
       "backend": "opencode",
@@ -10,7 +10,7 @@
       "sessionKind": "server-session",
       "processOwnership": "spawned_by_ogs",
       "status": "runnable",
-      "detail": "OpenCode ready (199 models)."
+      "detail": "OpenCode ready (212 models)."
     },
     {
       "backend": "codex",
@@ -95,26 +95,6 @@
         "toolcall": true
       },
       "variants": []
-    },
-    {
-      "backend": "opencode",
-      "modelId": "opencode/crouton-alpha-free",
-      "runnable": true,
-      "name": "Crouton Alpha Free",
-      "status": "discovered",
-      "capabilities": {
-        "textInput": true,
-        "textOutput": true,
-        "toolcall": true
-      },
-      "variants": [
-        "high",
-        "low",
-        "max",
-        "medium",
-        "minimal",
-        "xhigh"
-      ]
     },
     {
       "backend": "opencode",
@@ -204,6 +184,23 @@
     },
     {
       "backend": "opencode",
+      "modelId": "opencode/longcat-2.5-free",
+      "runnable": true,
+      "name": "LongCat 2.5 Free",
+      "status": "discovered",
+      "capabilities": {
+        "textInput": true,
+        "textOutput": true,
+        "toolcall": true
+      },
+      "variants": [
+        "high",
+        "low",
+        "medium"
+      ]
+    },
+    {
+      "backend": "opencode",
       "modelId": "opencode/mimo-v2.6-flash-free",
       "runnable": true,
       "name": "MiMo-V2.6-Flash Free",
@@ -214,6 +211,25 @@
         "toolcall": true
       },
       "variants": []
+    },
+    {
+      "backend": "opencode",
+      "modelId": "opencode/minimax-m3.1-flash-free",
+      "runnable": true,
+      "name": "MiniMax M3.1 Flash Free",
+      "status": "discovered",
+      "capabilities": {
+        "textInput": true,
+        "textOutput": true,
+        "toolcall": true
+      },
+      "variants": [
+        "high",
+        "low",
+        "max",
+        "medium",
+        "xhigh"
+      ]
     },
     {
       "backend": "opencode",
@@ -742,6 +758,41 @@
         "high",
         "low",
         "medium"
+      ]
+    },
+    {
+      "backend": "opencode",
+      "modelId": "google/gemini-4-carbon",
+      "runnable": true,
+      "name": "Gemini 4 Carbon",
+      "status": "discovered",
+      "capabilities": {
+        "textInput": true,
+        "textOutput": true,
+        "toolcall": true
+      },
+      "variants": [
+        "high",
+        "low",
+        "medium"
+      ]
+    },
+    {
+      "backend": "opencode",
+      "modelId": "google/gemini-4-hydrogen",
+      "runnable": true,
+      "name": "Gemini 4 Hydrogen",
+      "status": "discovered",
+      "capabilities": {
+        "textInput": true,
+        "textOutput": true,
+        "toolcall": true
+      },
+      "variants": [
+        "high",
+        "low",
+        "medium",
+        "xhigh"
       ]
     },
     {
@@ -1575,6 +1626,25 @@
     },
     {
       "backend": "opencode",
+      "modelId": "openai/gpt-5.4-flex",
+      "runnable": true,
+      "name": "GPT-5.4 Flex",
+      "status": "discovered",
+      "capabilities": {
+        "textInput": true,
+        "textOutput": true,
+        "toolcall": true
+      },
+      "variants": [
+        "high",
+        "low",
+        "medium",
+        "none",
+        "xhigh"
+      ]
+    },
+    {
+      "backend": "opencode",
       "modelId": "openai/gpt-5.4-mini",
       "runnable": true,
       "name": "Text / Fast / GPT-5.4 Mini",
@@ -1725,6 +1795,25 @@
     },
     {
       "backend": "opencode",
+      "modelId": "openai/gpt-5.5-flex",
+      "runnable": true,
+      "name": "GPT-5.5 Flex",
+      "status": "discovered",
+      "capabilities": {
+        "textInput": true,
+        "textOutput": true,
+        "toolcall": true
+      },
+      "variants": [
+        "high",
+        "low",
+        "medium",
+        "none",
+        "xhigh"
+      ]
+    },
+    {
+      "backend": "opencode",
       "modelId": "openai/gpt-5.5-pro",
       "runnable": true,
       "name": "GPT-5.5 Pro",
@@ -1822,6 +1911,26 @@
     },
     {
       "backend": "opencode",
+      "modelId": "openai/gpt-5.6-luna-flex",
+      "runnable": true,
+      "name": "GPT-5.6 Luna Flex",
+      "status": "discovered",
+      "capabilities": {
+        "textInput": true,
+        "textOutput": true,
+        "toolcall": true
+      },
+      "variants": [
+        "high",
+        "low",
+        "max",
+        "medium",
+        "none",
+        "xhigh"
+      ]
+    },
+    {
+      "backend": "opencode",
       "modelId": "openai/gpt-5.6-luna-pro",
       "runnable": true,
       "name": "GPT-5.6 Luna Pro",
@@ -1902,6 +2011,26 @@
     },
     {
       "backend": "opencode",
+      "modelId": "openai/gpt-5.6-sol-flex",
+      "runnable": true,
+      "name": "GPT-5.6 Sol Flex",
+      "status": "discovered",
+      "capabilities": {
+        "textInput": true,
+        "textOutput": true,
+        "toolcall": true
+      },
+      "variants": [
+        "high",
+        "low",
+        "max",
+        "medium",
+        "none",
+        "xhigh"
+      ]
+    },
+    {
+      "backend": "opencode",
       "modelId": "openai/gpt-5.6-sol-pro",
       "runnable": true,
       "name": "GPT-5.6 Sol Pro",
@@ -1962,6 +2091,26 @@
     },
     {
       "backend": "opencode",
+      "modelId": "openai/gpt-5.6-terra-flex",
+      "runnable": true,
+      "name": "GPT-5.6 Terra Flex",
+      "status": "discovered",
+      "capabilities": {
+        "textInput": true,
+        "textOutput": true,
+        "toolcall": true
+      },
+      "variants": [
+        "high",
+        "low",
+        "max",
+        "medium",
+        "none",
+        "xhigh"
+      ]
+    },
+    {
+      "backend": "opencode",
       "modelId": "openai/gpt-5.6-terra-pro",
       "runnable": true,
       "name": "GPT-5.6 Terra Pro",
@@ -2004,6 +2153,25 @@
       "modelId": "openai/gpt-6-astra-fast",
       "runnable": true,
       "name": "GPT-6 Astra Fast",
+      "status": "discovered",
+      "capabilities": {
+        "textInput": true,
+        "textOutput": true,
+        "toolcall": true
+      },
+      "variants": [
+        "high",
+        "low",
+        "max",
+        "medium",
+        "xhigh"
+      ]
+    },
+    {
+      "backend": "opencode",
+      "modelId": "openai/gpt-6-astra-flex",
+      "runnable": true,
+      "name": "GPT-6 Astra Flex",
       "status": "discovered",
       "capabilities": {
         "textInput": true,
@@ -2098,6 +2266,26 @@
     },
     {
       "backend": "opencode",
+      "modelId": "openai/gpt-6-luna-flex",
+      "runnable": true,
+      "name": "GPT-6 Luna Flex",
+      "status": "discovered",
+      "capabilities": {
+        "textInput": true,
+        "textOutput": true,
+        "toolcall": true
+      },
+      "variants": [
+        "high",
+        "low",
+        "max",
+        "medium",
+        "none",
+        "xhigh"
+      ]
+    },
+    {
+      "backend": "opencode",
       "modelId": "openai/gpt-6-luna-pro",
       "runnable": true,
       "name": "GPT-6 Luna Pro",
@@ -2158,6 +2346,26 @@
     },
     {
       "backend": "opencode",
+      "modelId": "openai/gpt-6-sol-flex",
+      "runnable": true,
+      "name": "GPT-6 Sol Flex",
+      "status": "discovered",
+      "capabilities": {
+        "textInput": true,
+        "textOutput": true,
+        "toolcall": true
+      },
+      "variants": [
+        "high",
+        "low",
+        "max",
+        "medium",
+        "none",
+        "xhigh"
+      ]
+    },
+    {
+      "backend": "opencode",
       "modelId": "openai/gpt-6-sol-pro",
       "runnable": true,
       "name": "GPT-6 Sol Pro",
@@ -2200,6 +2408,25 @@
       "modelId": "openai/gpt-6.1-sol-fast",
       "runnable": true,
       "name": "GPT-6.1 Sol Fast",
+      "status": "discovered",
+      "capabilities": {
+        "textInput": true,
+        "textOutput": true,
+        "toolcall": true
+      },
+      "variants": [
+        "high",
+        "low",
+        "max",
+        "medium",
+        "xhigh"
+      ]
+    },
+    {
+      "backend": "opencode",
+      "modelId": "openai/gpt-6.1-sol-flex",
+      "runnable": true,
+      "name": "GPT-6.1 Sol Flex",
       "status": "discovered",
       "capabilities": {
         "textInput": true,
@@ -2277,6 +2504,26 @@
       "modelId": "openai/gpt-6.1-terra-fast",
       "runnable": true,
       "name": "GPT-6.1 Terra Fast",
+      "status": "discovered",
+      "capabilities": {
+        "textInput": true,
+        "textOutput": true,
+        "toolcall": true
+      },
+      "variants": [
+        "high",
+        "low",
+        "max",
+        "medium",
+        "none",
+        "xhigh"
+      ]
+    },
+    {
+      "backend": "opencode",
+      "modelId": "openai/gpt-6.1-terra-flex",
+      "runnable": true,
+      "name": "GPT-6.1 Terra Flex",
       "status": "discovered",
       "capabilities": {
         "textInput": true,

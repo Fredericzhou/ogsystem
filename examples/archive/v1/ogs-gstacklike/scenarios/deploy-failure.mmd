@@ -1,0 +1,44 @@
+flowchart TD
+%% system.id=ogs.gstacklike.deploy-failure
+%% system.version=2.0.0
+%% law.global=law.gstacklike.base
+%% end.join.mode=quorum_of
+%% end.join.min=1
+%% exec.bind.office-hours=profile.office-hours
+%% exec.bind.review=profile.review
+%% exec.bind.qa=profile.qa
+%% exec.bind.ship=profile.ship
+%% exec.bind.ship-deploy=profile.ship-deploy
+%% exec.bind.error-handler-base=profile.error-handler
+%% review.mode.ship=required
+%% review.timeout.ship=86400
+%% review.timeout.action.ship=pause
+%% review.rework.target.ship=ship
+%% review.rework.max.ship=2
+%% review.terminate.scope.ship=run
+%% context.map.ship.human_review_comment=global.human_review.current.comment?
+%% context.map.ship.human_review_round=global.human_review.current.round?
+%% context.map.ship.previous_ship_output=global.human_review.current.previous_output.content?
+
+start[开始] -->|START| office-hours[Role:office-hours]
+office-hours[Role:office-hours] -->|READY| review[Role:review]
+office-hours[Role:office-hours] -->|BLOCKED| end[结束]
+office-hours[Role:office-hours] -->|REJECTED| end[结束]
+
+review[Role:review] -->|APPROVED| qa[Role:qa]
+review[Role:review] -->|NEEDS_REWORK| end[结束]
+review[Role:review] -->|BLOCKED| end[结束]
+
+qa[Role:qa] -->|READY| ship[Role:ship]
+qa[Role:qa] -->|REJECTED| end[结束]
+qa[Role:qa] -->|BLOCKED| end[结束]
+
+ship[Role:ship] -->|READY| ship-deploy[Role:ship-deploy]
+ship[Role:ship] -->|BLOCKED| end[结束]
+
+ship-deploy[Role:ship-deploy] -->|READY| end[结束]
+ship-deploy[Role:ship-deploy] -->|ERROR| error-handler-base[Role:error-handler-base]
+
+error-handler-base[Role:error-handler-base] -->|READY| end[结束]
+error-handler-base[Role:error-handler-base] -->|BLOCKED| end[结束]
+error-handler-base[Role:error-handler-base] -->|REJECTED| end[结束]

@@ -13,7 +13,6 @@
     "debate",
     "synthesis"
   ],
-  "contractVersion": 1,
   "purpose": "Aggregates debate positions and determines whether another round is needed or a decision is ready.",
   "responsibility": {
     "kind": "atomic",
@@ -25,20 +24,14 @@
     "preconditions": []
   },
   "outputs": {
-    "events": [
-      "NEEDS_REWORK",
-      "READY"
-    ],
-    "postconditions": []
+    "postconditions": [],
+    "decisionCriteria": []
   },
   "authority": {
     "controlActions": []
   },
   "constraints": {
-    "writableStateFields": [],
-    "allowedTools": [
-      "tool.console.print"
-    ]
+    "writableStateFields": []
   },
   "failure": {
     "retryableErrorCodes": [],
@@ -46,5 +39,7 @@
   },
   "audit": {
     "requiredFields": []
-  }
+  },
+  "ogsContractVersion": 2,
+  "schemaVersion": 2
 }

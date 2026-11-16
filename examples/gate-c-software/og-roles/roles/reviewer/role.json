@@ -1,0 +1,45 @@
+{
+  "roleId": "reviewer",
+  "roleVersion": "gate-c-1",
+  "name": "Software Reviewer",
+  "description": "Reviews a staged software change and records a promotion decision.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "purpose": "Confirm software correctness and readiness for promotion.",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [
+      "review decision"
+    ],
+    "contributes": [],
+    "doesNotOwn": [
+      "software change"
+    ]
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "postconditions": [],
+    "decisionCriteria": []
+  },
+  "authority": {
+    "controlActions": [
+      "approve",
+      "reject",
+      "rework"
+    ]
+  },
+  "constraints": {
+    "writableStateFields": []
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  },
+  "ogsContractVersion": 2,
+  "schemaVersion": 2
+}

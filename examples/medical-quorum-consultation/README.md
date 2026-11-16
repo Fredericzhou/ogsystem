@@ -9,7 +9,8 @@ Capabilities covered:
 - `join.mode=quorum_of` with `join.min=3`
 - `context.map` projection from join sources + global task
 - `role_input` validation on the projected review input
-- model-first binding (`model.bind.*`) with dry-run friendly execution
+- v2 Harness/Backend binding through `.ogs/execution-bindings.json`; the graph contains
+  business Flow and join semantics only
 
 Run:
 

@@ -1,0 +1,11 @@
+flowchart TD
+%% system.id=gate.c.docs
+%% system.version=2.0.0
+%% law.global=law.gate.c
+%% context.map.writer.research=direct.content
+%% context.map.reviewer.document=direct.content
+%% context.map.reviewer.artifact=direct.artifact
+start[开始] -->|START| researcher[Role:researcher]
+researcher[Role:researcher] -->|READY| writer[Role:writer]
+writer[Role:writer] -->|READY| reviewer[Role:reviewer]
+reviewer[Role:reviewer] -->|READY| end[结束]

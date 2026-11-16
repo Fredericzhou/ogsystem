@@ -11,7 +11,6 @@
     "runner",
     "pipeline"
   ],
-  "contractVersion": 1,
   "purpose": "Package the compiled binary, run it, and verify output correctness.",
   "responsibility": {
     "kind": "atomic",
@@ -23,19 +22,14 @@
     "preconditions": []
   },
   "outputs": {
-    "events": [
-      "READY"
-    ],
-    "postconditions": []
+    "postconditions": [],
+    "decisionCriteria": []
   },
   "authority": {
     "controlActions": []
   },
   "constraints": {
-    "writableStateFields": [],
-    "allowedTools": [
-      "tool.rust.packager"
-    ]
+    "writableStateFields": []
   },
   "failure": {
     "retryableErrorCodes": [],
@@ -43,5 +37,7 @@
   },
   "audit": {
     "requiredFields": []
-  }
+  },
+  "ogsContractVersion": 2,
+  "schemaVersion": 2
 }

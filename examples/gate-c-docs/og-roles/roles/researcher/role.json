@@ -1,0 +1,39 @@
+{
+  "roleId": "researcher",
+  "roleVersion": "gate-c-1",
+  "name": "Documentation Researcher",
+  "description": "Researches a documentation request and records traceable facts.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "purpose": "Identify accurate facts and a useful structure for a document.",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [
+      "source outline"
+    ],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "postconditions": [],
+    "decisionCriteria": []
+  },
+  "authority": {
+    "controlActions": []
+  },
+  "constraints": {
+    "writableStateFields": []
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  },
+  "ogsContractVersion": 2,
+  "schemaVersion": 2
+}

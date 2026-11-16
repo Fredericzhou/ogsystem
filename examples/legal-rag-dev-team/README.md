@@ -5,7 +5,7 @@
 它是当前推荐的“中文多 Agent 协作端到端”示例，覆盖：
 
 - 中文输入与中文交付
-- `model.bind` 模型执行绑定
+- v2 Harness/Backend、模型、工具和环境绑定写入 `.ogs/execution-bindings.json`，图只描述业务 Flow
 - `parallel_split` 并行拆解
 - `all_of` 汇合
 - `context.map` 把分支结果和人工审核反馈投影给汇合角色
@@ -94,10 +94,10 @@ node dist/runtime/cli.js run start \
 
 说明：
 
-- 该示例使用本机已验证较稳定的 `model.bind.*=gkgk/gpt-5.4`
+- 运行前通过 Backend 原生能力发现选择可运行的 Harness；模型 ID 由对应 CLI 的本地目录提供
 - 真实运行前，需要你本机已经配置可用的 OpenCode provider
 - 如果 `ogs doctor` 提示缺少 `.ogs/model-catalog.json`，先执行 `ogs project sync-models`；catalog 是本机可用模型快照，缺失时是诊断告警，不是 runtime 硬失败
-- 如果你改回 `opencode/gpt-5-nano`，注意该模型在本机 OpenCode SDK structured-output 场景中可能长时间等待后返回 `terminated`
+- 如果 Backend 在 structured-output 阶段长时间没有响应，Runtime 会按超时策略中断当前 turn，并保留失败证据；请先运行 capability/readiness 检查再重试
 - 长时间执行时，控制台会区分 `role:waiting kind=technical` 和 `run:waiting kind=business reason=human_review`
 - `delivery-lead` 角色开启了 runtime-native human review，第一轮运行大概率会停在待审核状态
 - `rework` 时，reviewer comment 会通过 `global.human_review.current.*?` 投影回 `delivery-lead`
@@ -133,7 +133,8 @@ node dist/runtime/cli.js run resume <run-id> --ogs-dir examples/legal-rag-dev-te
 建议分两段走：
 
 1. 先用这个示例把实施方案跑出来，并人工审核。
-2. 再把其中一部分角色替换成真正执行代码的 `exec.bind` 角色。
+2. 再为需要落地的角色配置已验证 Backend 的 Harness Template，并通过 v2 Artifact 与 Review
+   合同交付代码和验证证据。
 
 推荐的第二阶段拆分：
 
@@ -148,4 +149,6 @@ node dist/runtime/cli.js run resume <run-id> --ogs-dir examples/legal-rag-dev-te
 - `release-review`
   对输出样例进行人工法务抽检。
 
-如果你要把这个示例继续推进成“能真正写代码”的团队，最直接的做法是参考 `examples/rust-hello-pipeline/` 和 `examples/ogs-gstacklike/`，把部分 `model.bind` 角色切换成 `exec.bind`，让角色直接调用本地脚本或构建命令。
+历史 v1 的脚本执行示例已移入 `examples/archive/v1/`。v2 不支持把本地脚本作为第二种 Role
+执行路径；固定命令必须由已验证 Backend 原生能力提供，并受到冻结的 `allowedTools`、
+`verifiedTools` 和 `EffectiveEnvironmentPolicy` 约束。

@@ -1,7 +1,7 @@
 version: "1"
 system:
   systemId: architecture.debate.current
-  systemVersion: 1.0.0
+  systemVersion: 2.0.0
 
 # Business state is deliberately small. Runtime bookkeeping (branches, joins,
 # checkpoints) remains outside this contract.
@@ -102,9 +102,3 @@ joins:
 
 capabilities:
   max_transitions_per_run: 12
-  allowed_tools_by_role:
-    debate-alignmentist: []
-    debate-judge: []
-    debate-minimalist: []
-    debate-moderator: []
-    debate-summary: []

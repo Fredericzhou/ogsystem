@@ -13,7 +13,6 @@
     "debate",
     "alignment"
   ],
-  "contractVersion": 1,
   "purpose": "Argues for advancing the system toward a larger semantic alignment vision.",
   "responsibility": {
     "kind": "atomic",
@@ -25,17 +24,14 @@
     "preconditions": []
   },
   "outputs": {
-    "events": [
-      "READY"
-    ],
-    "postconditions": []
+    "postconditions": [],
+    "decisionCriteria": []
   },
   "authority": {
     "controlActions": []
   },
   "constraints": {
-    "writableStateFields": [],
-    "allowedTools": []
+    "writableStateFields": []
   },
   "failure": {
     "retryableErrorCodes": [],
@@ -43,5 +39,7 @@
   },
   "audit": {
     "requiredFields": []
-  }
+  },
+  "ogsContractVersion": 2,
+  "schemaVersion": 2
 }

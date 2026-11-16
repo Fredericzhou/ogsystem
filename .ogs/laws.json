@@ -13,7 +13,7 @@
       "constraints": {
         "forbiddenToolRefs": [],
         "maxTransitions": 8,
-        "allowNoopWithoutExecutionBinding": true
+        "allowNoopWithoutExecutionBinding": false
       }
     }
   ]

@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "runId": "20261116-020443-1ac37cbd",
+  "source": "shared/artifacts",
+  "promotedAt": "2026-11-15T18:08:36.982Z",
+  "sealManifestSha256": "99ee6bd812dbd73057627f0ac7937ecabefc78b08a666d35e88fc459d64c332d",
+  "testReportSha256": "3df3ebef5a3f2bc185f3183981b7858559c499867b3c751d84744741472d0cdc"
+}

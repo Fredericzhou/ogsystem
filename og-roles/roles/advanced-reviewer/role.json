@@ -14,7 +14,6 @@
     "starter",
     "review"
   ],
-  "contractVersion": 1,
   "purpose": "Joins the parallel branches and pauses for human review in the advanced starter template.",
   "responsibility": {
     "kind": "atomic",
@@ -26,25 +25,18 @@
     "preconditions": []
   },
   "outputs": {
-    "events": [
-      "NEEDS_REWORK",
-      "READY"
-    ],
-    "postconditions": []
+    "postconditions": [],
+    "decisionCriteria": []
   },
   "authority": {
     "controlActions": [
       "approve",
-      "pause",
-      "rework",
-      "terminate"
+      "reject",
+      "rework"
     ]
   },
   "constraints": {
-    "writableStateFields": [],
-    "allowedTools": [
-      "tool.console.print"
-    ]
+    "writableStateFields": []
   },
   "failure": {
     "retryableErrorCodes": [],
@@ -52,5 +44,7 @@
   },
   "audit": {
     "requiredFields": []
-  }
+  },
+  "ogsContractVersion": 2,
+  "schemaVersion": 2
 }

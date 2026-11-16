@@ -12,7 +12,6 @@
   "tags": [
     "demo"
   ],
-  "contractVersion": 1,
   "purpose": "Produces a concise analysis summary for the console demo.",
   "responsibility": {
     "kind": "atomic",
@@ -24,24 +23,18 @@
     "preconditions": []
   },
   "outputs": {
-    "events": [
-      "READY"
-    ],
-    "postconditions": []
+    "postconditions": [],
+    "decisionCriteria": []
   },
   "authority": {
     "controlActions": [
       "approve",
-      "pause",
-      "rework",
-      "terminate"
+      "reject",
+      "rework"
     ]
   },
   "constraints": {
-    "writableStateFields": [],
-    "allowedTools": [
-      "tool.cli.codex.exec"
-    ]
+    "writableStateFields": []
   },
   "failure": {
     "retryableErrorCodes": [],
@@ -49,5 +42,7 @@
   },
   "audit": {
     "requiredFields": []
-  }
+  },
+  "ogsContractVersion": 2,
+  "schemaVersion": 2
 }

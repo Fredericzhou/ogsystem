@@ -1,0 +1,10 @@
+flowchart TD
+%% system.id=gate.c.software
+%% system.version=2.0.0
+%% law.global=law.gate.c
+%% context.map.reviewer.implementation=direct.content
+%% context.map.reviewer.artifact=direct.artifact
+start[开始] -->|START| planner[Role:planner]
+planner[Role:planner] -->|READY| implementer[Role:implementer]
+implementer[Role:implementer] -->|READY| reviewer[Role:reviewer]
+reviewer[Role:reviewer] -->|READY| end[结束]

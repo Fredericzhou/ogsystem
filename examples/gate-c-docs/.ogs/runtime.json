@@ -1,0 +1,6 @@
+{
+  "configVersion": "2",
+  "executor": "opencode",
+  "roleRepo": "./og-roles",
+  "runsDir": ".ogs/runs"
+}

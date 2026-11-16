@@ -10,7 +10,6 @@
     "compiler",
     "pipeline"
   ],
-  "contractVersion": 1,
   "purpose": "Compile the Rust hello-world project and verify the executable is produced.",
   "responsibility": {
     "kind": "atomic",
@@ -22,19 +21,14 @@
     "preconditions": []
   },
   "outputs": {
-    "events": [
-      "READY"
-    ],
-    "postconditions": []
+    "postconditions": [],
+    "decisionCriteria": []
   },
   "authority": {
     "controlActions": []
   },
   "constraints": {
-    "writableStateFields": [],
-    "allowedTools": [
-      "tool.rust.compiler"
-    ]
+    "writableStateFields": []
   },
   "failure": {
     "retryableErrorCodes": [],
@@ -42,5 +36,7 @@
   },
   "audit": {
     "requiredFields": []
-  }
+  },
+  "ogsContractVersion": 2,
+  "schemaVersion": 2
 }

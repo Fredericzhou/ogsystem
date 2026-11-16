@@ -1,0 +1,45 @@
+{
+  "roleId": "qa",
+  "roleVersion": "1.0.0",
+  "name": "QA",
+  "description": "Quality assessment stage with pass, fail, and blocked outcomes.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "gstacklike",
+    "qa"
+  ],
+  "contractVersion": 2,
+  "purpose": "Quality assessment stage with pass, fail, and blocked outcomes.",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "events": [
+      "BLOCKED",
+      "READY",
+      "REJECTED"
+    ],
+    "postconditions": []
+  },
+  "authority": {
+    "controlActions": []
+  },
+  "constraints": {
+    "writableStateFields": []
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  },
+  "ogsContractVersion": 2
+}

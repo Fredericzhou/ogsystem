@@ -1,0 +1,8 @@
+flowchart TD
+%% system.id=demo.console
+%% system.version=2.0.0
+%% law.global=law.console.base
+%% exec.bind.demo-analyst=exec.console.codex.v1
+
+start[开始] -->|START| analyst[Role:demo-analyst]
+analyst[Role:demo-analyst] -->|READY| end[结束]

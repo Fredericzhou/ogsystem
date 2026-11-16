@@ -1,0 +1,46 @@
+{
+  "roleId": "error-handler-base",
+  "roleVersion": "1.0.0",
+  "name": "Error Handler Base",
+  "description": "Template role for handling runtime failures and deciding compensation actions.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "template",
+    "error-edge",
+    "compensation"
+  ],
+  "contractVersion": 2,
+  "purpose": "Template role for handling runtime failures and deciding compensation actions.",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "events": [
+      "BLOCKED",
+      "READY",
+      "REJECTED"
+    ],
+    "postconditions": []
+  },
+  "authority": {
+    "controlActions": []
+  },
+  "constraints": {
+    "writableStateFields": []
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  },
+  "ogsContractVersion": 2
+}

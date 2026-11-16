@@ -1,0 +1,45 @@
+{
+  "roleId": "reviewer",
+  "roleVersion": "gate-c-1",
+  "name": "Documentation Reviewer",
+  "description": "Reviews a Markdown document and records a finalization decision.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "purpose": "Confirm document usability, structure, completeness, and claim traceability.",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [
+      "document review"
+    ],
+    "contributes": [],
+    "doesNotOwn": [
+      "document draft"
+    ]
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "postconditions": [],
+    "decisionCriteria": []
+  },
+  "authority": {
+    "controlActions": [
+      "approve",
+      "reject",
+      "rework"
+    ]
+  },
+  "constraints": {
+    "writableStateFields": []
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  },
+  "ogsContractVersion": 2,
+  "schemaVersion": 2
+}

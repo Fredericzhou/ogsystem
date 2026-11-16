@@ -9,7 +9,6 @@
     "legal-rag",
     "evaluation"
   ],
-  "contractVersion": 1,
   "purpose": "Design the evaluation dataset, citation metrics, and regression gates for the legal RAG service.",
   "responsibility": {
     "kind": "atomic",
@@ -21,17 +20,14 @@
     "preconditions": []
   },
   "outputs": {
-    "events": [
-      "READY"
-    ],
-    "postconditions": []
+    "postconditions": [],
+    "decisionCriteria": []
   },
   "authority": {
     "controlActions": []
   },
   "constraints": {
-    "writableStateFields": [],
-    "allowedTools": []
+    "writableStateFields": []
   },
   "failure": {
     "retryableErrorCodes": [],
@@ -39,5 +35,7 @@
   },
   "audit": {
     "requiredFields": []
-  }
+  },
+  "ogsContractVersion": 2,
+  "schemaVersion": 2
 }

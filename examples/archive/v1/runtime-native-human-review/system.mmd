@@ -1,0 +1,13 @@
+flowchart TD
+%% system.id=example.runtime.native.human.review
+%% system.version=2.0.0
+%% law.global=law.console.base
+%% review.mode.test-operator=required
+%% review.timeout.test-operator=86400
+%% review.timeout.action.test-operator=pause
+%% review.rework.target.test-operator=test-operator
+%% review.rework.max.test-operator=3
+%% review.terminate.scope.test-operator=branch
+
+start[开始] -->|START| operator[Role:test-operator]
+operator[Role:test-operator] -->|READY| end[结束]
