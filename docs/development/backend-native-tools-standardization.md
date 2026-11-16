@@ -48,6 +48,23 @@ Harness 编辑器展示的是 Backend 的工具目录，不是模型调用结果
 
 Discovery is read-only and must be bounded. Saving a Harness draft never runs a model. Template verification performs only the minimum contract checks: selected Backend/model exists in the local catalog, requested resources are enforceable, and `allowedTools` is a subset of the discovered Backend tool IDs. A model prompt probe is not a tool-discovery mechanism.
 
+Tool discovery and tool restriction are separate capabilities. A Backend may expose a
+complete native tool list while offering no reliable per-tool allowlist at session start.
+In that case the Adapter reports the list for configuration, but Runtime readiness must
+reject any explicit `allowedTools` selection that cannot be enforced. An empty
+`allowedTools` list means that OGS requests no native tool calls; it does not imply that
+the Backend has no tools. The Adapter must also expose the selected model's optional
+`variant` and supported reasoning effort values when the underlying SDK/CLI provides them.
+`reasoningEffort: "auto"` is a request; only the Adapter can record the effective value
+used by the Backend in the frozen Run snapshot.
+
+The current resource boundary is deliberately conservative. Codex workspace-write
+mapping is verified for its supported staging profile. OpenCode and Pi may be used for
+text-only Runs, but filesystem/process tools remain degraded until their CLI/SDK
+session can prove absolute-path, symlink, and per-execution staging isolation. Dynamic
+MCP, plugin, task, skill, and tool-search capabilities are not treated as verified merely
+because the Backend can list them.
+
 本文的两个语义区必须分开阅读。本文不定义 Role Contract、Semantic IR、Flow 或 Harness
 的核心对象；这些定义只能来自 [Role Execution Architecture](role-execution-architecture.md)：
 

@@ -94,6 +94,14 @@ const runSummaries = await Promise.all(runDirs.map(async (run) => {
   const summaryPath = run.runDir ? join(run.runDir, "summary.json") : "";
   return summaryPath ? await readFile(summaryPath, "utf8").then((value) => JSON.parse(value)).catch(() => run) : run;
 }));
+const runEvents = (await Promise.all(runDirs.map(async (run) => {
+  if (!run.runDir) return [];
+  const eventsPath = join(run.runDir, "events.ndjson");
+  const raw = await readFile(eventsPath, "utf8").catch(() => "");
+  return raw.split("\n").filter(Boolean).map((line) => {
+    try { return JSON.parse(line); } catch { return undefined; }
+  }).filter(Boolean);
+}))).flat();
 const completedRuns = runSummaries.filter((run) => run.status === "done" && Number(run.failedCount || 0) === 0 && Number(run.noopCount || 0) === 0 && Number(run.transitionCount || 0) >= 2);
 let cliResult;
 try { cliResult = JSON.parse(result.stdout); } catch { cliResult = undefined; }
@@ -102,6 +110,20 @@ const finalOutput = finalOutputs.map((item) => typeof item?.content === "string"
 const handoffData = finalOutputs.some((item) => item?.data?.handoff === true);
 const handoffMarker = finalOutput.includes("CROSS_BACKEND_HANDOFF_OK");
 const refusal = /unable to implement|no files were created|no native file|capabilities explicitly disable/i.test(finalOutput);
+const envelopeValid = runEvents.length > 0 && runEvents.every((event) =>
+  event.ogsContractVersion === 2 &&
+  event.schemaVersion === 1 &&
+  typeof event.eventId === "string" &&
+  typeof event.eventType === "string" &&
+  typeof event.runId === "string" &&
+  typeof event.recordedAt === "string" &&
+  event.payload && typeof event.payload === "object" && !Array.isArray(event.payload)
+);
+const auditBackends = new Set(runEvents
+  .map((event) => event.payload?.backend)
+  .filter((backend) => typeof backend === "string"));
+const backendBindingsObserved = auditBackends.has("codex") && auditBackends.has(secondBackend);
+const nativeToolInvocations = runEvents.filter((event) => event.eventType === "tool_invocation").length;
 const acceptance = {
   runCompleted: completedRuns.length > 0,
   failedRoleCount: runSummaries.reduce((sum, run) => sum + Number(run.failedCount || 0), 0),
@@ -109,6 +131,11 @@ const acceptance = {
   handoffMarker,
   handoffData,
   refusal,
+  evidenceEventCount: runEvents.length,
+  envelopeValid,
+  backendBindingsObserved,
+  nativeToolInvocations,
+  nativeToolsRequested: false,
   successfulRunIds: completedRuns.map((run) => run.runId)
 };
 const sanitize = (value) => typeof value === "string"
@@ -124,7 +151,7 @@ const evidence = {
   result: { code: result.code, signal: result.signal, timedOut: result.timedOut, stdout: sanitize(result.stdout), stderr: sanitize(result.stderr) },
   runs: runDirs.map((run) => ({ ...run, runDir: sanitize(run.runDir) })),
   acceptance,
-  status: result.code === 0 && !result.timedOut && acceptance.runCompleted && acceptance.handoffMarker && acceptance.handoffData && !acceptance.refusal ? "observed" : "failed"
+  status: result.code === 0 && !result.timedOut && acceptance.runCompleted && acceptance.handoffMarker && acceptance.handoffData && !acceptance.refusal && acceptance.envelopeValid && acceptance.backendBindingsObserved ? "observed" : "failed"
 };
 const output = process.env.OGS_CROSS_BACKEND_EVIDENCE || join(repoRoot, "docs/development/evidence/v2-cross-backend-real-run-latest.json");
 await writeFile(output, `${JSON.stringify(evidence, null, 2)}\n`);

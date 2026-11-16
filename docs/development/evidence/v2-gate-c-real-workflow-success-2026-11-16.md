@@ -19,6 +19,9 @@ Both workflows used the real Codex Backend Adapter, the only locally available m
   `sandboxPolicy.workspaceWrite` restricted to the Run staging root.
 - Codex structured-output projection supplies strict object properties and exact required
   keys at the Adapter boundary; the original Role schema remains the Runtime validator.
+- Harness binding supports optional `variant` and `reasoningEffort`; the accepted fixtures use
+  the Backend default (`reasoningEffort=auto`) and the frozen Run records the Adapter-selected
+  effective value when one is returned. The request is never projected into business input.
 
 ## Documentation workflow
 
@@ -101,8 +104,9 @@ Both workflows used the real Codex Backend Adapter, the only locally available m
   unavailable for production claims because its current cwd boundary does not prove staging
   isolation; explicit resource tools are rejected fail-closed.
 - Final browser regression after layout and boundary-input race fixes: `17 passed`, `2 skipped`;
-  Build layout regression: `4 passed`. The current full Node regression is `432 passed`,
-  `1 skipped`, `0 failed` across `433` tests (`pnpm test`, 2026-11-16). Earlier counts from
+  Build layout regression: `4 passed`. The current full Node regression is `436 passed`,
+  `1 skipped`, `0 failed` across `437` tests (`pnpm test`, 2026-11-16); Team Site tests are
+  `30 passed`. Earlier counts from
   pre-cutover test enumeration are historical and are not used as the current release total.
 - Tarball installation smoke passed through both npm and pnpm. The smoke now verifies the v2
   Role Package/project layout and dry-run entrypoint; it no longer expects the removed v1

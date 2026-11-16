@@ -4,8 +4,9 @@
 
 The repository reproducibility probe `scripts/run-cross-backend-evidence.mjs` completed a real
 Codex -> OpenCode run with model `gpt-6-luna`. The latest sanitized result is stored in
-`v2-cross-backend-real-run-latest.json` (Run `20261116-151236-3a4fdcc6`) and reports two
-transitions, two successful Roles, zero failed Roles, and zero noop executions.
+`v2-cross-backend-real-run-latest.json` (Run `20261116-230555-a2fefc26`) and reports two
+transitions, two successful Roles, zero failed Roles, zero noop executions, 115 V2 Evidence
+events, a valid V2 envelope on every event, and both Backend identities observed.
 The Flow was:
 
 ```text
@@ -26,12 +27,14 @@ provider naming remains inside the Technical Binding and Adapter boundary.
 - Successful Roles: `2`
 - Failed Roles: `0`
 - Noop executions: `0`
-- Duration: approximately `45,708 ms`
+- Duration: approximately `26,129 ms`
+- Evidence events: `115`, all with `ogsContractVersion`, `schemaVersion`, `eventId`,
+  `eventType`, `runId`, `recordedAt`, and `payload`
 - Codex adapter: `codex-app-server-v2`, model `gpt-6-luna`
-- OpenCode adapter: `opencode-sdk-v2-native-tools-1`, with no native tools requested in this
+- OpenCode adapter: `opencode-sdk-v2-native-tools-1`, with `allowedTools=[]` in this
   handoff probe. OpenCode filesystem/process resources are deliberately fail-closed because
-  its current native bash/write boundary cannot prove staging isolation; native tool use is
-  therefore not claimed by this business-flow record.
+  its current native bash/write boundary cannot prove staging isolation; this record proves
+  business handoff only and does not claim an OpenCode native tool invocation.
 - Both Roles used separate Harness Template references in `.ogs/execution-bindings.json`.
 - Both Roles had frozen Capability Snapshot, EffectiveEnvironmentPolicy, policy digest, capability
   digest, staging root, and recovery identity in `resolved-config.json`.

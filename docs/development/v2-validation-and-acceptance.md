@@ -94,6 +94,11 @@ verified production Backend until its complete staging, resource, tool, permissi
 evidence is recorded. Earlier failed Codex/OpenCode attempts remain failure evidence and are not
 hidden by the latest successful Codex/OpenCode run.
 
+The latest checked-in engineering regression baseline is `pnpm test`: 436 passed and 1 skipped;
+Team Site tests: 30 passed; `pnpm build` and `git diff --check` also pass. These are code-quality
+signals only. They do not replace the immutable Run evidence above or the required human release
+signatures.
+
 ## 3. Semantic Scenario Matrix
 
 Each scenario requires a fresh v2 Run and a recorded result. Scenarios may share fixtures only when
@@ -116,6 +121,7 @@ the fixture is immutable and its digest is recorded.
 | S13 | Capability readiness | Missing Model, missing tool, unsupported resource boundary, or invalid Harness binding prevents Backend startup. |
 | S14 | Run freeze and recovery | Crash/restart resumes from the original Snapshot, policy, staging identity, and Review scope. |
 | S15 | Fail-closed security | Unknown tools, dynamic tools, path escapes, denied resources, and unauthorized Artifacts are blocked and audited. |
+| S15a | Harness advanced parameters | `variant` and requested `reasoningEffort` are validated against the selected Backend/model; `auto` is resolved by the Adapter and request/effective values remain technical facts. |
 | S16 | Real software delivery | A code change is produced, tested, reviewed, and promoted or explicitly rejected. |
 | S17 | Real documentation delivery | A usable document is produced, reviewed, artifact-sealed, and delivered with traceable evidence. |
 | S18 | Join timeout and compensation | A timed-out or failed source follows the declared exception path; retryable infrastructure failure does not silently consume budget or duplicate committed work. |
@@ -150,6 +156,7 @@ Every passed scenario must attach one immutable evidence package containing:
 - v2 code, schema, and fixture digests;
 - TeamVersion and Semantic IR digests;
 - Run ID and resolved Harness Template revision;
+- Harness `backend`, `model`, optional `variant`, requested/effective reasoning effort, and limits;
 - Capability Snapshot and `verifiedTools` digest;
 - `resolved-config.json` with `allowedTools`, `verifiedTools`, EffectiveEnvironmentPolicy,
   staging, Law, policy, capability, and Adapter identities;

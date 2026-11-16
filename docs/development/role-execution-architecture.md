@@ -812,6 +812,8 @@ The reusable technical template for a Model Role represents the complete CLI/Bac
 Harness Template
   Backend / CLI adapter identity
   Model exposed by that Backend
+  Optional model `variant` exposed by that Backend
+  Optional `reasoningEffort` request (`low`, `medium`, `high`, `xhigh`, `max`, or `auto`)
   `allowedTools` references
   Optional filesystem/process/network policy intent
   Optional timeout and quota overrides
@@ -839,6 +841,8 @@ storage shape is:
       "kind": "harness",
       "backend": "codex",
       "model": "gpt-6-luna",
+      "variant": "default",
+      "reasoningEffort": "auto",
       "preset": "backend-default",
       "allowedTools": ["exec_command", "apply_patch"],
       "environment": {
@@ -886,6 +890,18 @@ model:
   A model reference is not portable to a different Backend unless that Backend
   exposes the same model and the binding is revalidated.
 
+variant:
+  Optional Backend/model variant. It is an opaque Backend-owned identifier and is
+  validated against the selected Backend's catalog when the template is verified.
+  It must not be interpreted by Role Contracts or Semantic IR.
+
+reasoningEffort:
+  Optional requested inference intensity. `auto` preserves the request and lets the
+  Adapter select the Backend-supported effective value. An explicit value is accepted
+  only when the selected Backend/model advertises it. The Adapter records the effective
+  value in the frozen Run binding; the request and effective value are both technical
+  binding facts and never business input.
+
 preset:
   Optional Backend-owned defaults for native tools, environment intent, and limits.
 
@@ -926,6 +942,8 @@ The Technical Binding stores only normalized intent:
 ```text
 backend
 model
+variant (optional)
+reasoningEffort (optional request)
 preset
 allowedTools
 environment intent
@@ -1571,6 +1589,8 @@ pair. The Preview may exist at Backend level before a model is selected.
 type CapabilityPreview = {
   backend: string;
   model?: string;
+  variant?: string;
+  reasoningEfforts?: string[];
   verifiedTools: string[];
   adapterVersion?: string;
   verifiedAt: string;
@@ -1581,6 +1601,9 @@ type CapabilityPreview = {
 type RunCapabilitySnapshot = {
   backend: string;
   model: string;
+  variant?: string;
+  requestedReasoningEffort?: string;
+  effectiveReasoningEffort?: string;
   adapterVersion: string;
   verifiedAt: string;
   verifiedTools: string[];
