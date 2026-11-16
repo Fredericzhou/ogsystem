@@ -66,7 +66,9 @@ export function createStudioTranscriptTools({ roleColorForId, renderRoleAvatarWi
         content = match[2].trim();
       }
     }
-    return { event, label: eventLabel(event), content: String(content || ""), raw, fullText: typeof value === "string" && structuredValue !== value ? raw : undefined };
+    // Expansion is a conversational view. Keep raw JSON available only through
+    // the audit drawer so structured role output never turns the chat into a log.
+    return { event, label: eventLabel(event), content: String(content || ""), raw, fullText: undefined };
   }
 
   function messageMarkup(sectionLabel, value) {

@@ -719,6 +719,22 @@ html[data-product-mode="professional"] .studio-decision-auto-id { display: none;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
 }
+.studio-agent-progress {
+  align-items: baseline;
+  color: var(--muted);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 11px;
+  gap: 6px;
+  line-height: 1.45;
+  margin-top: 7px;
+}
+.studio-agent-progress small {
+  color: var(--mint-dark, #087c51);
+  font-size: 10px;
+  font-weight: 700;
+}
+.studio-agent-progress p { margin: 0; }
 .chat-mention-callout {
   align-items: center;
   background: color-mix(in srgb, var(--role-accent, var(--mint)) 8%, var(--surface));

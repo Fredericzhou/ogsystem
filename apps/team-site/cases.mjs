@@ -182,8 +182,7 @@ export const cases = [
       {
         id: "document-publisher", label: { "zh-CN": "文件发布员", en: "Document publisher" },
         purpose: "Publish the reviewed executive brief as document and structured business files.", events: ["READY"],
-        execution: { profileId: "profile.consulting-publisher", toolRef: "tool.consulting.publisher", format: "consulting", timeoutMs: 180000, maxOutputBytes: 65536 },
-        prompt: "Publish the reviewed brief using the configured local publisher. Return the publisher JSON unchanged."
+        prompt: "Based on the reviewed executive brief, produce the final business document delivery. Include the executive summary, recommendations, implementation plan, risks, assumptions, open questions, and document metadata such as title, format, and output path when available. Return valid JSON with event READY and the structured business result. If the current Harness exposes verified native tools and a document artifact is requested, use only those tools; otherwise return the document content and metadata without claiming a file was created."
       }
     ],
     flows: [
@@ -295,28 +294,27 @@ export const cases = [
       en: "Two sides argue from a shared brief while a neutral judge reviews both and closes within a bounded number of rounds."
     },
     category: { "zh-CN": "观点讨论", en: "Deliberation" },
-    duration: { "zh-CN": "6 个角色", en: "6 roles" },
+    duration: { "zh-CN": "5 个角色", en: "5 roles" },
     catalog: {
       tier: { "zh-CN": "核心模板", en: "Core template" },
       fit: { "zh-CN": "适合需要正反观点、质询与中立评议的争议议题。", en: "For contested questions that need opposing views and neutral review." },
-      delivery: { "zh-CN": "观点记录与音视频", en: "Argument record and media" },
+      delivery: { "zh-CN": "讨论纪要文档", en: "Debate brief document" },
       api: { "zh-CN": "可通过 API 运行", en: "API runnable" }
     },
     icon: "scales",
     detail: {
       scenario: { "zh-CN": "讨论议题：一家 30 人的公司，是否应要求员工每周到办公室三天？", en: "Debate topic: should a 30-person company ask employees to work from the office three days each week?" },
-      relationship: { "zh-CN": "主持人把同一议题交给正反双方；裁判比较双方论据，可要求补充回应，再将评议交给记录员整理。", en: "The host gives both sides the same question. A neutral judge compares their arguments, may request a rebuttal, then hands the review to a reporter." },
+      relationship: { "zh-CN": "主持人把同一议题交给正反双方；裁判比较双方论据，可要求一轮补充回应，完成评议后直接交给文档发布员。", en: "The host gives both sides the same question. A neutral judge compares their arguments, may request one bounded rebuttal, then hands the completed review directly to the document publisher." },
       background: { "zh-CN": "面对影响团队的选择，支持与反对意见都需要被充分表达。让双方围绕同一问题和标准交锋，再交由中立角色评议，可以减少只听到单一立场的风险。", en: "Team decisions deserve a fair account of both support and opposition. Giving each side the same question and criteria before neutral review reduces the risk of hearing only one position." },
       problem: { "zh-CN": "适合比较政策、产品方向或资源投入等存在真实取舍的问题。它帮助团队澄清依据，不替代负责人作出决定。", en: "Use this team to compare policies, product directions, or investments with real trade-offs. It clarifies the reasoning while leaving the decision to the responsible people." },
-      collaboration: { "zh-CN": "主持人给双方相同的辩题和评议标准；正反方分别陈述理由并回应对方；中立评议者判断是否需要一轮补充质询，随后作出有依据的评议；记录员整理双方强点、结论与未决问题。", en: "A host gives both sides the same question and criteria. The proposition and opposition make their cases and respond to one another. A neutral reviewer may request one bounded rebuttal before reaching a reasoned view; a reporter records the strongest points and open questions." },
+      collaboration: { "zh-CN": "主持人给双方相同的辩题和评议标准；正反方分别陈述理由并回应对方；中立裁判判断是否需要一轮补充质询并完成评议；文档发布员将裁判结果整理为最终交付文档。", en: "A host gives both sides the same question and criteria. The proposition and opposition make their cases and respond to one another. A neutral judge may request one bounded rebuttal and then completes the review; a document publisher turns that review into the final deliverable." },
       deliverable: { "zh-CN": "一份平衡的讨论纪要，呈现双方最有力的论据、评议理由、不确定因素和后续决策问题。", en: "A balanced debate brief with each side's strongest case, the reviewer's reasoning, uncertainty, and questions for the decision makers." },
       roles: {
         "debate-host": { "zh-CN": "明确辩题、评议标准，并把相同资料交给双方。", en: "Frames the question and criteria, then gives both sides the same brief." },
         "proponent": { "zh-CN": "提出支持方案的理由、依据与成立条件。", en: "Builds the case for the proposal, its rationale, and conditions." },
         "opponent": { "zh-CN": "指出方案的假设、代价、风险与替代思路。", en: "Challenges assumptions and explains costs, risks, and alternatives." },
-        "neutral-judge": { "zh-CN": "按共同标准比较双方论据，说明评议依据与不确定性。", en: "Compares both cases against shared criteria and explains its reasoning and uncertainty." },
-      "debate-reporter": { "zh-CN": "整理双方强点、评议结论和仍待回答的问题。", en: "Records each side's strongest points, the review, and unanswered questions." },
-      "media-publisher": { "zh-CN": "把辩论纪要发布为图片、视频和音频文件。", en: "Publishes the debate brief as image, video, and audio files." }
+        "neutral-judge": { "zh-CN": "按共同标准比较双方论据，完成评议并说明依据、不确定性和后续问题。", en: "Compares both cases against shared criteria and completes the review with reasoning, uncertainty, and follow-up questions." },
+        "document-publisher": { "zh-CN": "将裁判结果整理并发布为最终讨论纪要文档。", en: "Turns the judge's result into the final debate brief document." }
       }
     },
     accent: "blue",
@@ -325,8 +323,7 @@ export const cases = [
       proponent: [360, 55],
       opponent: [360, 250],
       "neutral-judge": [640, 155],
-      "debate-reporter": [900, 155],
-      "media-publisher": [1190, 155]
+      "document-publisher": [940, 155]
     },
     semantics: ["parallel_split", "all_of", "loop.max"],
     joins: [{ roleId: "neutral-judge", mode: "all_of", sources: ["proponent", "opponent"] }],
@@ -358,15 +355,9 @@ export const cases = [
         prompt: "Evaluate both sides fairly against the stated criteria. You may request at most one rebuttal, and only when a material issue could change the decision. Use the Runtime execution context: on loop_iteration 1 this is the initial review; when loop_iteration is greater than 1, always issue READY and never request another round. If an issue remains unresolved, state it as uncertainty. Explain each side's strongest point and your reasoning. Return valid JSON with event NEEDS_REWORK or READY and your reasoning as content."
       },
       {
-        id: "debate-reporter", label: { "zh-CN": "辩论记录员", en: "Debate reporter" },
-        purpose: "Present the judge's final decision and the strongest reasoning from both sides.", events: ["READY"],
-        prompt: "Prepare a balanced final report from the judge's decision. Include the decision, strongest argument for each side, key uncertainty, and follow-up question. Do not introduce new evidence. Set content to a JSON object with keys decision (string), propositionCase (object with strongestPoint and reasoning strings), oppositionCase (object with strongestPoint and reasoning strings), judgeReasoning (string), uncertainty (array of strings), and followUpQuestions (array of strings). Return valid JSON with event READY and that JSON object serialized as the content string. Do not wrap the content in Markdown."
-      },
-      {
-        id: "media-publisher", label: { "zh-CN": "媒体发布员", en: "Media publisher" },
-        purpose: "Publish the debate report as PNG, MP4, and MP3 files.", events: ["READY"],
-        execution: { profileId: "profile.debate-publisher", toolRef: "tool.debate.publisher", format: "debate", timeoutMs: 180000, maxOutputBytes: 65536 },
-        prompt: "Publish the final debate report using the configured local media publisher. Return the publisher JSON unchanged."
+        id: "document-publisher", label: { "zh-CN": "文档发布员", en: "Document publisher" },
+        purpose: "Publish the judge's completed review as a final business document.", events: ["READY"],
+        prompt: "Based on the judge's completed review, produce the final debate brief for delivery. Include the decision, strongest point for each side, judge reasoning, uncertainty, and follow-up questions, plus document metadata such as title, format, and output path when available. Return valid JSON with event READY and content containing the structured business result. If the current Harness exposes verified native tools and a document artifact is requested, use only those tools; otherwise return the document content and metadata without claiming a file was created."
       }
     ],
     flows: [
@@ -376,9 +367,8 @@ export const cases = [
       ["proponent", "neutral-judge", "READY"],
       ["opponent", "neutral-judge", "READY"],
       ["neutral-judge", "debate-host", "NEEDS_REWORK"],
-      ["neutral-judge", "debate-reporter", "READY"],
-      ["debate-reporter", "media-publisher", "READY"],
-      ["media-publisher", "__system_end__", "READY"]
+      ["neutral-judge", "document-publisher", "READY"],
+      ["document-publisher", "__system_end__", "READY"]
     ]
   }
 ];

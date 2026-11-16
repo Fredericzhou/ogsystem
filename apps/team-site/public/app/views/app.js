@@ -4998,6 +4998,21 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
           };
           return labels[item.type] || String(item.type || "event").replaceAll("_", " ");
         };
+        const agentProgressSummary = (item) => {
+          const agentEvent = item.agentEvent || item.event;
+          const type = String(agentEvent?.type || "").toLowerCase();
+          const english = state.locale === "en";
+          const tool = agentEvent?.tool ? ` · ${agentEvent.tool}` : "";
+          if (type === "session_started") return english ? "Connected to the backend" : "已连接到底座";
+          if (type === "reasoning" || type === "reasoning_delta") return english ? "Reasoning through the task…" : "正在梳理任务…";
+          if (type === "text_delta") return english ? "Drafting the structured result…" : "正在形成结构化结果…";
+          if (type === "tool_started" || type === "tool_invocation") return english ? `Running a backend tool${tool}…` : `正在运行底座工具${tool}…`;
+          if (type === "tool_finished" || type === "tool_result") return english ? `Received the tool result${tool}` : `已收到工具结果${tool}`;
+          if (type === "permission_required" || type === "permission_request") return english ? "Checking execution permission…" : "正在检查执行权限…";
+          if (type === "turn_completed") return english ? "The backend returned a result" : "底座已返回结果";
+          if (type === "turn_failed") return english ? "The backend reported an error" : "底座报告了错误";
+          return english ? "Working through the task…" : "正在处理任务…";
+        };
         const drawTranscript = (events = []) => {
           if (!result || !ownsRuntimePanel()) return;
           let panel = result.querySelector(".team-simulation-result");
@@ -5116,6 +5131,35 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
               if (item.type === "simulation.failed") {
                 appendRuntimeFailure(item.error || item.failure || item.errorEnvelope?.message, item.errorEnvelope || item);
               }
+              continue;
+            }
+            if (item.type === "agent_event") {
+              const key = eventActivationKey(item);
+              let card = roleCards.get(key);
+              if (!card) {
+                const roleDef = roleDefinitions.find((r) => r.roleId === item.roleId || r.id === item.roleId) || {};
+                const template = document.createElement("template");
+                template.innerHTML = studioRuntimeRoleCardMarkup({ event: { ...item, status: "working" }, roleName: roleName(item.roleId || "system"), backend: item.backend || roleDef.backend || "", authoring, auditIndex: Math.max(0, transcript.indexOf(item)) });
+                card = template.content.firstElementChild;
+                if (!card) continue;
+                card.dataset.executionKey = key;
+                list.append(card);
+                roleCards.set(key, card);
+              }
+              card._studioAuditItem = { ...(card._studioAuditItem || {}), ...item };
+              card.dataset.status = "working";
+              const statusSpan = card.querySelector(".team-debug-time-status") || card.querySelector("header span");
+              if (statusSpan) statusSpan.textContent = `${studioSimulationEventTime(item)} · ${studioSimulationStatus("working")}`;
+              const progress = card.querySelector("[data-debug-section=agent-progress]") || (() => {
+                const section = document.createElement("section");
+                section.dataset.debugSection = "agent-progress";
+                section.className = "studio-agent-progress";
+                section.innerHTML = `<small>${state.locale === "en" ? "Live progress" : "实时进展"}</small><p></p>`;
+                (card.querySelector(".team-debug-bubble-body") || card).append(section);
+                return section;
+              })();
+              const progressText = progress.querySelector("p");
+              if (progressText) progressText.textContent = agentProgressSummary(item);
               continue;
             }
             if (!String(item.type || "").startsWith("role.") && item.type !== "role_waiting") continue;
@@ -5654,6 +5698,12 @@ const runTeamGraphMounts = new Map();
 function runtimeEventsFromPayload(eventsPayload) {
   return (eventsPayload?.events || []).map((entry) => {
     const record = entry?.record || entry || {};
+    // Agent events have a nested provider event. Preserve the v2 envelope type
+    // so the transcript can render a safe high level summary instead of the
+    // provider's raw event as a graph/runtime event.
+    if (record.type === "agent_event" || record.eventType === "agent_event") {
+      return { ...record, type: "agent_event", agentEvent: record.event && typeof record.event === "object" ? record.event : undefined };
+    }
     const event = record.event && typeof record.event === "object" ? record.event : record;
     return { ...record, ...event, type: event.type || record.type || record.eventType };
   }).filter((event) => typeof event.type === "string");
