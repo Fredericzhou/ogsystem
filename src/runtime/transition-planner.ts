@@ -1693,7 +1693,8 @@ export function planHumanReviewDecisionTransition(args: ReviewDecisionTransition
   const node = getExecutionPlanNode(args.plan, args.review.roleId);
   const rolePackage = args.rolePackagesByRoleId.get(args.review.roleId);
   if (!rolePackage) throw new Error(`[IR_CONTRACT_INVALID] Role Contract is missing for review role ${args.review.roleId}`);
-  if (!rolePackage.manifest.authority.controlActions.includes(args.decision.decision as "approve" | "rework" | "pause" | "terminate")) {
+  const businessAction = args.decision.decision === "approve" || args.decision.decision === "rework" || args.decision.decision === "reject";
+  if (businessAction && !rolePackage.manifest.authority.controlActions.includes(args.decision.decision as "approve" | "rework" | "reject")) {
     throw new Error(`[IR_CONTRACT_INVALID] Role ${args.review.roleId} does not authorize human review action ${args.decision.decision}`);
   }
   if (args.decision.decision === "approve") {

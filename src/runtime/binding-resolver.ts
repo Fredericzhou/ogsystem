@@ -88,51 +88,5 @@ export function resolveExecutionBinding(args: {
     };
   }
 
-  if (args.node.binding.kind === "profile") {
-    const profile = args.profilesById.get(args.node.binding.profileId);
-    if (!profile) {
-      throw new Error(`Execution profile not found: ${args.node.binding.profileId}`);
-    }
-    const tool = args.toolsByRef.get(profile.toolRef);
-    if (!tool) {
-      throw new Error(`Tool not found: ${profile.toolRef}`);
-    }
-    if (args.effectiveLaw.forbiddenToolRefs.includes(profile.toolRef)) {
-      throw new Error(`Tool is forbidden by effective law: ${profile.toolRef}`);
-    }
-    return {
-      binding: {
-        kind: "profile",
-        profile,
-        tool
-      },
-      bindingLabel: `profile:${profile.profileId}`,
-      timeoutMs: profile.timeoutMs ?? defaults.timeoutMs,
-      maxOutputBytes: profile.maxOutputBytes ?? defaults.maxOutputBytes,
-      workdir: args.executionWorkspace ?? sessionDirectory ?? args.baseWorkdir,
-      commandBaseDir: args.commandBaseDir ?? args.baseWorkdir,
-      env: {
-        OGSYSTEM_RUN_DIR: args.runContext.runDir,
-        OGSYSTEM_SHARED_DIR: args.runContext.sharedDir,
-        OGSYSTEM_TARGET_DIR: args.baseWorkdir,
-        OGSYSTEM_ROLE_DIR: args.roleDirs?.roleDir ?? args.baseWorkdir,
-        OGSYSTEM_PRIVATE_DIR: sessionDirectory ?? "",
-        OGSYSTEM_ROLE_ID: args.roleId,
-        OGSYSTEM_PROFILE_ID: profile.profileId,
-        OGSYSTEM_TOOL_REF: tool.toolRef,
-        OGSYSTEM_ALLOWED_EVENTS: args.allowedEvents.join(",")
-      },
-      profileId: profile.profileId,
-      toolRef: tool.toolRef,
-      command: tool.command,
-      sessionDirectory
-    };
-  }
-
-  return {
-    bindingLabel: "noop",
-    timeoutMs: defaults.timeoutMs,
-    maxOutputBytes: defaults.maxOutputBytes,
-    workdir: args.executionWorkspace ?? args.baseWorkdir
-  };
+  throw new Error(`V2_BINDING_REQUIRED: role "${args.roleId}" does not have a Harness model binding`);
 }

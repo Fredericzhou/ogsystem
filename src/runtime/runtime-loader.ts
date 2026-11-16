@@ -4,17 +4,13 @@ import { resolve } from "node:path";
 import { DEFAULT_ROLE_REPO } from "./bundled-repos.js";
 import {
   validateLawsConfig,
-  validateProfilesConfig,
   validateRuntimeConfig,
-  validateToolsConfig,
   validateUserProfileConfig
 } from "./config.js";
 import { readJsonFile } from "./json-file.js";
 import { loadRolePackage } from "./role-repo.js";
 import { pathExists } from "./run-store.js";
 import type {
-  CliTool,
-  ExecutionProfile,
   LawCatalog,
   LoadedRolePackage,
   RuntimeConfig,
@@ -161,44 +157,6 @@ export async function loadUserProfile(
     return undefined;
   }
   return validateUserProfileConfig(await readJsonFile(profilePath), profilePath);
-}
-
-function resolveOptionalProjectFile(args: {
-  path?: string;
-  workdir?: string;
-  defaultBasename: string;
-}): string | undefined {
-  if (args.path) {
-    return args.path;
-  }
-  if (!args.workdir) {
-    return undefined;
-  }
-  return resolve(args.workdir, args.defaultBasename);
-}
-
-export async function loadProfiles(path?: string, workdir?: string): Promise<ExecutionProfile[]> {
-  const profilePath = resolveOptionalProjectFile({
-    path,
-    workdir,
-    defaultBasename: "profiles.json"
-  });
-  if (!profilePath || !(await pathExists(profilePath))) {
-    return [];
-  }
-  return validateProfilesConfig(await readJsonFile(profilePath), profilePath);
-}
-
-export async function loadTools(path?: string, workdir?: string): Promise<CliTool[]> {
-  const toolsPath = resolveOptionalProjectFile({
-    path,
-    workdir,
-    defaultBasename: "tools.json"
-  });
-  if (!toolsPath || !(await pathExists(toolsPath))) {
-    return [];
-  }
-  return validateToolsConfig(await readJsonFile(toolsPath), toolsPath).tools;
 }
 
 export async function loadLaws(

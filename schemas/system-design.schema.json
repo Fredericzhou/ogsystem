@@ -6,7 +6,7 @@
   "additionalProperties": false,
   "required": ["schemaVersion", "revision", "intent", "system", "seats", "transitions", "state", "contracts", "policies", "bindings", "presentation"],
   "properties": {
-    "schemaVersion": { "const": 1 },
+    "schemaVersion": { "const": 2 },
     "revision": { "type": "integer", "minimum": 0 },
     "intent": {
       "type": "object",
@@ -23,12 +23,22 @@
     "system": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["systemId", "systemVersion", "entrySeatId", "lawGlobalRef"],
+      "required": ["systemId", "systemVersion", "lawGlobalRef"],
       "properties": {
         "systemId": { "type": "string", "minLength": 1 },
         "systemVersion": { "type": "string", "minLength": 1 },
-        "entrySeatId": { "type": "string" },
-        "entryEventType": { "type": "string" },
+        "startDispatch": {
+          "oneOf": [
+            { "type": "object", "required": ["mode"], "properties": { "mode": { "const": "all" } }, "additionalProperties": false },
+            { "type": "object", "required": ["mode", "count"], "properties": { "mode": { "const": "random_n" }, "count": { "type": "integer", "minimum": 1 } }, "additionalProperties": false }
+          ]
+        },
+        "endJoin": {
+          "type": "object",
+          "required": ["mode"],
+          "properties": { "mode": { "enum": ["all_of", "quorum_of"] }, "min": { "type": "integer", "minimum": 1 } },
+          "additionalProperties": false
+        },
         "lawGlobalRef": { "type": "string", "minLength": 1 },
         "handoffMode": { "enum": ["strict", "transition"] },
         "handoffContracts": { "type": "string" }
@@ -69,11 +79,10 @@
   "$defs": {
     "binding": {
       "type": "object",
-      "required": ["kind"],
+      "required": ["kind", "harnessTemplate"],
       "properties": {
-        "kind": { "enum": ["model", "exec", "noop"] },
-        "modelRef": { "type": "string" },
-        "profileId": { "type": "string" }
+        "kind": { "const": "harness" },
+        "harnessTemplate": { "type": "string", "minLength": 1 }
       },
       "additionalProperties": false
     },

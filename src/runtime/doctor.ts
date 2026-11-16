@@ -22,7 +22,7 @@ import { validateLawsConfig, validateRuntimeConfig, validateUserProfileConfig } 
 import { readJsonFile } from "./json-file.js";
 import { listSupportedJoinModes, listSupportedRoutingModes } from "./graph-mode-registry.js";
 import { isModelCatalogStale, loadModelCatalog } from "./model-catalog.js";
-import { loadModelSelection, resolveModelSelectionForSystem } from "./model-selection.js";
+import { loadExecutionBindingsV2 } from "./contract-v2-loader.js";
 import { executeOpencodeModelRole, startOpencodeRunClient } from "./opencode-executor.js";
 import { loadSystemFromMermaid } from "./parse-mermaid.js";
 import { redactText } from "./redaction.js";
@@ -40,6 +40,32 @@ import {
 import type { RuntimeConfig, SystemDefinition } from "./types.js";
 
 type CheckResult = ReturnType<typeof checkExecutable>;
+
+type DoctorHarnessBinding = {
+  backend: string;
+  modelId: string;
+  timeoutMs?: number;
+  maxOutputBytes?: number;
+};
+
+async function loadDoctorHarnessBindings(workdir: string, system: SystemDefinition): Promise<Map<string, DoctorHarnessBinding>> {
+  const bindings = await loadExecutionBindingsV2(resolve(workdir, ".ogs", "execution-bindings.json"));
+  const resolved = new Map<string, DoctorHarnessBinding>();
+  for (const roleId of system.roleIds) {
+    const templateId = bindings.roles[roleId]?.harnessTemplate ?? bindings.defaults?.harnessTemplate;
+    const template = templateId ? bindings.harnessTemplates?.[templateId] : undefined;
+    if (!template) {
+      throw new Error(`V2_HARNESS_BINDING_REQUIRED: role "${roleId}" has no resolved Harness Template`);
+    }
+    resolved.set(roleId, {
+      backend: template.backend,
+      modelId: template.model,
+      timeoutMs: template.environment.limits?.timeoutMs,
+      maxOutputBytes: template.environment.limits?.maxOutputBytes
+    });
+  }
+  return resolved;
+}
 
 export type ProviderHealthCheck = {
   roleId?: string;
@@ -298,14 +324,7 @@ async function runOnlineModelConnectivityCheck(args: {
   const ONLINE_CHECK_MIN_TIMEOUT_MS = 20000;
   const ONLINE_CHECK_MAX_TIMEOUT_MS = 90000;
 
-  const selection = await loadModelSelection(resolve(args.workdir, ".ogs", "model-selection.json"));
-  const catalog = await loadModelCatalog(resolve(args.workdir, ".ogs", "model-catalog.json"));
-  const resolvedSelection = resolveModelSelectionForSystem({
-    system: args.system,
-    selection,
-    catalog
-  });
-  const resolvedModels = Array.from(resolvedSelection.resolvedByRoleId.entries());
+  const resolvedModels = Array.from((await loadDoctorHarnessBindings(args.workdir, args.system)).entries());
   if (resolvedModels.length === 0) {
     args.report.providerHealth.push({
       status: "skipped",
@@ -321,7 +340,7 @@ async function runOnlineModelConnectivityCheck(args: {
     if (model.backend === "opencode") continue;
     args.report.providerHealth.push({
       roleId,
-      modelRef: `${model.backend}/${model.modelId}`,
+          modelRef: `${model.backend}/${model.modelId}`,
       status: "skipped",
       code: "DOCTOR_PROVIDER_ONLINE_SKIPPED",
       message: `online connectivity probe is not implemented for backend ${model.backend}`
@@ -357,7 +376,6 @@ async function runOnlineModelConnectivityCheck(args: {
             additionalProperties: false
           },
           modelRef: selectionConfig.modelId,
-          variant: selectionConfig.variant,
           workdir: args.workdir,
           directory: args.targetDir,
           timeoutMs: checkTimeoutMs,
@@ -541,19 +559,10 @@ export async function runDoctor(args: {
           addError(report, `system role package invalid: ${roleId} (${String(error)})`);
         }
       }
-      const selection = await loadModelSelection(resolve(workdir, ".ogs", "model-selection.json"));
-      const catalog = await loadModelCatalog(resolve(workdir, ".ogs", "model-catalog.json"));
-      const resolvedSelection = resolveModelSelectionForSystem({
-        system,
-        selection,
-        catalog
-      });
-      for (const warning of resolvedSelection.warnings) {
-        addWarning(report, warning);
-      }
-      addNote(report, `resolved model bindings: ${resolvedSelection.resolvedByRoleId.size}`);
+      const resolvedHarnesses = await loadDoctorHarnessBindings(workdir, system);
+      addNote(report, `resolved Harness bindings: ${resolvedHarnesses.size}`);
       if (!args.onlineCheck) {
-        for (const [roleId, selectionConfig] of resolvedSelection.resolvedByRoleId.entries()) {
+        for (const [roleId, selectionConfig] of resolvedHarnesses.entries()) {
           report.providerHealth.push({
             roleId,
             modelRef: `${selectionConfig.backend}/${selectionConfig.modelId}`,

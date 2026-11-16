@@ -226,8 +226,6 @@ export function displayUiToken(value: unknown, t: Translator): string {
   if (normalized === "runtime") return t("state.runtime", undefined, "runtime");
   if (normalized === "idle") return t("state.idle", undefined, "idle");
   if (normalized === "model") return t("studio.binding.agent", undefined, "Agent");
-  if (normalized === "exec" || normalized === "profile") return t("studio.binding.tool", undefined, "Tool");
-  if (normalized === "noop") return t("studio.binding.noop", undefined, "Noop");
   if (normalized === "role") return t("token.role", undefined, "role");
   if (normalized === "execution") return t("token.execution", undefined, "execution");
   if (normalized === "execute") return t("token.execute", undefined, "execution");
@@ -275,19 +273,11 @@ export function statusTone(status: string | undefined): {
 }
 
 export function bindingTone(bindingKind: string | undefined): string {
-  switch (bindingKind) {
-    case "model":
-      return "model";
-    case "exec":
-    case "profile":
-      return "profile";
-    default:
-      return "noop";
-  }
+  return bindingKind === "model" ? "model" : "unresolved";
 }
 
 export function displayBindingKind(bindingKind: string | undefined, t: Translator): string {
-  return displayUiToken(bindingKind || "noop", t);
+  return bindingKind === "model" ? displayUiToken("model", t) : t("common.unknown", undefined, "unknown");
 }
 
 export function normalizeStudioTargetRoleId(roleId: unknown): string {
@@ -751,7 +741,7 @@ export function renderProjectReadinessPanel(args: {
       escapeText(String(missingBindings.length)) +
       '</span></div><strong>' +
       escapeText(missingBindings.length ? missingBindings.map((item) => String(item.roleId)).join(", ") : t("readiness.none", undefined, "none")) +
-      '</strong><div class="hint">' + escapeText(t("readiness.bindingChecks", undefined, "checks exec.bind, model.bind, and model-selection resolution")) + '</div></div>',
+      '</strong><div class="hint">' + escapeText(t("readiness.bindingChecks", undefined, "checks Harness Template resolution and Backend readiness")) + '</div></div>',
     '<div class="event"><div class="event-top"><span>' + escapeText(t("readiness.contractCoverage", undefined, "contract coverage")) + '</span><span>' +
       escapeText(t("readiness.missing", { count: String(contractCoverage.missingFlowCount ?? 0) }, String(contractCoverage.missingFlowCount ?? 0) + " missing")) +
       '</span></div><strong>' +
@@ -835,7 +825,7 @@ export function renderReleaseGatePanel(args: {
   const unresolvedBindingItems = unresolvedBindings.slice(0, 8).map((binding) =>
     toCompactItem(
       String(binding.roleId ?? t("common.notAvailable", undefined, "n/a")),
-      displayBindingKind(String(binding.bindingKind ?? "noop"), t),
+      displayBindingKind(String(binding.bindingKind ?? ""), t),
       compactText(binding.message ?? binding.declaredBinding ?? binding.resolvedBinding ?? "", 140)
     )
   );
@@ -1137,11 +1127,10 @@ export function renderStudioRoleConfigEditor(args: {
   const disabled = saving ? " disabled" : "";
   const roleId = String(data.roleId ?? args.roleId);
   const title = String(draft.title ?? data.title ?? "");
-  const bindingKind = String(draft.bindingKind ?? data.bindingKind ?? "model");
+  const bindingKind: string = "model";
   const modelRef = String(draft.modelRef ?? data.modelRef ?? "");
   const backend = String(draft.backend ?? data.backend ?? "");
   const modelId = String(draft.modelId ?? data.modelId ?? "");
-  const profileId = String(draft.profileId ?? data.profileId ?? "");
   const contextMap = asRecord(draft.contextMap ?? data.contextMap) ?? {};
   const contractsData = args.contracts ?? {};
   const inputContract = (Array.isArray(contractsData.contracts) ? contractsData.contracts : [])
@@ -1249,29 +1238,6 @@ export function renderStudioRoleConfigEditor(args: {
     ...(reviewTarget && !Object.prototype.hasOwnProperty.call(allRoles, reviewTarget) ? ['<option value="' + escapeText(reviewTarget) + '" selected>' + escapeText(reviewTarget + " (missing role)") + '</option>'] : []),
     ...Object.keys(allRoles).sort((left, right) => left.localeCompare(right)).map((id) => '<option value="' + escapeText(id) + '"' + (id === reviewTarget ? ' selected' : '') + '>' + escapeText(id) + '</option>')
   ].join("");
-  const generatedProfileId = String(data.generatedProfileId ?? "");
-  const generatedToolRef = String(data.generatedToolRef ?? "");
-  const profiles = Array.isArray((args.projectConfig ?? {}).profiles)
-    ? ((args.projectConfig ?? {}).profiles as JsonRecord[])
-    : [];
-  const profileOptions = profiles
-    .filter((entry) => typeof entry === "object" && entry !== null && !Array.isArray(entry))
-    .map((entry) => ({
-      profileId: String(entry.profileId ?? ""),
-      toolRef: String(entry.toolRef ?? "")
-    }))
-    .filter((entry) => Boolean(entry.profileId));
-  const hasProfileOption = profileOptions.some((entry) => entry.profileId === profileId);
-  const effectiveProfileId = profileId || generatedProfileId || profileOptions[0]?.profileId || "";
-  const effectiveToolRef = profileOptions.find((entry) => entry.profileId === effectiveProfileId)?.toolRef
-    || (effectiveProfileId === generatedProfileId ? generatedToolRef : "");
-  const profileSelectOptions = (hasProfileOption ? profileOptions : [
-    ...(effectiveProfileId ? [{ profileId: effectiveProfileId, toolRef: effectiveToolRef }] : []),
-    ...profileOptions
-  ]).map((entry) =>
-    '<option value="' + escapeText(entry.profileId) + '"' + (entry.profileId === effectiveProfileId ? " selected" : "") + ">" +
-    escapeText(entry.toolRef ? `${entry.profileId} - ${entry.toolRef}` : entry.profileId) + "</option>"
-  ).join("");
   return [
     '<div class="event studio-role-config-editor" data-role-config-editor="' + escapeText(args.roleId) + '">',
     '<div class="event-top"><span>' + escapeText(t("studio.roleConfig", undefined, "role config")) + '</span><span>' + escapeText(dirty ? t("common.changed", undefined, "changed") : t("common.ready", undefined, "ready")) + '</span></div>',
@@ -1282,11 +1248,7 @@ export function renderStudioRoleConfigEditor(args: {
     '<div class="form-grid">' +
       '<label class="field"><span>' + escapeText(t("studio.form.roleId", undefined, "Role id")) + '</span><input data-role-config-field="roleId" value="' + escapeText(roleId) + '" readonly><div class="hint">' + escapeText(t("studio.executionConfigSystemManaged", undefined, "Required · system-managed · not business editable")) + '</div></label>' +
       '<label class="field"><span>' + escapeText(t("studio.form.title", undefined, "Title")) + '</span><input data-role-config-field="title" value="' + escapeText(title) + '"' + disabled + '><div class="hint">' + escapeText(t("studio.roleConfigTitleHint", undefined, "Optional display title shown in the graph card.")) + '</div></label>' +
-      '<label class="field"><span>' + escapeText(t("studio.form.bindingKind", undefined, "Binding")) + '</span><select data-role-config-field="bindingKind"' + disabled + '>' +
-        '<option value="model"' + (bindingKind === "model" ? " selected" : "") + '>' + escapeText(t("studio.binding.agent", undefined, "Agent")) + '</option>' +
-        '<option value="exec"' + (bindingKind === "exec" ? " selected" : "") + '>' + escapeText(t("studio.binding.tool", undefined, "Tool")) + '</option>' +
-        '<option value="noop"' + (bindingKind === "noop" ? " selected" : "") + '>' + escapeText(t("studio.binding.noop", undefined, "Noop")) + '</option>' +
-      '</select><div class="hint">' + escapeText(t("studio.roleConfigBindingHint", undefined, "Agent maps to model, Tool maps to project execution config, and Noop preserves pass-through wiring.")) + '</div></label>' +
+      '<div class="field"><span>' + escapeText(t("studio.form.bindingKind", undefined, "Binding")) + '</span><strong>Harness / model</strong><div class="hint">' + escapeText(t("studio.roleConfigBindingHint", undefined, "Backend and model are resolved through the Harness Template.")) + '</div></div>' +
       (bindingKind === "model"
         ? (() => {
             const models = Array.isArray(args.modelCatalog?.models) ? args.modelCatalog.models as JsonRecord[] : [];
@@ -1315,11 +1277,7 @@ export function renderStudioRoleConfigEditor(args: {
               '</select><div class="hint">' + escapeText(models.length ? t("studio.roleConfigModelHint", undefined, "Select a model advertised by an installed persistent CLI service.") : t("studio.form.noModels", undefined, "No runnable models. Run ogs models sync.")) + '</div></label>';
           })()
         : "") +
-      (bindingKind === "exec"
-        ? '<label class="field full"><span>' + escapeText(t("studio.form.profileId", undefined, "Execution profile")) + '</span><select data-role-config-field="profileId"' + disabled + '>' + profileSelectOptions + '</select><div class="hint">' + escapeText(effectiveProfileId === generatedProfileId
-            ? t("studio.roleConfigGeneratedProfileHint", { profileId: effectiveProfileId, toolRef: effectiveToolRef || generatedToolRef }, "A new execution config {profileId} backed by {toolRef} will be created automatically if it does not already exist.")
-            : t("studio.roleConfigProfileHint", { toolRef: effectiveToolRef || t("common.notAvailable", undefined, "n/a") }, "Tool binding resolves through {toolRef}.")) + '</div></label>'
-        : "") +
+      "" +
       '<section class="field full"><strong>' + escapeText(t("studio.routing", undefined, "Routing")) + '</strong><label class="field"><span>' + escapeText(t("studio.distributionMode", undefined, "Distribution")) + '</span><select data-role-setting="routingMode"' + disabled + '><option value="standard"' + (routingMode === "standard" ? " selected" : "") + '>' + escapeText(t("studio.standard", undefined, "Standard")) + '</option><option value="parallel_split"' + (routingMode === "parallel_split" ? " selected" : "") + '>parallel_split</option></select><div class="hint">' + escapeText(t("studio.parallelSplitHint", undefined, "Activates every statically declared normal downstream branch. It does not split a task or promise simultaneous execution.")) + '</div></label>' +
       (routeOrderRows ? '<div class="hint">' + escapeText(t("studio.routeOrderHint", undefined, "Set the order of sibling flow targets; leave positions in their current order to use the default.")) + '</div><div class="studio-route-order-list">' + routeOrderRows + '</div>' : "") +
       (isInCycle ? '<label class="field"><span>' + escapeText(t("studio.loopBudget", undefined, "Loop budget")) + '</span><input type="number" min="1" step="1" data-role-setting="loopMax" value="' + escapeText(loopMax) + '"' + disabled + '><div class="hint">' + escapeText(t("studio.loopBudgetHint", undefined, "Optional positive activation limit for this role in a cycle.")) + '</div></label>' : "") + '</section>' +
@@ -1343,53 +1301,12 @@ export function renderStudioExecutionConfigEditor(args: {
   t?: Translator;
 }): string {
   const t: Translator = typeof args.t === "function" ? args.t : (_key, _vars, fallback) => fallback ?? _key;
-  const editor = args.editor ?? {};
-  const activeRoleId = String(editor.roleId ?? "");
-  const matchesRole = activeRoleId === args.roleId;
-  const data = matchesRole && typeof editor.data === "object" && editor.data !== null && !Array.isArray(editor.data)
-    ? editor.data as JsonRecord
-    : {};
-  const draft = matchesRole && typeof editor.draft === "object" && editor.draft !== null && !Array.isArray(editor.draft)
-    ? editor.draft as JsonRecord
-    : {};
-  const loading = matchesRole && editor.loading === true;
-  const saving = matchesRole && editor.saving === true;
-  const dirty = matchesRole && editor.dirty === true;
-  const loaded = matchesRole && editor.loaded === true;
-  const error = matchesRole ? String(editor.error ?? "") : "";
-  const disabled = loading || saving ? " disabled" : "";
-  const profileId = String(draft.profileId ?? data.profileId ?? "");
-  const toolRef = String(draft.toolRef ?? data.toolRef ?? "");
-  const command = String(draft.command ?? data.command ?? "");
-  const argsTemplate = Array.isArray(draft.argsTemplate)
-    ? draft.argsTemplate
-    : Array.isArray(data.argsTemplate)
-      ? data.argsTemplate
-      : [];
-  const stdinMode = String(draft.stdinMode ?? data.stdinMode ?? "text");
-  const timeoutMs = String(draft.timeoutMs ?? data.timeoutMs ?? "");
-  const maxOutputBytes = String(draft.maxOutputBytes ?? data.maxOutputBytes ?? "");
-  const loadButtonLabel = loaded
-    ? t("action.refresh", undefined, "Refresh")
-    : t("action.load", undefined, "Load");
   return [
-    '<div class="event studio-execution-config-editor" data-execution-config-editor="' + escapeText(args.roleId) + '">',
-    '<div class="event-top"><span>' + escapeText(t("studio.executionConfig", undefined, "execution config")) + '</span><span>' + escapeText(dirty ? t("common.changed", undefined, "changed") : loaded ? t("common.loaded", undefined, "loaded") : t("common.lazy", undefined, "lazy")) + '</span></div>',
+    '<div class="event studio-execution-config-editor" data-harness-binding-editor="' + escapeText(args.roleId) + '">',
+    '<div class="event-top"><span>' + escapeText(t("studio.harnessTemplate", undefined, "Harness template")) + '</span><span>' + escapeText(t("common.readOnly", undefined, "read-only")) + '</span></div>',
     '<strong><code>' + escapeText(args.roleId) + '</code></strong>',
-    '<div class="hint">' + escapeText(t("studio.executionConfigHint", undefined, "Repository content is copied into this project. Business fields below are editable; ids stay system-managed.")) + '</div>',
-    error ? '<div class="hint severity-warning">' + escapeText(error) + '</div>' : '',
-    '<div class="actions compact"><button class="button subtle" data-execution-config-load="' + escapeText(args.roleId) + '"' + disabled + '>' + escapeText(loadButtonLabel) + '</button><button class="button primary" data-execution-config-save="' + escapeText(args.roleId) + '"' + (disabled || !loaded || !dirty ? " disabled" : "") + '>' + escapeText(t("action.save", undefined, "Save")) + '</button><button class="button subtle" data-execution-config-revert="' + escapeText(args.roleId) + '"' + (disabled || !loaded || !dirty ? " disabled" : "") + '>' + escapeText(t("action.revertToDisk", undefined, "Revert")) + '</button></div>',
-    loaded
-      ? '<div class="form-grid">' +
-          '<label class="field"><span>' + escapeText(t("studio.executionConfigProfileId", undefined, "Profile id")) + '</span><input data-execution-config-field="profileId" value="' + escapeText(profileId) + '" readonly><div class="hint">' + escapeText(t("studio.executionConfigSystemManaged", undefined, "Required · system-managed · not business editable")) + '</div></label>' +
-          '<label class="field"><span>' + escapeText(t("studio.executionConfigToolRef", undefined, "Tool ref")) + '</span><input data-execution-config-field="toolRef" value="' + escapeText(toolRef) + '" readonly><div class="hint">' + escapeText(t("studio.executionConfigSystemManaged", undefined, "Required · system-managed · not business editable")) + '</div></label>' +
-          '<label class="field full"><span>' + escapeText(t("studio.executionConfigCommand", undefined, "Command")) + '</span><input data-execution-config-field="command" value="' + escapeText(command) + '"' + disabled + '><div class="hint">' + escapeText(t("studio.executionConfigCommandHint", undefined, "Required. Entry command for the local tool runner.")) + '</div></label>' +
-          '<label class="field full"><span>' + escapeText(t("studio.executionConfigArgs", undefined, "Args template")) + '</span><textarea data-execution-config-field="argsTemplate"' + disabled + '>' + escapeText(JSON.stringify(argsTemplate, null, 2)) + '</textarea><div class="hint">' + escapeText(t("studio.executionConfigArgsHint", undefined, "Optional JSON array. Keep each item as a string argument.")) + '</div></label>' +
-          '<label class="field"><span>' + escapeText(t("studio.executionConfigStdinMode", undefined, "Stdin mode")) + '</span><select data-execution-config-field="stdinMode"' + disabled + '><option value="text"' + (stdinMode === "text" ? " selected" : "") + '>text</option><option value="none"' + (stdinMode === "none" ? " selected" : "") + '>none</option></select><div class="hint">' + escapeText(t("studio.executionConfigOptionalMutable", undefined, "Optional tuning · editable")) + '</div></label>' +
-          '<label class="field"><span>' + escapeText(t("studio.executionConfigTimeout", undefined, "Timeout ms")) + '</span><input data-execution-config-field="timeoutMs" inputmode="numeric" value="' + escapeText(timeoutMs) + '"' + disabled + '><div class="hint">' + escapeText(t("studio.executionConfigOptionalMutable", undefined, "Optional tuning · editable")) + '</div></label>' +
-          '<label class="field"><span>' + escapeText(t("studio.executionConfigMaxOutput", undefined, "Max output bytes")) + '</span><input data-execution-config-field="maxOutputBytes" inputmode="numeric" value="' + escapeText(maxOutputBytes) + '"' + disabled + '><div class="hint">' + escapeText(t("studio.executionConfigOptionalMutable", undefined, "Optional tuning · editable")) + '</div></label>' +
-        '</div>'
-      : '<div class="hint">' + escapeText(loading ? t("common.loading", undefined, "loading") : t("studio.executionConfigLoadHint", undefined, "Load this execution config to inspect and edit its project-local settings.")) + '</div>',
+    '<div class="hint">' + escapeText(t("studio.harnessTemplateHint", undefined, "Role execution is bound through the Harness Template in .ogs/execution-bindings.json. CLI tools and permissions are resolved by the backend adapter.")) + '</div>',
+    '<div class="hint">' + escapeText(t("studio.harnessTemplateEditHint", undefined, "Edit the Harness binding in the project contract or use the backend capability discovery flow.")) + '</div>',
     '</div>'
   ].join("");
 }
@@ -1549,7 +1466,7 @@ export function renderStudioBridgeStructureHtml(args: {
         return (
           '<button class="run-card studio-role-seat' + active + '" data-studio-role-id="' + escapeText(roleId) + '" style="--role-accent:' + roleColor.accent + ';--role-fill:' + roleColor.fill + '"' + busy + ">" +
           '<div class="run-title"><span class="studio-role-seat-identity"><strong>' + escapeText(roleId) + '</strong><span>' + escapeText(roleTitle) + '</span></span><span class="status ' +
-          escapeText(bindingTone(String(role.bindingKind ?? "noop"))) + '">' + escapeText(displayBindingKind(String(role.bindingKind ?? "noop"), t)) +
+          escapeText(bindingTone(String(role.bindingKind ?? ""))) + '">' + escapeText(displayBindingKind(String(role.bindingKind ?? ""), t)) +
           '</span></div><div class="meta"><span>' + escapeText(badges || t("studio.standard", undefined, "standard")) + '</span><span>' +
           escapeText(t("studio.events", { count: String((role.allowedEvents as unknown[] | undefined)?.length ?? 0) }, "events " + String((role.allowedEvents as unknown[] | undefined)?.length ?? 0))) + "</span></div></button>"
         );
@@ -1881,7 +1798,7 @@ export function renderBindingExplainPanel(args: {
     '<div class="event"><div class="event-top"><span>' + escapeText(t("config.bindingExplain", undefined, "binding explain")) + '</span><span>' +
       escapeText(args.stale ? t("common.stale", undefined, "stale") : t("common.fresh", undefined, "fresh")) +
       '</span></div><strong>' +
-      escapeText(t("config.rolesResolved", { count: roles.length }, roles.length + " roles resolved from system + model-selection")) +
+      escapeText(t("config.rolesResolved", { count: roles.length }, roles.length + " roles resolved from system + Harness bindings")) +
       "</strong></div>",
     ...roles.map((role) =>
       '<div class="event"><div class="event-top"><span><code>' +
@@ -2041,7 +1958,7 @@ export function renderReviewDetailPanel(detail: Record<string, unknown> | null |
   const history = Array.isArray(detail.history) ? detail.history : [];
   const nextActionSummary =
     detail.currentStatus === "pending"
-      ? tr("review.awaitingDecision", undefined, "Awaiting approve, rework, pause, or terminate.")
+      ? tr("review.awaitingDecision", undefined, "Awaiting approve, rework, continue, reject, or terminate.")
       : detail.decisionPhase === "recorded"
         ? tr("review.decisionRecorded", undefined, "Decision recorded; runtime reconcile should be inspected next.")
         : detail.decisionPhase === "pending_reconcile"
@@ -2762,7 +2679,7 @@ export function renderRunStatePanel(args: {
       items: pendingReviews,
       emptyLabel: t("review.noReviews", undefined, "No reviews for this run."),
       summaryLabel: t("status.waitingReview", undefined, "waiting review"),
-      hint: t("review.awaitingDecision", undefined, "Awaiting approve, rework, pause, or terminate."),
+      hint: t("review.awaitingDecision", undefined, "Awaiting approve, rework, continue, reject, or terminate."),
       open: pendingReviews.length > 0,
       tone: "warning"
     }),

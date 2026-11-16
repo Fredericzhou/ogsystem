@@ -19,6 +19,7 @@ import { listJsonSchemaIssues } from "./json-schema.js";
 import { ToolExecutionError } from "./tool-runner.js";
 import { hasExited, terminateChildProcessTree, waitForChildExit } from "./child-process-lifecycle.js";
 import type { LoadedModelPackage, ReasoningEffort } from "./types.js";
+import { createAgentEventEmitter } from "./agent-client-types.js";
 
 /**
  * Handles the OpenCode server lifecycle, sessions, and structured-output plumbing for model roles.
@@ -96,8 +97,23 @@ type SessionApi = {
   }): Promise<unknown>;
 };
 
+type ToolApi = {
+  ids(args?: { directory?: string; workspace?: string }): Promise<{
+    data?: unknown;
+  }>;
+  list?(args: {
+    directory?: string;
+    workspace?: string;
+    provider: string;
+    model: string;
+  }): Promise<{
+    data?: unknown;
+  }>;
+};
+
 type OpencodeClientLike = {
   session: SessionApi;
+  tool?: ToolApi;
 };
 
 /**
@@ -896,6 +912,46 @@ export async function startOpencodeRunClient(
 }
 
 /**
+ * Discover the native tool IDs exposed by the running OpenCode server. This is
+ * deliberately separate from model execution: capability snapshots must be
+ * based on the server's tool registry and must close the probe server on every
+ * success and failure path.
+ */
+export async function discoverOpencodeNativeTools(
+  args: { workdir: string; modelId: string; timeoutMs: number },
+  transport: OpencodeSdkTransport = defaultTransport
+): Promise<{ verifiedTools: string[]; detail?: string }> {
+  const runClient = await startOpencodeRunClient({
+    startupTimeoutMs: args.timeoutMs,
+    directory: args.workdir
+  }, transport);
+  try {
+    const toolApi = runClient.client.tool;
+    if (!toolApi?.ids) {
+      throw new Error("OpenCode SDK does not expose native tool discovery");
+    }
+    const response = await toolApi.ids({ directory: args.workdir });
+    const ids = Array.isArray(response?.data)
+      ? response.data.filter((id): id is string => typeof id === "string" && id.trim().length > 0)
+      : [];
+    if (!Array.isArray(response?.data)) {
+      throw new Error("OpenCode native tool discovery returned an invalid tool ID payload");
+    }
+    // `tool.ids` is the server's verified native registry. OpenCode's optional
+    // model-level listing is provider-dependent and has returned incomplete
+    // subsets for otherwise runnable models; the session still receives the
+    // frozen allow-set and enforces the selected native IDs at invocation.
+    const verifiedTools = [...new Set(ids)].sort();
+    return {
+      verifiedTools,
+      detail: `OpenCode native tool registry verified ${verifiedTools.length} tool${verifiedTools.length === 1 ? "" : "s"}.`
+    };
+  } finally {
+    await runClient.close();
+  }
+}
+
+/**
  * executeOpencodeModelRole is the primary function for running a model-bound role.
  * It manages:
  * 1. Starting the OpenCode server (if not already provided).
@@ -915,6 +971,7 @@ export async function executeOpencodeModelRole(
     variant?: string;
     reasoningEffort?: ReasoningEffort;
     effectiveReasoningEffort?: Exclude<ReasoningEffort, "auto">;
+    artifactToolPhase?: boolean;
     workdir: string;
     /** Coding project used for OpenCode SDK session scope. */
     directory?: string;
@@ -924,6 +981,8 @@ export async function executeOpencodeModelRole(
       write?: boolean;
       command?: boolean;
     };
+    /** Frozen v2 native tool set. When present, no tool is enabled implicitly. */
+    effectiveTools?: string[];
     timeoutMs: number;
     maxOutputBytes: number;
     runClient?: OpencodeRunClient;
@@ -938,6 +997,11 @@ export async function executeOpencodeModelRole(
       output?: string;
       outputChars?: number;
     }) => Promise<void>;
+    runId?: string;
+    executionId?: string;
+    attempt?: number;
+    policyDigest?: string;
+    onEvent?: import("./agent-client-types.js").AgentEventSink;
   },
   transport: OpencodeSdkTransport = defaultTransport
 ): Promise<{
@@ -963,6 +1027,16 @@ export async function executeOpencodeModelRole(
     throw new Error(`Role "${args.roleId}" is missing a concrete model reference`);
   }
   const { providerID, modelID } = splitModelRef(resolvedModelRef);
+  const emitter = createAgentEventEmitter({
+    runId: args.runId ?? "unknown",
+    roleId: args.roleId,
+    executionId: args.executionId ?? "unknown",
+    attempt: args.attempt ?? 1,
+    backend: "opencode",
+    model: resolvedModelRef,
+    policyDigest: args.policyDigest,
+    onEvent: args.onEvent
+  });
   const schema = args.schema as Record<string, unknown>;
   const variant = args.variant ?? resolveVariant(args.modelPackage?.manifest.args);
   const reasoningEffort = args.reasoningEffort;
@@ -994,6 +1068,26 @@ export async function executeOpencodeModelRole(
         task: false
       }
     : undefined;
+  const nativeToolAliases: Record<string, string> = {
+    "workspace.read": "read",
+    "workspace.list": "glob",
+    "workspace.glob": "glob",
+    "workspace.search": "grep",
+    "workspace.patch_text": "edit",
+    "workspace.write": "write",
+    "workspace.run": "bash",
+    list: "glob"
+  };
+  const knownNativeTools = [
+    "invalid", "question", "bash", "read", "glob", "grep", "edit", "write", "task",
+    "webfetch", "todowrite", "websearch", "skill", "apply_patch"
+  ];
+  const effectiveNativeTools = args.effectiveTools === undefined
+    ? undefined
+    : new Set(args.effectiveTools.map((tool) => nativeToolAliases[tool] ?? tool));
+  const promptTools = effectiveNativeTools === undefined
+    ? workspaceTools
+    : Object.fromEntries(knownNativeTools.map((tool) => [tool, effectiveNativeTools.has(tool)]));
   let sessionId = args.sessionId ?? "";
   let messageId: string | undefined;
   let timeoutCleanupSessionId: string | undefined;
@@ -1073,7 +1167,7 @@ export async function executeOpencodeModelRole(
                     schema,
                     corrective: true
                   });
-              const promptWithOptionalCorrection = async (text: string, phase: "primary" | "fallback" | "repair"): Promise<{
+              const promptWithOptionalCorrection = async (text: string, phase: "primary" | "fallback" | "repair", toolPhase = false): Promise<{
                 info?: {
                   structured?: unknown;
                   error?: {
@@ -1115,8 +1209,8 @@ export async function executeOpencodeModelRole(
                     },
                     variant,
                     ...(configuredReasoningEffort ? { reasoningEffort: configuredReasoningEffort } : {}),
-                    ...(workspaceTools ? { tools: workspaceTools } : {}),
-                    ...(mode === "structured"
+                    ...(promptTools ? { tools: promptTools } : {}),
+                    ...(mode === "structured" && !toolPhase
                       ? {
                           format: {
                             type: "json_schema" as const,
@@ -1140,6 +1234,22 @@ export async function executeOpencodeModelRole(
                 }
                 await ensureNotCancelled();
                 if (!response) throw new Error("OpenCode prompt returned no response");
+
+                // OpenCode returns native tool calls as response parts. Keep the
+                // normalization in the Adapter boundary so Runtime Evidence has
+                // the same tool_invocation shape as Codex/ACP/Pi.
+                for (const part of response.data?.parts ?? []) {
+                  if (part?.type !== "tool") continue;
+                  const tool = typeof part.tool === "string" && part.tool.trim() ? part.tool.trim() : "tool";
+                  const state = part.state && typeof part.state === "object" && !Array.isArray(part.state)
+                    ? part.state as Record<string, unknown>
+                    : {};
+                  const status = typeof state.status === "string" ? state.status : "completed";
+                  if (status === "pending" || status === "running" || status === "started") {
+                    await emitter.emit({ type: "tool_started", tool, input: state.input ?? state.rawInput });
+                  }
+                  await emitter.emit({ type: "tool_finished", tool, output: { ...state, status } });
+                }
 
                 const promptErrorMessage = extractSdkErrorMessage(response, {
                   providerID,
@@ -1183,6 +1293,13 @@ export async function executeOpencodeModelRole(
                 };
               };
 
+              if (mode === "structured" && args.artifactToolPhase && effectiveNativeTools && [...effectiveNativeTools].some((tool) => ["write", "edit", "apply_patch", "bash"].includes(tool))) {
+                await promptWithOptionalCorrection(
+                  `${args.prompt}\n\nTool phase: use the enabled native workspace tools now to create every requested file inside the execution workspace. Do not merely describe the files. Verify each file exists and is readable before returning the final JSON.`,
+                  args.promptCallPhase ?? "primary",
+                  true
+                );
+              }
               const firstResponse = await promptWithOptionalCorrection(promptText, args.promptCallPhase ?? "primary");
               try {
                 const stdout = mode === "structured"

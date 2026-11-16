@@ -23,9 +23,6 @@ type StudioAuthoringLeafCommand =
       modelId?: string;
       modelSelectionSource?: StudioAuthoringRole["modelSelectionSource"];
       modelRef?: string;
-      profileId?: string;
-      profileDraft?: StudioExecutionProfileDraft;
-      toolDraft?: StudioExecutionToolDraft;
       x?: number;
       y?: number;
     }
@@ -40,11 +37,8 @@ type StudioAuthoringLeafCommand =
       modelId?: string;
       modelSelectionSource?: StudioAuthoringRole["modelSelectionSource"];
       modelRef?: string;
-      profileId?: string;
       contextMap?: Record<string, string>;
       roleSettings?: Pick<StudioAuthoringRole, "routingMode" | "routeOrder" | "joinMode" | "joinMin" | "loopMax" | "review">;
-      profileDraft?: StudioExecutionProfileDraft;
-      toolDraft?: StudioExecutionToolDraft;
     }
   | { type: "delete-role"; roleId: string }
   | {
@@ -89,8 +83,6 @@ export type StudioAuthoringCommandResult = {
   selectedRoleId?: string;
   selectedFlowKey?: string;
   repositoryRoleId?: string;
-  profileDrafts?: StudioExecutionProfileDraft[];
-  toolDrafts?: StudioExecutionToolDraft[];
   blockedCode?:
     | "entry-role-delete"
     | "missing-role-id"
@@ -99,21 +91,6 @@ export type StudioAuthoringCommandResult = {
     | "invalid-edge-endpoints"
     | "duplicate-edge"
     | "invalid-event-type";
-};
-
-export type StudioExecutionProfileDraft = {
-  profileId: string;
-  toolRef: string;
-  timeoutMs?: number;
-  maxOutputBytes?: number;
-};
-
-export type StudioExecutionToolDraft = {
-  toolRef: string;
-  runner: "local_shell";
-  command: string;
-  argsTemplate: string[];
-  stdinMode: "none" | "text";
 };
 
 function cloneJson<T>(value: T): T {
@@ -194,7 +171,10 @@ function roleCanvasNode(role: StudioAuthoringRole, x: number, y: number): Studio
 }
 
 function normalizeBindingKind(value: unknown): StudioAuthoringRole["bindingKind"] {
-  return value === "model" || value === "exec" ? value : "noop";
+  if (value !== undefined && value !== "model") {
+    throw new Error("V2_STUDIO_LEGACY_BINDING: only Harness/model bindings are accepted.");
+  }
+  return "model";
 }
 
 function applyRoleBinding(
@@ -206,7 +186,6 @@ function applyRoleBinding(
     modelId?: string;
     modelSelectionSource?: StudioAuthoringRole["modelSelectionSource"];
     modelRef?: string;
-    profileId?: string;
     contextMap?: Record<string, string>;
     roleSettings?: Pick<StudioAuthoringRole, "routingMode" | "routeOrder" | "joinMode" | "joinMin" | "loopMax" | "review">;
   }
@@ -221,7 +200,6 @@ function applyRoleBinding(
   delete next.backend;
   delete next.modelId;
   delete next.modelSelectionSource;
-  delete next.profileId;
   if (bindingKind === "model") {
     const backend = String(args.backend ?? "").trim();
     const modelId = String(args.modelId ?? "").trim();
@@ -231,10 +209,6 @@ function applyRoleBinding(
       next.modelSelectionSource = args.modelSelectionSource ?? "role";
       next.modelRef = `${backend}/${modelId}`;
     }
-  }
-  if (bindingKind === "exec") {
-    const profileId = String(args.profileId ?? "").trim();
-    if (profileId) next.profileId = profileId;
   }
   if (args.contextMap !== undefined) {
     if (Object.keys(args.contextMap).length > 0) {
@@ -331,7 +305,6 @@ function addRoleCommandFromRole(
     title: role.title,
     bindingKind: role.bindingKind,
     modelRef: role.modelRef,
-    profileId: role.profileId,
     x: layout?.x,
     y: layout?.y
   };
@@ -353,13 +326,7 @@ function addEdgeCommandFromFlow(
 }
 
 function hasInverseSideEffects(command: StudioAuthoringCommand): boolean {
-  if (command.type === "add-role") {
-    return Boolean(command.repositoryRoleId || command.profileDraft || command.toolDraft);
-  }
-  if (command.type === "update-role") {
-    return Boolean(command.profileDraft || command.toolDraft);
-  }
-  return false;
+  return command.type === "add-role" && Boolean(command.repositoryRoleId);
 }
 
 export function applyStudioAuthoringCommand(args: {
@@ -382,8 +349,6 @@ export function applyStudioAuthoringCommand(args: {
     let selectedRoleId: string | undefined;
     let selectedFlowKey: string | undefined;
     let repositoryRoleId: string | undefined;
-    const profileDrafts: StudioExecutionProfileDraft[] = [];
-    const toolDrafts: StudioExecutionToolDraft[] = [];
     for (const nestedCommand of command.commands) {
       const result = applyStudioAuthoringCommand({
         authoring: nextAuthoring,
@@ -397,21 +362,13 @@ export function applyStudioAuthoringCommand(args: {
       selectedRoleId = result.selectedRoleId ?? selectedRoleId;
       selectedFlowKey = result.selectedFlowKey ?? selectedFlowKey;
       repositoryRoleId = result.repositoryRoleId ?? repositoryRoleId;
-      if (result.profileDrafts?.length) {
-        profileDrafts.push(...result.profileDrafts);
-      }
-      if (result.toolDrafts?.length) {
-        toolDrafts.push(...result.toolDrafts);
-      }
     }
     return {
       authoring: nextAuthoring,
       canvas: nextCanvas,
       selectedRoleId,
       selectedFlowKey,
-      repositoryRoleId,
-      profileDrafts: profileDrafts.length ? profileDrafts : undefined,
-      toolDrafts: toolDrafts.length ? toolDrafts : undefined
+      repositoryRoleId
     };
   }
 
@@ -428,9 +385,7 @@ export function applyStudioAuthoringCommand(args: {
       }
       const roleId = explicitRoleId || nextRoleId(authoring);
       const isFirstRole = Object.keys(authoring.roles).length === 0;
-      const bindingKind = command.bindingKind === "model" || command.bindingKind === "exec"
-        ? command.bindingKind
-        : "noop";
+      const bindingKind = normalizeBindingKind(command.bindingKind);
       const role: StudioAuthoringRole = {
         roleId,
         title: normalizeTitle(command.title, roleId),
@@ -448,10 +403,6 @@ export function applyStudioAuthoringCommand(args: {
           role.modelRef = `${backend}/${modelId}`;
         }
       }
-      if (role.bindingKind === "exec") {
-        const profileId = String(command.profileId ?? "").trim();
-        if (profileId) role.profileId = profileId;
-      }
       const x = Number.isFinite(command.x) ? Number(command.x) : 120 + canvas.nodes.length * 260;
       const y = Number.isFinite(command.y) ? Number(command.y) : 120;
       authoring.roles[roleId] = role;
@@ -466,9 +417,7 @@ export function applyStudioAuthoringCommand(args: {
         authoring,
         canvas,
         selectedRoleId: roleId,
-        repositoryRoleId: command.repositoryRoleId,
-        profileDrafts: command.profileDraft ? [command.profileDraft] : undefined,
-        toolDrafts: command.toolDraft ? [command.toolDraft] : undefined
+        repositoryRoleId: command.repositoryRoleId
       };
     }
 
@@ -573,9 +522,7 @@ export function applyStudioAuthoringCommand(args: {
     return {
       authoring,
       canvas,
-      selectedRoleId: nextRoleIdValue,
-      profileDrafts: command.profileDraft ? [command.profileDraft] : undefined,
-      toolDrafts: command.toolDraft ? [command.toolDraft] : undefined
+      selectedRoleId: nextRoleIdValue
     };
   }
 
@@ -849,7 +796,6 @@ export function deriveInverseCommand(
       title: role.title,
       bindingKind: role.bindingKind,
       modelRef: role.modelRef,
-      profileId: role.profileId,
       contextMap: role.contextMap ? { ...role.contextMap } : undefined
       ,roleSettings: {
         routingMode: role.routingMode,

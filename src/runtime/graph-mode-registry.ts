@@ -185,7 +185,7 @@ export function selectRoutingTargets(args: {
   mode: "ok" | "noop";
 }): string[] {
   if (args.mode === "noop") {
-    return args.node.outgoing.map((flow) => flow.toRoleId).slice(0, 1);
+    throw new Error(`V2_NOOP_ROUTING_UNSUPPORTED: role "${args.node.roleId}" cannot route from a noop execution state`);
   }
 
   if (args.node.routingMode) {

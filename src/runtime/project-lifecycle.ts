@@ -24,30 +24,21 @@ import {
 } from "./bundled-repos.js";
 import { validateRuntimeConfig } from "./config.js";
 import { readJsonFile, writeJsonFileAtomic } from "./json-file.js";
-import {
-  chooseDefaultModelFromCatalog,
-  discoverLocalModelCatalog,
-  type DiscoveryCommandRunner
-} from "./model-catalog.js";
-import { loadModelSelection } from "./model-selection.js";
+import { chooseDefaultModelFromCatalog, discoverLocalModelCatalog, type DiscoveryCommandRunner } from "./model-catalog.js";
 import { loadSystemFromMermaid, parseSystemFromMermaidSource } from "./parse-mermaid.js";
 import { loadRolePackage } from "./role-repo.js";
 import { ROLE_EXECUTION_OUTCOME_FILE } from "./run-artifacts.js";
 import { filesystemRunStore } from "./run-store.js";
 import { projectTargetConfig } from "./project-target.js";
 import { stringifyJson } from "./runtime-support.js";
-import type {
-  HumanReviewDecision,
-  HumanReviewDecisionRecord,
-  ModelCatalog,
-  ModelSelectionConfig
-} from "./types.js";
+import type { HumanReviewDecision, HumanReviewDecisionRecord } from "./types.js";
 import type { RunSummaryProjection } from "./run-summary-schema.js";
 import type { SystemDefinition } from "./types.js";
 import type { ControlPlanePrincipal } from "./identity.js";
 import { systemDefinitionToDesign, saveSystemDesign, loadSystemDesign } from "../design/index.js";
 import { RUNTIME_EVENT_HUMAN_REVIEW_DECISION_REJECTED } from "../business-events.js";
 import { getLoopBudgetTargetRoleIds, resolveLoopBudgetTerminateScope } from "./loop-budget.js";
+import { loadExecutionBindingsV2 } from "./contract-v2-loader.js";
 
 export const OGS_DIR = ".ogs";
 export const OGS_RUNS_DIR = ".ogs/runs";
@@ -56,7 +47,7 @@ const OGS_README_FILE = ".ogs/README.md";
 const OGS_PROJECT_FILE = ".ogs/project.json";
 const OGS_RUNTIME_FILE = ".ogs/runtime.json";
 const OGS_MODEL_CATALOG_FILE = ".ogs/model-catalog.json";
-const OGS_MODEL_SELECTION_FILE = ".ogs/model-selection.json";
+const OGS_EXECUTION_BINDINGS_FILE = ".ogs/execution-bindings.json";
 const OGS_LAWS_FILE = ".ogs/laws.json";
 const OGS_USER_PROFILE_FILE = ".ogs/user-profile.json";
 const DEFAULT_DEBUG_TOOL_SCRIPT_FILE = "scripts/console-print.mjs";
@@ -155,7 +146,7 @@ const PROJECT_TEMPLATES: Record<ProjectTemplateId, ProjectTemplateSpec> = {
           constraints: {
             forbiddenToolRefs: [],
             maxTransitions: 8,
-            allowNoopWithoutExecutionBinding: true
+            allowNoopWithoutExecutionBinding: false
           }
         }
       ]
@@ -171,7 +162,9 @@ const PROJECT_TEMPLATES: Record<ProjectTemplateId, ProjectTemplateSpec> = {
       ""
     ].join("\n"),
     syncDependencies: true,
-    modelSeedStrategy: "empty"
+    // Discover the installed Backend/Model pair so even the editable starter has a
+    // concrete v2 Harness default. Runtime readiness still fail-closes unverified tools.
+    modelSeedStrategy: "refresh"
   },
   minimal: {
     systemMmd: [
@@ -179,7 +172,6 @@ const PROJECT_TEMPLATES: Record<ProjectTemplateId, ProjectTemplateSpec> = {
       "%% system.id=template.minimal",
       "%% system.version=1.0.0",
       "%% law.global=law.console.base",
-      `%% exec.bind.${MINIMAL_HELLO_ROLE_ID}=${MINIMAL_HELLO_PROFILE_ID}`,
       "",
       `start[开始] -->|START| hello[Role:${MINIMAL_HELLO_ROLE_ID}]`,
       `hello[Role:${MINIMAL_HELLO_ROLE_ID}] -->|${MINIMAL_HELLO_EVENT}| end[结束]`,
@@ -198,7 +190,7 @@ const PROJECT_TEMPLATES: Record<ProjectTemplateId, ProjectTemplateSpec> = {
       ]
     }),
     syncDependencies: true,
-    modelSeedStrategy: "empty"
+    modelSeedStrategy: "refresh"
   },
   "advanced-features": {
     systemMmd: [
@@ -206,10 +198,6 @@ const PROJECT_TEMPLATES: Record<ProjectTemplateId, ProjectTemplateSpec> = {
       "%% system.id=template.advanced.features",
       "%% system.version=1.0.0",
       "%% law.global=law.console.base",
-      "%% exec.bind.advanced-coordinator=profile.console.print",
-      "%% exec.bind.advanced-worker-a=profile.console.print",
-      "%% exec.bind.advanced-worker-b=profile.console.print",
-      "%% exec.bind.advanced-reviewer=profile.console.print",
       "%% role.mode.advanced-coordinator=parallel_split",
       "%% loop.max.advanced-coordinator=2",
       "%% route.order.advanced-coordinator=advanced-worker-a,advanced-worker-b",
@@ -448,13 +436,11 @@ function createDefaultOgsReadme(): string {
     "## File guide",
     "",
     "- `runtime.json`: Main runtime config. Safe place to change workspace and execution defaults.",
-    "- `model-selection.json`: Default and per-role CLI backend/model choices.",
+    "- `execution-bindings.json`: v2 Harness Template references and frozen technical intent.",
     "- `model-catalog.json`: Generated local CLI discovery from `ogs models discover` or `ogs models sync`.",
     "- Backend credentials stay in each CLI's own user-level configuration; OGS does not import or manage them.",
     "- `laws.json`: Project laws and transition constraints used by the runtime.",
     "- `user-profile.json`: Default user preference profile injected into runs.",
-    "- `profiles.json`: Exec profiles that bind `exec.bind.*` roles to local tools.",
-    "- `tools.json`: Local tool registry consumed by `profiles.json`.",
     "- `project.json`: Project identity and creation metadata. Usually generated once and then left alone.",
     "- `project.json.target`: Optional external coding project bound to OpenCode; omit it to use this project directory.",
     "- `runs-index.json`: Generated run index. Rebuilt by lifecycle commands.",
@@ -486,23 +472,30 @@ function createDefaultOgsReadme(): string {
     "- Change `workspace.workspaceIsolation` when the execution sandbox policy changes.",
     "- Keep `roleRepo` pointed at the project role repository root.",
     "",
-    "## Example: model-selection.json",
+    "## Example: execution-bindings.json",
     "",
     "```json",
     '{',
-    '  "configVersion": "3",',
-    '  "defaults": {',
-    '    "backend": "<opencode|codex|ollama|pi|qwen|kimi>",',
-    '    "modelId": "<cli-model-id>",',
-    '    "variant": "<optional-variant>",',
-    '    "timeoutMs": 600000,',
-    '    "maxOutputBytes": 2097152',
-    "  },",
-    '  "roles": { "proposal-author": { "backend": "codex", "modelId": "gpt-5.6-sol" } }',
+    '  "ogsContractVersion": 2,',
+    '  "schemaVersion": 1,',
+    '  "defaults": { "harnessTemplate": "harness.default" },',
+    '  "harnessTemplates": {',
+    '    "harness.default": {',
+    '      "ogsContractVersion": 2,',
+    '      "schemaVersion": 1,',
+    '      "kind": "harness",',
+    '      "templateId": "harness.default",',
+    '      "backend": "<discovered-backend>",',
+    '      "model": "<discovered-model>",',
+    '      "allowedTools": [],',
+    '      "environment": { "filesystem": { "read": true, "write": true }, "process": "allow", "network": "deny" }',
+    '    }',
+    '  },',
+    '  "roles": { "proposal-author": { "kind": "harness", "harnessTemplate": "harness.default" } }',
     "}",
     "```",
     "",
-    "Run `ogs models sync` to discover installed CLI services and initialize this file. Configure each role's backend and modelId in Studio or here.",
+    "Use Capability Preview or `ogs models capabilities --refresh` to verify native tools before changing a Harness Template. Configure Role-to-Template bindings in Studio or this file.",
     "",
     "## Example: laws.json",
     "",
@@ -514,7 +507,7 @@ function createDefaultOgsReadme(): string {
     '      "constraints": {',
     '        "forbiddenToolRefs": [],',
     '        "maxTransitions": 8,',
-    '        "allowNoopWithoutExecutionBinding": true',
+    '        "allowNoopWithoutExecutionBinding": false',
     "      }",
     "    }",
     "  ]",
@@ -1102,7 +1095,9 @@ function getSystemDependencies(system: SystemDefinition): {
 } {
   return {
     roleIds: [...system.roleIds].sort(),
-    modelIds: Array.from(new Set(Object.values(system.modelBinding))).sort()
+    // Backend/model identity belongs to the v2 Harness Template. Mermaid
+    // model.bind metadata is legacy input and is rejected by the parser.
+    modelIds: []
   };
 }
 
@@ -1175,74 +1170,59 @@ async function loadRoleIoOutcome(executionDir: string): Promise<Record<string, u
   return asObjectRecord(outcome);
 }
 
-async function upsertProjectExecutionConfig(args: {
-  workdir: string;
-  profile: Record<string, unknown>;
-  tool: Record<string, unknown>;
-}): Promise<void> {
-  const profilesPath = resolve(args.workdir, "profiles.json");
-  const existingProfiles = await tryReadJson(profilesPath);
-  const profiles = Array.isArray(existingProfiles)
-    ? existingProfiles.filter((entry) => asObjectRecord(entry))
-    : [];
-  const nextProfiles = [
-    ...profiles.filter(
-      (entry) => asObjectRecord(entry)?.profileId !== args.profile.profileId
-    ),
-    args.profile
-  ].sort((left, right) =>
-    String(asObjectRecord(left)?.profileId ?? "").localeCompare(
-      String(asObjectRecord(right)?.profileId ?? "")
-    )
-  );
-  await writeJsonFileAtomic(profilesPath, nextProfiles);
-
-  const toolsPath = resolve(args.workdir, "tools.json");
-  const existingToolsValue = await tryReadJson(toolsPath);
-  const existingToolsRecord = asObjectRecord(existingToolsValue);
-  const existingTools = Array.isArray(existingToolsRecord?.tools)
-    ? existingToolsRecord.tools.filter((entry) => asObjectRecord(entry))
-    : [];
-  const nextTools = [
-    ...existingTools.filter(
-      (entry) => asObjectRecord(entry)?.toolRef !== args.tool.toolRef
-    ),
-    args.tool
-  ].sort((left, right) =>
-    String(asObjectRecord(left)?.toolRef ?? "").localeCompare(
-      String(asObjectRecord(right)?.toolRef ?? "")
-    )
-  );
-  await writeJsonFileAtomic(toolsPath, { tools: nextTools });
-}
-
 async function ensureTemplateRuntimeAssets(args: {
   workdir: string;
   templateId: ProjectTemplateId;
 }): Promise<void> {
-  if (args.templateId !== "minimal") {
-    return;
-  }
-  await upsertProjectExecutionConfig({
-    workdir: args.workdir,
-    profile: {
-      profileId: MINIMAL_HELLO_PROFILE_ID,
-      toolRef: MINIMAL_HELLO_TOOL_REF,
-      timeoutMs: 30000,
-      maxOutputBytes: 65536
-    },
-    tool: {
-      toolRef: MINIMAL_HELLO_TOOL_REF,
-      runner: "local_shell",
-      command: "node",
-      argsTemplate: [MINIMAL_HELLO_TOOL_SCRIPT_FILE],
-      stdinMode: "none"
+  // Contract Set v2 resolves every role through a persisted Harness Template.
+  // Seed the binding before model discovery runs. Without a discovered Backend
+  // and model the project remains explicitly unbound and readiness blocks it.
+  const path = resolve(args.workdir, OGS_EXECUTION_BINDINGS_FILE);
+  if (await stat(path).then(() => true).catch(() => false)) return;
+  const system = parseSystemFromMermaidSource(await readFile(resolve(args.workdir, "system.mmd"), "utf8"));
+  const templateId = `harness.${args.templateId}.default`;
+  const roles = Object.fromEntries(system.roleIds.map((roleId) => [roleId, {
+    kind: "harness" as const,
+    harnessTemplate: templateId
+  }]));
+  let defaultBackend = "unbound";
+  let defaultModel = "unavailable";
+  try {
+    const catalog = await discoverLocalModelCatalog({ workdir: args.workdir });
+    const candidate = chooseDefaultModelFromCatalog(catalog);
+    if (candidate) {
+      defaultBackend = candidate.backend;
+      defaultModel = candidate.modelId;
     }
+  } catch {
+    // A project can be scaffolded without an installed CLI. Keep the binding
+    // explicit and non-runnable until `ogs project sync-models` discovers one.
+  }
+  await writeJsonFileAtomic(path, {
+    ogsContractVersion: 2,
+    schemaVersion: 1,
+    defaults: { harnessTemplate: templateId },
+    harnessTemplates: {
+      [templateId]: {
+        ogsContractVersion: 2,
+        schemaVersion: 1,
+        kind: "harness",
+        templateId,
+        backend: defaultBackend,
+        model: defaultModel,
+        // Tools are enabled only after a model-specific Capability Preview has
+        // verified them. This prevents a scaffold from claiming native facts.
+        allowedTools: [],
+        environment: {
+          filesystem: { read: true, write: true },
+          process: "allow",
+          network: "deny"
+        },
+        preset: "default"
+      }
+    },
+    roles
   });
-  await ensureFile(
-    resolve(args.workdir, MINIMAL_HELLO_TOOL_SCRIPT_FILE),
-    `${createMinimalHelloToolScript()}\n`
-  );
 }
 
 async function importRolePackageIntoProject(args: {
@@ -1284,7 +1264,7 @@ export function resolveOgsPaths(workdir: string): {
   projectPath: string;
   runtimePath: string;
   modelCatalogPath: string;
-  modelSelectionPath: string;
+  executionBindingsPath: string;
   lawsPath: string;
   userProfilePath: string;
 } {
@@ -1296,25 +1276,9 @@ export function resolveOgsPaths(workdir: string): {
     projectPath: resolve(workdir, OGS_PROJECT_FILE),
     runtimePath: resolve(workdir, OGS_RUNTIME_FILE),
     modelCatalogPath: resolve(workdir, OGS_MODEL_CATALOG_FILE),
-    modelSelectionPath: resolve(workdir, OGS_MODEL_SELECTION_FILE),
+    executionBindingsPath: resolve(workdir, OGS_EXECUTION_BINDINGS_FILE),
     lawsPath: resolve(workdir, OGS_LAWS_FILE),
     userProfilePath: resolve(workdir, OGS_USER_PROFILE_FILE)
-  };
-}
-
-function createDefaultModelSelection(args: {
-  catalog: ModelCatalog;
-}): ModelSelectionConfig {
-  const selected = chooseDefaultModelFromCatalog(args.catalog);
-  return {
-    configVersion: "3",
-    ...(selected ? { defaults: {
-      backend: selected.backend,
-      modelId: selected.modelId,
-      variant: selected.variants.includes("medium") ? "medium" : undefined,
-      timeoutMs: 600000,
-      maxOutputBytes: 2097152
-    } } : {})
   };
 }
 
@@ -1369,12 +1333,6 @@ export async function ensureProjectSkeleton(args: {
     })}\n`
   );
   await ensureFile(paths.readmePath, `${createDefaultOgsReadme()}\n`);
-  await ensureFile(resolve(args.workdir, "profiles.json"), `${stringifyJson(createDefaultProfilesConfig())}\n`);
-  await ensureFile(resolve(args.workdir, "tools.json"), `${stringifyJson(createDefaultToolsConfig())}\n`);
-  await ensureFile(
-    resolve(args.workdir, DEFAULT_DEBUG_TOOL_SCRIPT_FILE),
-    `${createDefaultConsolePrintToolScript()}\n`
-  );
 }
 
 export async function scaffoldProjectTemplate(args: {
@@ -1384,19 +1342,29 @@ export async function scaffoldProjectTemplate(args: {
   const template = getProjectTemplate(args.templateId);
   const paths = resolveOgsPaths(args.workdir);
   await ensureFile(resolve(args.workdir, "system.mmd"), `${template.systemMmd}\n`);
+  await ensureTemplateRuntimeAssets({
+    workdir: args.workdir,
+    templateId: args.templateId
+  });
   if (!(await loadSystemDesign(args.workdir))) {
     const systemSource = await readFile(resolve(args.workdir, "system.mmd"), "utf8");
-    await saveSystemDesign(args.workdir, systemDefinitionToDesign(parseSystemFromMermaidSource(systemSource)));
+    const system = parseSystemFromMermaidSource(systemSource);
+    const bindings = await loadExecutionBindingsV2(resolve(args.workdir, OGS_EXECUTION_BINDINGS_FILE));
+    const defaultHarnessTemplate = bindings.defaults?.harnessTemplate;
+    const harnessTemplateByRoleId = Object.fromEntries(system.roleIds.flatMap((roleId) => {
+      const templateId = bindings.roles[roleId]?.harnessTemplate ?? defaultHarnessTemplate;
+      return templateId ? [[roleId, templateId]] : [];
+    }));
+    await saveSystemDesign(args.workdir, systemDefinitionToDesign(system, {
+      harnessTemplateByRoleId,
+      defaultHarnessTemplate
+    }));
   }
   if (template.exampleSystemMmd) {
     await ensureFile(resolve(args.workdir, "system.example.mmd"), `${template.exampleSystemMmd}\n`);
   }
   await ensureFile(paths.lawsPath, `${template.lawsJson}\n`);
   await ensureFile(paths.userProfilePath, `${stringifyJson(createDefaultUserProfile())}\n`);
-  await ensureTemplateRuntimeAssets({
-    workdir: args.workdir,
-    templateId: args.templateId
-  });
   return template;
 }
 
@@ -1431,16 +1399,12 @@ export async function syncProjectModels(args: {
   commandRunner?: DiscoveryCommandRunner;
 }): Promise<{
   catalogPath: string;
-  selectionPath: string;
-  generatedSelection: boolean;
-  selectedModel?: string;
+  executionBindingsPath: string;
 }> {
   const paths = resolveOgsPaths(args.workdir);
   const strategy = args.strategy ?? "refresh";
   if (strategy === "empty") {
     const hasCatalog = await stat(paths.modelCatalogPath).then(() => true).catch(() => false);
-    const hasSelection = await stat(paths.modelSelectionPath).then(() => true).catch(() => false);
-
     if (!hasCatalog || args.rewriteDefault) {
       await writeJsonFileAtomic(paths.modelCatalogPath, {
         catalogVersion: "4",
@@ -1449,82 +1413,34 @@ export async function syncProjectModels(args: {
         models: []
       });
     }
-    if (!hasSelection || args.rewriteDefault) {
-      await writeJsonFileAtomic(paths.modelSelectionPath, {
-        configVersion: "3"
-      });
-      return {
-        catalogPath: paths.modelCatalogPath,
-        selectionPath: paths.modelSelectionPath,
-        generatedSelection: true
-      };
-    }
-
-    const existingSelection = await loadModelSelection(paths.modelSelectionPath);
-    const selectedModel = existingSelection?.defaults?.backend && existingSelection.defaults.modelId
-      ? `${existingSelection.defaults.backend}/${existingSelection.defaults.modelId}`
-      : undefined;
-
     return {
       catalogPath: paths.modelCatalogPath,
-      selectionPath: paths.modelSelectionPath,
-      generatedSelection: false,
-      selectedModel
+      executionBindingsPath: paths.executionBindingsPath
     };
-  }
-
-  const hasSelectionBeforeRefresh = await stat(paths.modelSelectionPath).then(() => true).catch(() => false);
-  const existingSelectionBeforeRefresh = hasSelectionBeforeRefresh && !args.rewriteDefault
-    ? await loadModelSelection(paths.modelSelectionPath)
-    : undefined;
-  const preferredModelIdsByBackend: Record<string, string[]> = {};
-  const addPreferredModel = (backend?: string, modelId?: string) => {
-    if (!backend || !modelId) return;
-    const ids = preferredModelIdsByBackend[backend] ?? (preferredModelIdsByBackend[backend] = []);
-    if (!ids.includes(modelId)) ids.push(modelId);
-  };
-  const selectedDefaults = existingSelectionBeforeRefresh?.defaults;
-  addPreferredModel(selectedDefaults?.backend, selectedDefaults?.modelId);
-  addPreferredModel(selectedDefaults?.fallback?.backend, selectedDefaults?.fallback?.modelId);
-  for (const override of Object.values(existingSelectionBeforeRefresh?.roles ?? {})) {
-    const backend = override.backend ?? selectedDefaults?.backend;
-    const modelId = override.modelId ?? selectedDefaults?.modelId;
-    addPreferredModel(backend, modelId);
-    addPreferredModel(override.fallback?.backend, override.fallback?.modelId);
   }
   const catalog = await discoverLocalModelCatalog({
     workdir: args.workdir,
-    commandRunner: args.commandRunner,
-    preferredModelIdsByBackend
+    commandRunner: args.commandRunner
   });
   await writeJsonFileAtomic(paths.modelCatalogPath, catalog);
-
-  const hasSelection = await stat(paths.modelSelectionPath).then(() => true).catch(() => false);
-  if (!hasSelection || args.rewriteDefault) {
-    const selection = createDefaultModelSelection({
-      catalog
-    });
-    await writeJsonFileAtomic(paths.modelSelectionPath, selection);
-    return {
-      catalogPath: paths.modelCatalogPath,
-      selectionPath: paths.modelSelectionPath,
-      generatedSelection: true,
-      selectedModel: selection.defaults?.backend && selection.defaults.modelId
-        ? `${selection.defaults.backend}/${selection.defaults.modelId}`
-        : undefined
-    };
+  const candidate = chooseDefaultModelFromCatalog(catalog);
+  if (candidate && await stat(paths.executionBindingsPath).then(() => true).catch(() => false)) {
+    const bindings = await readJsonFile(paths.executionBindingsPath);
+    if (bindings && typeof bindings === "object" && !Array.isArray(bindings)) {
+      const root = bindings as Record<string, unknown>;
+      const templates = root.harnessTemplates;
+      if (templates && typeof templates === "object" && !Array.isArray(templates)) {
+        const updatedTemplates = Object.fromEntries(Object.entries(templates as Record<string, unknown>).map(([id, value]) => {
+          if (!value || typeof value !== "object" || Array.isArray(value)) return [id, value];
+          return [id, { ...(value as Record<string, unknown>), backend: candidate.backend, model: candidate.modelId }];
+        }));
+        await writeJsonFileAtomic(paths.executionBindingsPath, { ...root, harnessTemplates: updatedTemplates });
+      }
+    }
   }
-
-  const existingSelection = existingSelectionBeforeRefresh;
-  const selectedModel = existingSelection?.defaults?.backend && existingSelection.defaults.modelId
-    ? `${existingSelection.defaults.backend}/${existingSelection.defaults.modelId}`
-    : undefined;
-
   return {
     catalogPath: paths.modelCatalogPath,
-    selectionPath: paths.modelSelectionPath,
-    generatedSelection: false,
-    selectedModel
+    executionBindingsPath: paths.executionBindingsPath
   };
 }
 
@@ -1882,7 +1798,19 @@ async function createReviewDecision(path: string, decision: HumanReviewDecisionR
     throw error;
   }
   try {
-    await handle.writeFile(`${JSON.stringify(decision, null, 2)}\n`, "utf8");
+    const runId = basename(dirname(dirname(dirname(path))));
+    const persisted = {
+      ...decision,
+      ogsContractVersion: 2,
+      schemaVersion: 1,
+      status: decision.decision === "pause" ? "paused" : "resolved",
+      eventId: `review_decision:${decision.reviewId}:${decision.committedAt}`,
+      eventType: "human_review_decision",
+      runId,
+      recordedAt: decision.decidedAt,
+      payload: decision
+    };
+    await handle.writeFile(`${JSON.stringify(persisted, null, 2)}\n`, "utf8");
     await handle.sync();
   } finally {
     await handle.close();
@@ -1991,7 +1919,8 @@ async function ensureHumanReviewTimeoutEvent(args: {
   if (events.split(/\r?\n/).some((line) => {
     if (!line) return false;
     try {
-      return (JSON.parse(line) as Record<string, unknown>).id === eventId;
+      const parsed = JSON.parse(line) as Record<string, unknown>;
+      return parsed.eventId === eventId || parsed.id === eventId;
     } catch {
       return false;
     }
@@ -1999,9 +1928,8 @@ async function ensureHumanReviewTimeoutEvent(args: {
   const requestRecord = typeof args.request === "object" && args.request !== null && !Array.isArray(args.request)
     ? args.request as Record<string, unknown>
     : {};
-  const event = {
+  const payload = {
     type: "human_review_timeout_recorded",
-    id: eventId,
     at: typeof args.decision.expiredAt === "string" ? args.decision.expiredAt : args.decision.decidedAt,
     reviewId: args.reviewId,
     roleId: requestRecord.roleId,
@@ -2010,6 +1938,16 @@ async function ensureHumanReviewTimeoutEvent(args: {
     loopIteration: requestRecord.loopIteration,
     action: args.action,
     ...(args.decision.scope ? { scope: args.decision.scope } : {})
+  };
+  const event = {
+    ...payload,
+    ogsContractVersion: 2,
+    schemaVersion: 1,
+    eventId,
+    eventType: payload.type,
+    runId: basename(args.runDir),
+    recordedAt: payload.at,
+    payload
   };
   const handle = await open(eventsPath, "a");
   try {
@@ -2032,9 +1970,8 @@ async function ensureHumanReviewBindingRejectedEvent(args: {
   const requestRecord = typeof args.request === "object" && args.request !== null && !Array.isArray(args.request)
     ? args.request as Record<string, unknown>
     : {};
-  const event = {
+  const payload = {
     type: RUNTIME_EVENT_HUMAN_REVIEW_DECISION_REJECTED,
-    id: eventId,
     at: new Date().toISOString(),
     reviewId: args.reviewId,
     roleId: requestRecord.roleId,
@@ -2042,6 +1979,16 @@ async function ensureHumanReviewBindingRejectedEvent(args: {
     lineageId: requestRecord.lineageId,
     reasonCode: "GRAPH_REVIEW_BINDING_MISSING",
     message: "Human review request is missing the required round, lineageId, branchId, loopIteration, or stateVersion binding."
+  };
+  const event = {
+    ...payload,
+    ogsContractVersion: 2,
+    schemaVersion: 1,
+    eventId,
+    eventType: payload.type,
+    runId: basename(args.runDir),
+    recordedAt: payload.at,
+    payload
   };
   const handle = await open(eventsPath, "a");
   try {
@@ -2195,6 +2142,11 @@ export async function writeHumanReviewDecision(args: {
   targetRoleId?: string;
   additionalBudget?: number;
 }): Promise<Record<string, unknown>> {
+  // Keep the boundary defensive for JavaScript/API callers. Timeout pause is
+  // an internal lifecycle action and can never be submitted as a decision.
+  if ((args.decision as string) === "pause") {
+    throw new Error("V2_REVIEW_PAUSE_INTERNAL_ONLY: pause is a Runtime timeout state, not a user decision; choose approve, rework, reject, continue, or terminate.");
+  }
   const currentReview = await inspectHumanReview(args.workdir, args.runId, args.reviewId);
   const currentStatus =
     typeof currentReview.currentStatus === "string" ? currentReview.currentStatus : "unknown";
@@ -2215,7 +2167,7 @@ export async function writeHumanReviewDecision(args: {
     typeof currentReview.decisionSnapshot === "object" && currentReview.decisionSnapshot !== null && !Array.isArray(currentReview.decisionSnapshot)
       ? currentReview.decisionSnapshot as Record<string, unknown>
       : undefined;
-  if (priorDecision && priorDecision.decision !== "pause") {
+  if (priorDecision) {
     throw new Error(`Review "${args.reviewId}" already has a durable decision; refusing to overwrite it.`);
   }
   const comment = normalizeHumanReviewComment(args.comment);
@@ -2235,7 +2187,8 @@ export async function writeHumanReviewDecision(args: {
       `[GRAPH_LOOP_BUDGET_DECISION_INVALID] Loop budget review "${args.reviewId}" requires continue, rework, reject, or terminate; received ${args.decision}.`
     );
   }
-  if (!isLoopBudgetReview && !rolePackage.manifest.authority.controlActions.includes(args.decision as "approve" | "rework" | "pause" | "terminate")) {
+  const businessAction = args.decision === "approve" || args.decision === "rework" || args.decision === "reject";
+  if (!isLoopBudgetReview && businessAction && !rolePackage.manifest.authority.controlActions.includes(args.decision as "approve" | "rework" | "reject")) {
     throw new Error(`[IR_CONTRACT_INVALID] Role ${roleId} does not authorize human review action ${args.decision}`);
   }
   if (args.scope !== undefined && args.decision !== "terminate") {
@@ -2301,7 +2254,17 @@ export async function writeHumanReviewDecision(args: {
   };
   const decisionPath = resolve(reviewsDir, `${args.reviewId}.decision.json`);
   if (priorDecision) {
-    await writeJsonFileAtomic(decisionPath, record);
+    await writeJsonFileAtomic(decisionPath, {
+      ...record,
+      ogsContractVersion: 2,
+      schemaVersion: 1,
+      status: record.decision === "pause" ? "paused" : "resolved",
+      eventId: `review_decision:${record.reviewId}:${record.committedAt}`,
+      eventType: "human_review_decision",
+      runId: args.runId,
+      recordedAt: record.decidedAt,
+      payload: record
+    });
   } else if (!(await createReviewDecision(decisionPath, record))) {
     throw new Error(`Review "${args.reviewId}" already has a durable decision; refusing to overwrite it.`);
   }

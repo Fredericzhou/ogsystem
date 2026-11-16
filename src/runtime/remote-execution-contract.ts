@@ -43,15 +43,8 @@ function isExecutorBinding(value: unknown): value is ExecutorBinding {
       (value.modelRef === undefined || typeof value.modelRef === "string") &&
       (value.variant === undefined || typeof value.variant === "string");
   }
-  if (value.kind !== "profile" || !isRecord(value.profile) || !isRecord(value.tool)) return false;
-  const { profile, tool } = value;
-  return typeof profile.profileId === "string" && typeof profile.toolRef === "string" &&
-    (profile.timeoutMs === undefined || typeof profile.timeoutMs === "number") &&
-    (profile.maxOutputBytes === undefined || typeof profile.maxOutputBytes === "number") &&
-    typeof tool.toolRef === "string" && tool.runner === "local_shell" &&
-    typeof tool.command === "string" && Array.isArray(tool.argsTemplate) &&
-    tool.argsTemplate.every((argument) => typeof argument === "string") &&
-    (tool.stdinMode === "none" || tool.stdinMode === "text");
+  // Contract Set v2 has no remote profile/local-shell execution branch.
+  return false;
 }
 
 export function validateRemoteExecutionRequest(value: unknown): value is RemoteExecutionRequest {

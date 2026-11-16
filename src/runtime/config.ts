@@ -145,6 +145,7 @@ function assertUniqueStringKey(args: {
 }
 
 export function validateProfilesConfig(value: unknown, filePath: string): ExecutionProfile[] {
+  fail(filePath, "$", "profiles.json is not accepted by Contract Set v2");
   const items = expectArray(value, filePath, "$");
   const seenProfileIds = new Map<string, number>();
   return items.map((item, index) => {
@@ -179,32 +180,7 @@ function validateStringArray(value: unknown, filePath: string, fieldPath: string
 }
 
 function validateTool(value: unknown, filePath: string, fieldPath: string): CliTool {
-  const record = expectRecord(value, filePath, fieldPath);
-  expectNoExtraKeys(record, ["toolRef", "runner", "command", "argsTemplate", "stdinMode", "requires"], filePath, fieldPath);
-
-  const runner = expectString(record.runner, filePath, `${fieldPath}.runner`);
-  if (runner !== "local_shell") {
-    fail(filePath, `${fieldPath}.runner`, `expected "local_shell", received "${runner}"`);
-  }
-
-  const stdinMode = expectString(record.stdinMode, filePath, `${fieldPath}.stdinMode`);
-  if (stdinMode !== "none" && stdinMode !== "text") {
-    fail(filePath, `${fieldPath}.stdinMode`, `expected "none" or "text", received "${stdinMode}"`);
-  }
-
-  const argsTemplate = expectArray(record.argsTemplate, filePath, `${fieldPath}.argsTemplate`).map(
-    (entry, argsIndex) =>
-      expectString(entry, filePath, `${fieldPath}.argsTemplate[${argsIndex}]`)
-  );
-
-  return {
-    toolRef: expectString(record.toolRef, filePath, `${fieldPath}.toolRef`),
-    runner,
-    command: expectString(record.command, filePath, `${fieldPath}.command`),
-    argsTemplate,
-    stdinMode,
-    ...(record.requires === undefined ? {} : { requires: validateStringArray(record.requires, filePath, `${fieldPath}.requires`) })
-  };
+  return fail(filePath, fieldPath, "local_shell is a v1 execution runner and is not accepted by Contract Set v2");
 }
 
 export function validateToolsConfig(value: unknown, filePath: string): CliToolRegistry {

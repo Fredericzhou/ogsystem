@@ -1757,9 +1757,31 @@ export async function persistHumanReviewRequest(args: {
   review: PendingHumanReview;
 }): Promise<void> {
   await mkdir(args.context.reviewsDir, { recursive: true });
+  const trigger = args.review.kind === "loop_budget" ? "exception" : "explicit";
+  const status = args.review.status === "expired" ? "cancelled" : args.review.status === "paused" ? "pending" : args.review.status;
+  const request = {
+    ...args.review,
+    ogsContractVersion: 2,
+    schemaVersion: 1,
+    trigger,
+    ...(trigger === "exception" ? { exceptionContext: { code: "loop_exhausted" } } : {}),
+    status,
+    payload: {
+      reviewId: args.review.reviewId,
+      runId: args.context.runId,
+      roleId: args.review.roleId,
+      round: args.review.round,
+      lineageId: args.review.lineageId,
+      branchId: args.review.branchId,
+      loopIteration: args.review.loopIteration,
+      stateVersion: args.review.stateVersion,
+      trigger,
+      status
+    }
+  };
   await writeAtomicFile(
     buildHumanReviewRequestPath(args.context, args.review.reviewId),
-    stringifyJson(args.review)
+    stringifyJson(request)
   );
 }
 
@@ -1789,9 +1811,30 @@ export async function persistHumanReviewDecision(args: {
   decision: HumanReviewDecisionRecord;
 }): Promise<void> {
   await mkdir(args.context.reviewsDir, { recursive: true });
+  const decision = {
+    ...args.decision,
+    ogsContractVersion: 2,
+    schemaVersion: 1,
+    status: args.decision.decision === "pause" ? "pending" : "resolved",
+    payload: {
+      reviewId: args.decision.reviewId,
+      action: args.decision.decision,
+      actor: args.decision.actor ?? "unknown",
+      decidedAt: args.decision.decidedAt,
+      round: args.decision.round,
+      lineageId: args.decision.lineageId,
+      branchId: args.decision.branchId,
+      loopIteration: args.decision.loopIteration,
+      stateVersion: args.decision.stateVersion,
+      ...(args.decision.comment ? { comment: args.decision.comment } : {}),
+      ...(args.decision.targetRoleId ? { targetRoleId: args.decision.targetRoleId } : {}),
+      ...(args.decision.scope ? { scope: args.decision.scope } : {}),
+      ...(args.decision.additionalBudget !== undefined ? { additionalBudget: args.decision.additionalBudget } : {})
+    }
+  };
   await writeAtomicFile(
     buildHumanReviewDecisionPath(args.context, args.decision.reviewId),
-    stringifyJson(args.decision)
+    stringifyJson(decision)
   );
 }
 
@@ -2208,12 +2251,36 @@ export async function appendEvent(
   context: RunContext,
   payload: Record<string, unknown>
 ): Promise<void> {
-  const encoded = `${stringifyRedactedUnknown(payload, context.redaction)}\n`;
+  // Every durable evidence line has the v2 envelope. Keep the original fields
+  // flattened as a read-only projection for existing timeline/console readers;
+  // the canonical payload is available under `payload`.
+  const eventType = typeof payload.eventType === "string"
+    ? payload.eventType
+    : typeof payload.type === "string" ? payload.type : "runtime_event";
+  const runId = typeof context.runId === "string" ? context.runId : "unknown";
+  const eventId = typeof payload.eventId === "string"
+    ? payload.eventId
+    : typeof payload.id === "string" ? payload.id : `${context.runId}:${eventType}:${Date.now()}:${randomUUID()}`;
+  const recordedAt = typeof payload.recordedAt === "string"
+    ? payload.recordedAt
+    : typeof payload.at === "string" ? payload.at : new Date().toISOString();
+  const redactedPayload = JSON.parse(stringifyRedactedUnknown(payload, context.redaction)) as Record<string, unknown>;
+  const evidence = {
+    ...redactedPayload,
+    ogsContractVersion: 2,
+    schemaVersion: 1,
+    eventId,
+    eventType,
+    runId,
+    recordedAt,
+    payload: redactedPayload
+  };
+  const encoded = `${JSON.stringify(evidence)}\n`;
   const state = getBufferedAppendState(context.runDir);
-  const eventId = typeof payload.eventId === "string" ? payload.eventId : undefined;
-  const eventIds = eventId ? await eventIdsForContext(context) : undefined;
-  if (eventId) {
-    if (eventIds?.has(eventId)) {
+  const suppliedEventId = typeof payload.eventId === "string" ? payload.eventId : typeof payload.id === "string" ? payload.id : undefined;
+  const eventIds = suppliedEventId ? await eventIdsForContext(context) : undefined;
+  if (suppliedEventId) {
+    if (eventIds?.has(suppliedEventId)) {
       return;
     }
   }
@@ -2222,7 +2289,7 @@ export async function appendEvent(
     path: context.eventsPath,
     content: `${state.pendingByKey.get("events")?.content ?? ""}${encoded}`
   });
-  if (eventIds && eventId) eventIds.add(eventId);
+  if (eventIds && suppliedEventId) eventIds.add(suppliedEventId);
 
   const payloadType = typeof payload.type === "string" ? payload.type : "";
   const roleId = typeof payload.roleId === "string" ? payload.roleId : "";

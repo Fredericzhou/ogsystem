@@ -9,14 +9,13 @@ import { fileURLToPath } from "node:url";
 import { resolveProjectRoleRootDir } from "./bundled-repos.js";
 import { compileExecutionSnapshot } from "./compiler.js";
 import { loadFlowContractPlan } from "./flow-contract.js";
-import { loadModelCatalog } from "./model-catalog.js";
-import { loadModelSelection, resolveModelSelectionForSystem } from "./model-selection.js";
+import { loadExecutionBindingsV2 } from "./contract-v2-loader.js";
 import { resolveExecutable } from "./cli-adapter-support.js";
 import { loadOgsSpecification } from "./ogs-spec-loader.js";
 import { loadSystemFromMermaid } from "./parse-mermaid.js";
 import { buildRunPlanFingerprint } from "./plan-fingerprint.js";
 import { resolveEffectiveLaw } from "./runtime-setup.js";
-import { loadLaws, loadProfiles, loadRolePackages, loadRuntimeConfig, loadTools, loadUserProfile } from "./runtime-loader.js";
+import { loadLaws, loadRolePackages, loadRuntimeConfig, loadUserProfile } from "./runtime-loader.js";
 import { pathExists } from "./run-store.js";
 import type { RunPlanFingerprint } from "./run-artifacts.js";
 
@@ -44,7 +43,7 @@ export type DeploymentManifest = {
   project: {
     systemId: string;
     systemVersion: string;
-    modelSelection: Record<string, { backend: string; modelId: string }>;
+    harnessBindings: Record<string, { templateId: string; backend: string; model: string }>;
   };
   fingerprints: {
     runPlan: string;
@@ -136,16 +135,25 @@ export async function generateDeploymentManifest(args: {
   const system = await loadSystemFromMermaid(resolve(workdir, args.systemPath ?? "system.mmd"));
   const runtimeConfig = await loadRuntimeConfig(undefined, workdir);
   const roleRootDir = resolveProjectRoleRootDir(workdir, runtimeConfig.roleRepo);
-  const [rolePackagesByRoleId, lawCatalog, modelSelection, modelCatalog, profiles, tools, userProfile] = await Promise.all([
+  const [rolePackagesByRoleId, lawCatalog, executionBindings, userProfile] = await Promise.all([
     loadRolePackages({ system, roleRootDir }),
     loadLaws(undefined, workdir),
-    loadModelSelection(resolve(workdir, ".ogs", "model-selection.json")),
-    loadModelCatalog(resolve(workdir, ".ogs", "model-catalog.json")),
-    loadProfiles(undefined, workdir),
-    loadTools(undefined, workdir),
+    loadExecutionBindingsV2(resolve(workdir, ".ogs", "execution-bindings.json")),
     loadUserProfile(undefined, workdir)
   ]);
-  const resolvedModels = resolveModelSelectionForSystem({ system, selection: modelSelection, catalog: modelCatalog });
+  const defaultTemplateId = executionBindings.defaults?.harnessTemplate;
+  const harnessBindings = Object.fromEntries(system.roleIds.map((roleId) => {
+    const templateId = executionBindings.roles[roleId]?.harnessTemplate ?? defaultTemplateId;
+    const template = templateId ? executionBindings.harnessTemplates?.[templateId] : undefined;
+    if (!template || !templateId) throw new Error(`V2_HARNESS_BINDING_REQUIRED: ${roleId}`);
+    return [roleId, { templateId, backend: template.backend, model: template.model }];
+  }));
+  const resolvedModels = new Map(Object.entries(harnessBindings).map(([roleId, binding]) => [roleId, {
+    backend: binding.backend,
+    modelId: binding.model,
+    modelRef: binding.model,
+    bindingSource: "selection" as const
+  }]));
   const effectiveLaw = resolveEffectiveLaw(system, lawCatalog);
   const contractPlan = system.graph?.handoffContracts
     ? await loadFlowContractPlan({ system, contractPath: system.graph.handoffContracts })
@@ -155,7 +163,7 @@ export async function generateDeploymentManifest(args: {
     rolePackagesByRoleId,
     contractPlan,
     effectiveLaw,
-    resolvedModelsByRoleId: resolvedModels.resolvedByRoleId
+    resolvedModelsByRoleId: resolvedModels
   });
   if (!compiler.ok) {
     throw new Error(`Cannot create deployment manifest: system compile failed (${compiler.diagnostics.map((item) => item.code).join(", ")})`);
@@ -169,14 +177,12 @@ export async function generateDeploymentManifest(args: {
   const fingerprint = buildRunPlanFingerprint({
     system,
     rolePackagesByRoleId,
-    resolvedModelsByRoleId: resolvedModels.resolvedByRoleId,
+    resolvedModelsByRoleId: resolvedModels,
     effectiveLaw,
     contractPlan,
     compilerSnapshot: compiler.snapshot,
     specificationDigest,
     runtimeConfig,
-    profiles,
-    tools,
     userProfile
   });
   const kimiCommand = await resolveExecutable("kimi");
@@ -187,13 +193,6 @@ export async function generateDeploymentManifest(args: {
     getCliVersion("qwen", workdir),
     kimiCommand ? getCliVersion(kimiCommand, workdir) : Promise.resolve({ status: "unavailable" as const })
   ]);
-  const modelSelectionSummary = Object.fromEntries(
-    Array.from(resolvedModels.resolvedByRoleId.entries()).map(([roleId, selection]) => [roleId, {
-      backend: selection.backend,
-      modelId: selection.modelId
-    }])
-  );
-
   return {
     manifestVersion: 2,
     generatedAt: new Date().toISOString(),
@@ -211,7 +210,7 @@ export async function generateDeploymentManifest(args: {
     project: {
       systemId: system.systemId,
       systemVersion: system.systemVersion,
-      modelSelection: modelSelectionSummary
+      harnessBindings
     },
     fingerprints: {
       runPlan: fingerprint.digest,

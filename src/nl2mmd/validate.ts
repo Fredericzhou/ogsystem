@@ -11,11 +11,7 @@ import { readJsonFile } from "../runtime/json-file.js";
 import { resolveModelSelectionForSystem } from "../runtime/model-selection.js";
 import { parseSystemFromMermaidSource } from "../runtime/parse-mermaid.js";
 import { loadRolePackage } from "../runtime/role-repo.js";
-import {
-  validateLawsConfig,
-  validateProfilesConfig,
-  validateUserProfileConfig
-} from "../runtime/config.js";
+import { validateLawsConfig, validateUserProfileConfig } from "../runtime/config.js";
 import { renderTxtGraphFromMermaidSource } from "./txt-graph.js";
 import type { Nl2MmdContext, Nl2MmdValidationResult } from "./types.js";
 
@@ -106,15 +102,12 @@ export async function validateNl2MmdCandidate(args: {
     errors.push(error instanceof Error ? error.message : String(error));
   }
 
-  let allowNoopWithoutExecutionBinding = false;
   if (args.lawsPath) {
     const laws = validateLawsConfig(await readJsonFile(args.lawsPath), args.lawsPath);
     const law = laws.laws.find((item) => item.lawId === system.lawBinding.globalLawRef);
     if (!law) {
       errors.push(`law.global "${system.lawBinding.globalLawRef}" not found in ${args.lawsPath}`);
     } else {
-      allowNoopWithoutExecutionBinding =
-        law.constraints?.allowNoopWithoutExecutionBinding === true;
     }
   }
 
@@ -122,10 +115,8 @@ export async function validateNl2MmdCandidate(args: {
     await validateUserProfileConfig(await readJsonFile(args.userProfilePath), args.userProfilePath);
   }
 
-  let profilesById: Map<string, string> | undefined;
   if (args.profilesPath) {
-    const profiles = validateProfilesConfig(await readJsonFile(args.profilesPath), args.profilesPath);
-    profilesById = new Map(profiles.map((profile) => [profile.profileId, profile.profileId]));
+    errors.push("V2_LEGACY_EXECUTION_CONFIG: profiles.json/exec.bind are not accepted; bind Roles through .ogs/execution-bindings.json Harness Templates.");
   }
 
   const outgoingByRole = new Map<string, string[]>();
@@ -169,21 +160,12 @@ export async function validateNl2MmdCandidate(args: {
         return { roleErrors, roleWarnings };
       }
 
-      const profileId = system.executionBinding[roleId];
       const resolvedModel = resolvedModelsByRoleId.get(roleId);
-
-      if (profileId && profilesById && !profilesById.has(profileId)) {
-        roleErrors.push(`exec.bind.${roleId} references missing profile "${profileId}"`);
+      if (system.executionBinding[roleId]) {
+        roleErrors.push(`V2_LEGACY_EXECUTION_BINDING: role "${roleId}" uses exec.bind; configure a Harness Template in .ogs/execution-bindings.json.`);
       }
-
-      if (!resolvedModel && !profileId) {
-        if (allowNoopWithoutExecutionBinding) {
-          roleWarnings.push(
-            `role "${roleId}" has no model selection or exec.bind.${roleId}; current law allows noop only for unambiguous single-path roles`
-          );
-        } else {
-          roleErrors.push(`role "${roleId}" needs a backend/model selection in .ogs/model-selection.json or an exec.bind.${roleId}`);
-        }
+      if (!resolvedModel) {
+        roleErrors.push(`V2_HARNESS_BINDING_REQUIRED: role "${roleId}" has no Harness Template binding.`);
       }
 
       return { roleErrors, roleWarnings };

@@ -247,8 +247,11 @@ export function resolveModelSelectionForSystem(args: {
   catalog?: ModelCatalog;
   validateCatalog?: boolean;
   frozenReasoningByRoleId?: ReadonlyMap<string, ReasoningEffortLevel>;
+  /** Internal adapter label; v2 callers must identify Harness bindings, not a user asset. */
+  sourceLabel?: string;
 }): { resolvedByRoleId: Map<string, ResolvedModelRuntimeConfig>; warnings: string[] } {
-  const selection = args.selection ? validateModelSelection(args.selection, ".ogs/model-selection.json") : undefined;
+  const sourceLabel = args.sourceLabel ?? "Harness Template";
+  const selection = args.selection ? validateModelSelection(args.selection, sourceLabel) : undefined;
   const resolvedByRoleId = new Map<string, ResolvedModelRuntimeConfig>();
   const warnings: string[] = [];
   for (const roleId of args.system.roleIds) {
@@ -259,7 +262,7 @@ export function resolveModelSelectionForSystem(args: {
         stage: "config",
         retryable: false,
         roleId,
-        message: `Role "${roleId}" configures a model in system.mmd. Put backend and modelId in .ogs/model-selection.json.`
+        message: `Role "${roleId}" configures a model in system.mmd. Put backend and modelId in ${sourceLabel}.`
       });
     }
     const selected = mergeEntry(selection?.defaults, selection?.roles?.[roleId]);

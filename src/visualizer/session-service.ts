@@ -1,9 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { resolve, relative } from "node:path";
 
 import { writeJsonFileAtomic } from "../runtime/json-file.js";
 import { loadSystemFromMermaid } from "../runtime/parse-mermaid.js";
+import { assertNoLegacyV1ExecutionAssets } from "../runtime/contract-v2-loader.js";
 
 export type ServeSession = {
   version: 1;
@@ -54,7 +55,12 @@ export async function fingerprintServeProject(project: ServeProject): Promise<{ 
   const systemDigest = createHash("sha256").update(source).digest("hex");
   const hash = createHash("sha256");
   hash.update(systemDigest).update("\0").update(resolve(project.workspaceDir));
-  for (const name of [".ogs/runtime.json", ".ogs/model-selection.json", ".ogs/model-catalog.json", ".ogs/laws.json", ".ogs/user-profile.json", ".ogs/project.json", "profiles.json", "tools.json"]) {
+  const bindingsPath = resolve(project.ogsDir, ".ogs/execution-bindings.json");
+  const hasV2Bindings = await lstat(bindingsPath).then((entry) => entry.isFile()).catch(() => false);
+  if (!hasV2Bindings) throw new Error("V2_EXECUTION_BINDINGS_REQUIRED: serve fingerprint requires .ogs/execution-bindings.json");
+  await assertNoLegacyV1ExecutionAssets(project.ogsDir);
+  const configFiles = [".ogs/runtime.json", ".ogs/model-catalog.json", ".ogs/laws.json", ".ogs/user-profile.json", ".ogs/project.json", ".ogs/execution-bindings.json"];
+  for (const name of configFiles) {
     await digestFile(hash, resolve(project.ogsDir, name));
   }
   await digestDirectory(hash, resolve(project.ogsDir, ".ogs"), new Set(["runs", "sessions", "runs-index.json"]));

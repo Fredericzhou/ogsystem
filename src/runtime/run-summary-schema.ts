@@ -168,7 +168,7 @@ function deriveReviewProjectionFields(args: {
     }),
     latestPendingReviewId: latestPendingReview?.reviewId,
     lastReviewId: latestReview?.reviewId,
-    lastReviewDecision: latestReviewDecision?.decision,
+    lastReviewDecision: latestReviewDecision?.decision === "pause" ? undefined : latestReviewDecision?.decision,
     lastReviewDecidedAt: latestReviewDecision?.decidedAt,
     reviewRoundCount: reviews.length
   };

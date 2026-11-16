@@ -7,7 +7,10 @@ function escapeRoleId(value: string): string {
   return value.replace(/"/g, '\\"');
 }
 
-export function systemDefinitionToDesign(system: SystemDefinition): SystemDesignDocument {
+export function systemDefinitionToDesign(
+  system: SystemDefinition,
+  options: { harnessTemplateByRoleId?: Record<string, string>; defaultHarnessTemplate?: string } = {}
+): SystemDesignDocument {
   const design = createEmptySystemDesign({
     systemId: system.systemId,
     systemVersion: system.systemVersion,
@@ -17,11 +20,15 @@ export function systemDefinitionToDesign(system: SystemDefinition): SystemDesign
   });
   const graph = system.graph;
   for (const roleId of system.roleIds) {
-    const bindingRef = system.executionBinding[roleId];
-    const modelRef = system.modelBinding[roleId];
-    let binding: DesignBinding = { kind: "noop" };
-    if (modelRef) binding = { kind: "model", modelRef };
-    else if (bindingRef) binding = { kind: "exec", profileId: bindingRef };
+    // Backend/model selection is owned by execution-bindings.json in v2. A
+    // Business Design carries only the logical Harness Template reference.
+    // Mermaid has no technical binding syntax, so imports without a supplied
+    // binding map remain explicitly unresolved and must be bound in Studio
+    // before they can pass readiness or be persisted as an executable design.
+    const harnessTemplate = options.harnessTemplateByRoleId?.[roleId]
+      ?? options.defaultHarnessTemplate
+      ?? `__unbound__:${roleId}`;
+    const binding: DesignBinding = { kind: "harness", harnessTemplate };
     const role = {
       seatId: roleId,
       rolePackageRef: system.rolePackageRefByRoleId?.[roleId] ?? roleId,
@@ -80,10 +87,9 @@ export function exportDesignToMermaid(design: SystemDesignDocument): string {
   for (const seatId of roleIds) {
     const seat = design.seats[seatId];
     const nodeId = nodeIdBySeatId.get(seatId) ?? seatId;
-    if (seat.binding.kind === "exec" && seat.binding.profileId) {
-      const profileRef = seat.binding.profileId.startsWith("profile.") ? seat.binding.profileId : `profile.${seat.binding.profileId}`;
-      lines.push(`%% exec.bind.${seatId}=${profileRef}`);
-    }
+    // Contract Set v2 keeps Backend/Model/Harness binding outside the Business
+    // Graph. Design export therefore never serializes legacy exec/profile
+    // metadata; bindings are persisted in .ogs/execution-bindings.json.
     if (seat.routingMode) lines.push(`%% role.mode.${seatId}=${seat.routingMode}`);
     if (seat.routeOrder?.length) lines.push(`%% route.order.${seatId}=${seat.routeOrder.join(",")}`);
     if (seat.join) {

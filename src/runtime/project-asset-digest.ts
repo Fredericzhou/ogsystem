@@ -7,11 +7,9 @@ const FIXED_ASSETS = [
   "system.mmd",
   "system.design.json",
   ".ogs/runtime.json",
-  ".ogs/model-selection.json",
+  ".ogs/execution-bindings.json",
   ".ogs/laws.json",
-  ".ogs/user-profile.json",
-  "profiles.json",
-  "tools.json"
+  ".ogs/user-profile.json"
 ];
 
 const SEMANTIC_FILE_NAMES = [

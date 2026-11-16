@@ -6,6 +6,7 @@ import { relative, resolve, sep } from "node:path";
 
 import { writeJsonFileAtomic } from "./json-file.js";
 import { resolveProjectRoleRootDir } from "./bundled-repos.js";
+import { assertNoLegacyV1ExecutionAssets } from "./contract-v2-loader.js";
 import type { RuntimeConfig } from "./types.js";
 
 export const PROJECT_RUN_SNAPSHOT_DIR = "project-assets";
@@ -204,6 +205,12 @@ export async function snapshotProjectAssets(args: {
   // macOS exposes temporary directories through /var while realpath returns
   // /private/var. Use the canonical root consistently for containment checks.
   const sourceRoot = await realpath(args.sourceWorkdir);
+  await assertNoLegacyV1ExecutionAssets(sourceRoot);
+  const v2BindingsPath = resolve(sourceRoot, ".ogs", "execution-bindings.json");
+  const hasV2Bindings = await lstat(v2BindingsPath).then((value) => value.isFile() && !value.isSymbolicLink()).catch(() => false);
+  if (!hasV2Bindings) {
+    throw new Error("V2_EXECUTION_BINDINGS_REQUIRED: project snapshots require .ogs/execution-bindings.json");
+  }
   await mkdir(snapshotDir, { recursive: true });
 
   await copyAsset({
@@ -222,12 +229,10 @@ export async function snapshotProjectAssets(args: {
     ".ogs/models.yaml",
     ".ogs/models.yml",
     ".ogs/models.json",
-    ".ogs/model-selection.json",
+    ".ogs/execution-bindings.json",
     ".ogs/model-catalog.json",
     ".ogs/laws.json",
-    ".ogs/user-profile.json",
-    "profiles.json",
-    "tools.json"
+    ".ogs/user-profile.json"
   ];
   for (const relativePath of fixedFiles) {
     const source = resolve(sourceRoot, relativePath);

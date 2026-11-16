@@ -203,7 +203,7 @@ function buildRoleSummary(rolePackage: LoadedRolePackage): RoleSummary {
     preferredModelTags: sortStrings(rolePackage.manifest.preferredModelTags ?? []),
     tags: sortStrings(rolePackage.manifest.tags ?? []),
     roleContractDigest: digestValue({
-      contractVersion: rolePackage.manifest.contractVersion, purpose: rolePackage.manifest.purpose,
+      schemaVersion: rolePackage.manifest.schemaVersion, purpose: rolePackage.manifest.purpose,
       responsibility: rolePackage.manifest.responsibility, inputs: rolePackage.manifest.inputs,
       outputs: rolePackage.manifest.outputs, authority: rolePackage.manifest.authority,
       constraints: rolePackage.manifest.constraints, failure: rolePackage.manifest.failure, audit: rolePackage.manifest.audit
@@ -394,9 +394,6 @@ function buildBindingSummary(basePlan: ExecutionPlan): Record<string, BindingSum
       summary.fallback = node.binding.fallback;
       summary.bindingSource = node.binding.bindingSource;
     }
-    if (node.binding.kind === "profile") {
-      summary.profileId = node.binding.profileId;
-    }
     summaries.push([roleId, summary]);
   }
   return Object.fromEntries(summaries);
@@ -569,6 +566,7 @@ function validateContextMap(args: {
 
   const node = args.basePlan.nodesByRoleId.get(args.roleId);
   const isJoinNode = node?.joinMode !== undefined;
+  const hasIncomingHandoff = (node?.incoming.length ?? 0) > 0;
   const joinSources = new Set(node?.joinSources ?? []);
   const sourceRoleIds = new Set(args.system.roleIds);
 
@@ -592,6 +590,19 @@ function validateContextMap(args: {
         createDiagnostic({
           code: "COMPILER_CONTEXT_SELECTOR_JOIN_ONLY",
           message: `context.map.${args.roleId}.${fieldName} uses "${selector}" but join nodes do not allow direct.* selectors`,
+          roleId: args.roleId,
+          fieldName,
+          selector
+        })
+      );
+      continue;
+    }
+
+    if (selectorInfo.selectorKind.startsWith("direct") && !hasIncomingHandoff) {
+      args.diagnostics.push(
+        createDiagnostic({
+          code: "COMPILER_CONTEXT_SOURCE_UNAVAILABLE",
+          message: `context.map.${args.roleId}.${fieldName} uses "${selector}" but the role has no incoming Flow handoff`,
           roleId: args.roleId,
           fieldName,
           selector
@@ -661,28 +672,14 @@ function validateReview(args: {
   if (!node?.review) {
     return;
   }
-  if (node.binding.kind === "noop") {
-    args.diagnostics.push(
-      createDiagnostic({
-        code: "COMPILER_REVIEW_REQUIRES_EXECUTION_BINDING",
-        message: `Role "${args.roleId}" cannot declare review.mode=${node.review.mode} with noop binding`,
-        roleId: args.roleId
-      })
-    );
-  }
 }
 
 export function validateRoleContract(args: { system: SystemDefinition; basePlan: ExecutionPlan; roleId: string; rolePackage: LoadedRolePackage }): CompilerDiagnostic[] {
   const diagnostics: CompilerDiagnostic[] = [];
   const manifest = args.rolePackage.manifest;
-  const normalEvents = [...new Set(args.system.flows.filter((flow) => flow.fromRoleId === args.roleId && !isRuntimeOnlyErrorEvent(flow.eventType)).map((flow) => flow.eventType))].sort();
-  const declaredEvents = [...new Set(manifest.outputs.events)].sort();
-  if (normalEvents.length !== declaredEvents.length || normalEvents.some((event, index) => event !== declaredEvents[index])) {
-    diagnostics.push(createDiagnostic({ code: "IR_CONTRACT_INVALID", message: `Role contract outputs.events must match normal outgoing events for ${args.roleId}`, roleId: args.roleId }));
-  }
   const review = args.basePlan.nodesByRoleId.get(args.roleId)?.review;
   if (review) {
-    const requiredActions = [...new Set(["approve", "rework", review.timeoutAction])];
+    const requiredActions = ["approve", "rework", "reject"];
     const missingActions = requiredActions.filter((action) => !manifest.authority.controlActions.includes(action as typeof manifest.authority.controlActions[number]));
     if (missingActions.length > 0) {
       diagnostics.push(createDiagnostic({
@@ -732,34 +729,16 @@ function validateBinding(args: {
     );
     return;
   }
-  if (node.binding.kind !== "noop" || args.effectiveLaw.allowNoopWithoutExecutionBinding) {
-    if (node.binding.kind !== "noop") {
-      return;
-    }
-  } else {
-    args.diagnostics.push(
-      createDiagnostic({
-        code: "COMPILER_ROLE_BINDING_MISSING",
-        message: `Role "${args.roleId}" has no executable binding (model.bind/exec.bind)`,
-        roleId: args.roleId
-      })
-    );
+  if (node.binding.kind === "model") {
     return;
   }
-
-  const selectableOutgoingCount = node.outgoing.filter(
-    (flow) => !isRuntimeOnlyErrorEvent(flow.eventType)
-  ).length;
-  if (selectableOutgoingCount > 1) {
-    args.diagnostics.push(
-      createDiagnostic({
-        code: "COMPILER_ROLE_NOOP_AMBIGUOUS",
-        message:
-          `Role "${args.roleId}" cannot use noop binding with ${selectableOutgoingCount} selectable outgoing flows`,
-        roleId: args.roleId
-      })
-    );
-  }
+  args.diagnostics.push(
+    createDiagnostic({
+      code: "COMPILER_INVALID_BINDING",
+      message: `Role "${args.roleId}" does not resolve a v2 Harness model binding`,
+      roleId: args.roleId
+    })
+  );
 }
 
 function validateContracts(args: {

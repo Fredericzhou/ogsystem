@@ -267,12 +267,7 @@ export function resolveRoleNodeTimeoutMs(
   if (node.binding.kind === "model") {
     return (node.binding.timeoutMs ?? DEFAULT_ROLE_EXECUTION_TIMEOUT_MS) + ROLE_NODE_TIMEOUT_GRACE_MS;
   }
-  if (node.binding.kind === "profile") {
-    return (
-      profilesById.get(node.binding.profileId)?.timeoutMs ?? DEFAULT_ROLE_EXECUTION_TIMEOUT_MS
-    ) + ROLE_NODE_TIMEOUT_GRACE_MS;
-  }
-  return undefined;
+  return DEFAULT_ROLE_EXECUTION_TIMEOUT_MS + ROLE_NODE_TIMEOUT_GRACE_MS;
 }
 
 function mergeStatus(current: GraphRunStatus, update: GraphRunStatus): GraphRunStatus {

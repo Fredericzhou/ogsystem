@@ -36,7 +36,6 @@ export function buildBridgeRoles(authoring: StudioAuthoringDocument): StudioBrid
       const badges = [
         flows.some((flow) => flow.fromRoleId === STUDIO_SYSTEM_START_ROLE_ID && flow.toRoleId === role.roleId) ? "entry" : "",
         role.bindingKind === "model" ? "M" : "",
-        role.bindingKind === "exec" ? "E" : "",
         role.routingMode === "parallel_split" ? "P" : "",
         role.joinMode ? "J" : "",
         role.loopMax ? "L" : "",
@@ -73,7 +72,8 @@ export function authoringToGraphSnapshot(authoring: StudioAuthoringDocument): St
   const bridgeFlows = buildBridgeFlows(authoring);
   const columns = fallbackGridColumnCount(bridgeRoles.length);
   return {
-    version: 1,
+    ogsContractVersion: 2,
+    version: 2,
     nodes: [
       {
         id: STUDIO_SYSTEM_START_ROLE_ID,

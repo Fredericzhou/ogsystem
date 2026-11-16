@@ -19,15 +19,9 @@ export type StudioHumanReviewSpec = {
   terminateScope?: string;
 };
 
-export type StudioFallbackModel = {
-  backend: string;
-  modelId: string;
-  modelRef: string;
-  reasoningEffort?: "auto" | "off" | "on" | "low" | "medium" | "high" | "xhigh" | "max";
-};
-
 export type StudioAuthoringDocument = {
-  version: 1;
+  ogsContractVersion: 2;
+  version: 2;
   project: {
     workdir: string;
     systemPath: string;
@@ -60,13 +54,11 @@ export type StudioAuthoringDocument = {
 export type StudioAuthoringRole = {
   roleId: string;
   title?: string;
-  bindingKind: "model" | "exec" | "noop";
+  bindingKind: "model";
   backend?: string;
   modelId?: string;
   modelSelectionSource?: "default" | "role";
   modelRef?: string;
-  fallback?: StudioFallbackModel;
-  profileId?: string;
   routingMode?: "parallel_split";
   routeOrder?: string[];
   joinMode?: "all_of" | "quorum_of";
@@ -90,7 +82,8 @@ export type StudioAuthoringFlow = {
 
 /** Internal graph snapshot consumed by X6 and the authoring adapter. */
 export type StudioGraphSnapshot = {
-  version: 1;
+  ogsContractVersion: 2;
+  version: 2;
   nodes: Array<{
     id: string;
     roleId: string;

@@ -32,7 +32,7 @@ function transitionKey(transition: { fromSeatId: string; toSeatId: string; event
 
 export function createEmptySystemDesign(args: Partial<SystemDesignDocument["system"]> = {}): SystemDesignDocument {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     revision: 0,
     intent: {
       objective: "",
@@ -63,8 +63,8 @@ export function validateSystemDesign(design: SystemDesignDocument): DesignValida
   if (!design || typeof design !== "object") {
     return { ok: false, diagnostics: [diagnostic("DESIGN_DOCUMENT_REQUIRED", "A design document is required.")] };
   }
-  if (design.schemaVersion !== 1) {
-    diagnostics.push(diagnostic("DESIGN_SCHEMA_VERSION_UNSUPPORTED", "Only System Design schema version 1 is supported.", "schemaVersion"));
+  if (design.schemaVersion !== 2) {
+    diagnostics.push(diagnostic("DESIGN_SCHEMA_VERSION_UNSUPPORTED", "Only System Design schema version 2 is supported.", "schemaVersion"));
   }
   if (!Number.isInteger(design.revision) || design.revision < 0) {
     diagnostics.push(diagnostic("DESIGN_REVISION_INVALID", "revision must be a non-negative integer.", "revision"));
@@ -88,9 +88,16 @@ export function validateSystemDesign(design: SystemDesignDocument): DesignValida
     if (seatId !== seat.seatId) diagnostics.push(diagnostic("DESIGN_SEAT_KEY_MISMATCH", `Seat key "${seatId}" does not match seatId.`, `seats.${seatId}.seatId`, { seatId }));
     if (!SEAT_ID_PATTERN.test(seatId)) diagnostics.push(diagnostic("DESIGN_SEAT_ID_INVALID", `Seat id "${seatId}" is invalid.`, `seats.${seatId}`, { seatId }));
     if (!seat.rolePackageRef?.trim()) diagnostics.push(diagnostic("DESIGN_ROLE_PACKAGE_REQUIRED", `Seat "${seatId}" requires a role package.`, `seats.${seatId}.rolePackageRef`, { seatId }));
+    if (seat.binding && seat.binding.kind !== "harness") {
+      diagnostics.push(diagnostic("DESIGN_LEGACY_BINDING_REJECTED", `Seat "${seatId}" uses a retired execution binding; reference a Harness Template.`, `seats.${seatId}.binding`, { seatId }));
+    } else if (!seat.binding || !seat.binding.harnessTemplate?.trim()) {
+      diagnostics.push(diagnostic("DESIGN_HARNESS_BINDING_REQUIRED", `Seat "${seatId}" requires a Harness Template reference.`, `seats.${seatId}.binding`, { seatId }));
+    }
     const indexedBinding = design.bindings?.[seatId];
     if (!indexedBinding) {
       diagnostics.push(diagnostic("DESIGN_BINDING_INDEX_MISSING", `Seat "${seatId}" is missing from the top-level bindings index.`, `bindings.${seatId}`, { seatId }));
+    } else if (indexedBinding.kind !== "harness") {
+      diagnostics.push(diagnostic("DESIGN_LEGACY_BINDING_REJECTED", `Bindings index for seat "${seatId}" uses a retired execution binding; reference a Harness Template.`, `bindings.${seatId}`, { seatId }));
     } else if (!sameJson(indexedBinding, seat.binding)) {
       diagnostics.push(diagnostic("DESIGN_BINDING_INDEX_MISMATCH", `Binding index entry for seat "${seatId}" does not match the seat binding.`, `bindings.${seatId}`, { seatId }));
     }
@@ -182,17 +189,11 @@ function applyOperation(design: SystemDesignDocument, operation: DesignOperation
       seat.contextMap = clone(operation.contextMap);
       return;
     }
-    case "bindModel": {
+    case "bindHarness": {
       const seat = design.seats[operation.seatId];
       if (!seat) throw new Error(`DESIGN_SEAT_NOT_FOUND:${operation.seatId}`);
-      seat.binding = { kind: "model", modelRef: operation.modelRef };
-      design.bindings[operation.seatId] = clone(seat.binding);
-      return;
-    }
-    case "bindTool": {
-      const seat = design.seats[operation.seatId];
-      if (!seat) throw new Error(`DESIGN_SEAT_NOT_FOUND:${operation.seatId}`);
-      seat.binding = { kind: "exec", profileId: operation.profileId };
+      if (!operation.harnessTemplate.trim()) throw new Error(`DESIGN_HARNESS_TEMPLATE_REQUIRED:${operation.seatId}`);
+      seat.binding = { kind: "harness", harnessTemplate: operation.harnessTemplate };
       design.bindings[operation.seatId] = clone(seat.binding);
       return;
     }

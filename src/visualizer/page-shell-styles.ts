@@ -491,6 +491,8 @@ export function renderPageShellStyles(): string {
       top: calc(env(safe-area-inset-top) + 72px);
       left: 50%;
       z-index: 30;
+      /* Status notifications must never block the underlying workflow controls. */
+      pointer-events: none;
       transform: translateX(-50%);
       justify-self: center;
       width: max-content;

@@ -4,7 +4,6 @@ import type { LoadedRolePackage } from "./types.js";
 import type { OgsSpecificationSnapshot } from "./ogs-spec-loader.js";
 import { semanticIRDigest, validateSemanticIR } from "./semantic-ir.js";
 import { validateConditionAst } from "./condition-ast.js";
-import { validateCapabilityPolicy } from "./capability-policy.js";
 import type { CompositeResponsibilitySpec, SemanticIR, SemanticIRJoinSpec, SemanticIRLoopScope } from "./semantic-ir.js";
 import { compileSubgraphSpec, type SubgraphSpec } from "./subgraph.js";
 import { BUSINESS_EVENT_KIND, isBusinessEvent } from "../business-events.js";
@@ -245,6 +244,7 @@ export function compileSemanticIR(args: {
   specification: OgsSpecificationSnapshot;
   maxTransitionsPerRun: number;
   rolePackagesByRoleId?: Map<string, LoadedRolePackage>;
+  harnessTemplateByRoleId?: ReadonlyMap<string, string>;
 }): { ir: SemanticIR; digest: string } {
   const semantics = sourceByBasename(args.specification, "semantics.yaml")
     ?? sourceByBasename(args.specification, "semantics.yml")
@@ -257,6 +257,10 @@ export function compileSemanticIR(args: {
   const roles = record(root.roles ?? {}, "semantics.roles");
   const conditionByTransition = compileConditions(root.routes ?? root.transitions);
   const capabilityRoot = record(root.capabilities ?? {}, "semantics.capabilities");
+  if (Object.prototype.hasOwnProperty.call(capabilityRoot, "allowed_tools_by_role")
+    || Object.prototype.hasOwnProperty.call(capabilityRoot, "allowedToolsByRoleId")) {
+    throw new Error("V2_IR_LEGACY_TOOLS: Semantic IR cannot contain allowedToolsByRoleId; select native tools in a Harness Template");
+  }
   const retryByRoleId = compileRetryPolicies(root.errors);
   const subgraphs = compileSubgraphs(root.subgraphs, args.specification);
   const composites = compileComposites(root.composites, args.specification);
@@ -271,7 +275,8 @@ export function compileSemanticIR(args: {
     throw new Error("[IR_BUDGET_INVALID] capabilities.maxTransitionsPerRun exceeds the effective law limit");
   }
   const ir: SemanticIR = {
-    version: 1,
+    ogsContractVersion: 2,
+    version: 2,
     system: { systemId: args.system.systemId, systemVersion: args.system.systemVersion },
     seats: [...args.system.roleIds].sort().map((roleId) => {
       const role = roles[roleId] ? record(roles[roleId], "roles." + roleId) : {};
@@ -283,7 +288,9 @@ export function compileSemanticIR(args: {
       return {
         roleId,
         ...(typeof role.package === "string" ? { packageRef: role.package } : {}),
-        binding: args.system.modelBinding[roleId] ?? args.system.executionBinding[roleId] ?? { kind: "noop" },
+        binding: args.harnessTemplateByRoleId?.get(roleId) ?? (() => {
+          throw new Error(`V2_BINDING_REQUIRED: role "${roleId}" has no Harness Template binding`);
+        })(),
         modes,
         defaultMode,
         ...(args.rolePackagesByRoleId?.get(roleId) ? { roleContract: args.rolePackagesByRoleId.get(roleId)!.manifest } : {})
@@ -316,7 +323,6 @@ export function compileSemanticIR(args: {
       .sort((left, right) => left.id.localeCompare(right.id)),
     capabilities: {
       maxTransitionsPerRun: requestedBudgetNumber ?? args.maxTransitionsPerRun,
-      allowedToolsByRoleId: (capabilityRoot.allowed_tools_by_role ?? capabilityRoot.allowedToolsByRoleId ?? {}) as Record<string, string[]>,
       ...(capabilityRoot.max_role_activations_by_role ?? capabilityRoot.maxRoleActivationsByRoleId
         ? { maxRoleActivationsByRoleId: (capabilityRoot.max_role_activations_by_role ?? capabilityRoot.maxRoleActivationsByRoleId) as Record<string, number> }
         : {})
@@ -324,13 +330,6 @@ export function compileSemanticIR(args: {
     defaults: { routePriority: 0, loopIteration: 0, joinDuplicateArrival: "ignore", joinTimeoutSeconds: 3600 }
   };
   const diagnostics = validateSemanticIR(ir);
-  for (const message of validateCapabilityPolicy({
-    roleIds: args.system.roleIds,
-    allowedToolsByRoleId: ir.capabilities.allowedToolsByRoleId,
-    maxTransitionsPerRun: ir.capabilities.maxTransitionsPerRun
-  })) {
-    diagnostics.push({ code: "IR_BUDGET_INVALID", message, path: "capabilities" });
-  }
   if (!ir.contracts.some((item) => item.id === schemaRef || item.ref.endsWith("/" + schemaRef))) {
     diagnostics.push({ code: "IR_CONTRACT_INVALID", message: `State schema contract not found: ${schemaRef}`, path: "state.schema" });
   }

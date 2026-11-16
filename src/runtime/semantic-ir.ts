@@ -49,7 +49,6 @@ export type SemanticIRJoinSpec = {
 export type SemanticIRCapabilityPolicy = {
   maxTransitionsPerRun: number;
   maxRoleActivationsByRoleId?: Record<string, number>;
-  allowedToolsByRoleId: Record<string, string[]>;
 };
 
 export type CompositeResponsibilitySpec = {
@@ -80,7 +79,8 @@ export type SemanticEventDefinition = {
 };
 
 export type SemanticIR = {
-  version: 1;
+  ogsContractVersion: 2;
+  version: 2;
   system: { systemId: string; systemVersion: string };
   seats: Array<{ roleId: string; packageRef?: string; binding: unknown; modes: Record<string, unknown>; defaultMode: string; roleContract?: unknown }>;
   transitions: Array<{
@@ -165,6 +165,9 @@ export function buildJoinDisplayId(value: SemanticIRJoinScopeKey): string {
 
 export function validateSemanticIR(ir: SemanticIR): SemanticIRDiagnostic[] {
   const diagnostics: SemanticIRDiagnostic[] = [];
+  if (ir.ogsContractVersion !== 2 || ir.version !== 2) {
+    diagnostics.push({ code: "IR_CONTRACT_INVALID", message: "Semantic IR must use Contract Set v2", path: "version" });
+  }
   const roleIds = new Set<string>();
   for (const [index, seat] of ir.seats.entries()) {
     if (!seat.roleId || roleIds.has(seat.roleId)) {

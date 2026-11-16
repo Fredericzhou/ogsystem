@@ -4,8 +4,6 @@ import type { SystemDesignDocument } from "./types.js";
 
 /** Compile the canonical design document into the small graph contract consumed by the runtime. */
 export function designToSystemDefinition(design: SystemDesignDocument): SystemDefinition {
-  const executionBinding: Record<string, string> = {};
-  const modelBinding: Record<string, string> = {};
   const rolePackageRefByRoleId: Record<string, string> = {};
   const routingModeByRoleId: GraphMetadata["routingModeByRoleId"] = {};
   const routeOrderByRoleId: Record<string, string[]> = {};
@@ -18,11 +16,6 @@ export function designToSystemDefinition(design: SystemDesignDocument): SystemDe
 
   for (const [seatId, seat] of Object.entries(design.seats)) {
     rolePackageRefByRoleId[seatId] = seat.rolePackageRef;
-    if (seat.binding.kind === "exec" && seat.binding.profileId) {
-      executionBinding[seatId] = seat.binding.profileId;
-    } else if (seat.binding.kind === "model" && seat.binding.modelRef) {
-      modelBinding[seatId] = seat.binding.modelRef;
-    }
     if (seat.routingMode) routingModeByRoleId[seatId] = seat.routingMode;
     if (seat.routeOrder?.length) routeOrderByRoleId[seatId] = [...seat.routeOrder];
     if (seat.join) {
@@ -73,8 +66,10 @@ export function designToSystemDefinition(design: SystemDesignDocument): SystemDe
       eventType: transition.eventType
     })),
     lawBinding: { globalLawRef: design.system.lawGlobalRef },
-    executionBinding,
-    modelBinding,
+    executionBinding: {},
+    // Backend/model identity is resolved from .ogs/execution-bindings.json by
+    // the runtime setup. Business Design carries only the Harness reference.
+    modelBinding: {},
     rolePackageRefByRoleId,
     graph
   };

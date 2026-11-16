@@ -54,6 +54,44 @@ export { buildRolePromptInput } from "./role-input-projector.js";
 export { projectOgsSpan, toOgsCloudEvent } from "./observability.js";
 export { validateCapabilityPolicy } from "./capability-policy.js";
 export {
+  assertCapabilitySnapshot,
+  assertWithinExecutionRoot,
+  createCapabilityPreview,
+  createEffectiveExecutionPolicy,
+  createRunCapabilitySnapshot,
+  decidePermission,
+  resolveEffectiveEnvironmentPolicy,
+  resolveEffectiveTools
+} from "./v2-execution-policy.js";
+export type {
+  AdapterResourceCapabilities,
+  CapabilityPreview,
+  EffectiveEnvironmentPolicy,
+  EffectiveExecutionPolicy,
+  EnvironmentIntent,
+  PermissionDecision,
+  RunCapabilitySnapshot
+} from "./v2-execution-policy.js";
+export {
+  assertAllowedTools,
+  assertV2ContractRoot,
+  findLegacyV1Paths,
+  OGS_CONTRACT_VERSION
+} from "./contract-v2.js";
+export { loadV2ContractFile } from "./contract-v2-loader.js";
+export type {
+  BusinessGraphV2,
+  CapabilityPreviewV2,
+  EvidenceEventV2,
+  ExecutionBindingsV2,
+  HarnessTemplateV2,
+  HandoffProjectionV2,
+  HumanReviewRequestV2,
+  ResolvedExecutionPlanV2,
+  RoleContractV2,
+  RunCapabilitySnapshotV2
+} from "./contract-v2.js";
+export {
   createGitCollaboration,
   probeGitCollaboration
 } from "./git-collaboration.js";
@@ -221,7 +259,8 @@ export async function runSystemWithAdapter(args: {
         await writeAtomicFile(
           resolve(setup.runContext.runDir, "team-version.json"),
           stringifyJson({
-            version: 1,
+            ogsContractVersion: 2,
+            schemaVersion: 1,
             teamVersionId: args.owner.teamVersionId,
             ...(args.owner.teamCoreDigest ? { teamCoreDigest: args.owner.teamCoreDigest } : {}),
             ...(args.owner.teamDigestVersion !== undefined ? { teamDigestVersion: args.owner.teamDigestVersion } : {}),

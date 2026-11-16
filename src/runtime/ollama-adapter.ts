@@ -207,7 +207,10 @@ export async function executeOllamaChatRequest(args: {
 
 export const ollamaBackendAdapter: BackendAdapter = {
   backendId: "ollama",
-  verifiedRunnable: true,
+  // Ollama's HTTP API does not expose a verifiable native tool registry yet.
+  // Keep it unavailable for v2 Harness execution until a bounded discovery
+  // probe is implemented; model catalog discovery alone is insufficient.
+  verifiedRunnable: false,
 
   async discover(args): Promise<{
     status: BackendAvailabilityStatus;

@@ -1,5 +1,5 @@
 import { constants } from "node:fs";
-import { lstat, open, readFile } from "node:fs/promises";
+import { lstat, mkdir, open, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import { resolveProjectRoleRootDir } from "./bundled-repos.js";
@@ -9,27 +9,35 @@ import {
   type CompiledExecutionSnapshot
 } from "./compiler.js";
 import { createExecutionPlan } from "./execution-plan.js";
+import { assertNoLegacyV1ExecutionAssets, loadExecutionBindingsV2 } from "./contract-v2-loader.js";
+import type { HarnessTemplateV2, ExecutionBindingsV2 } from "./contract-v2.js";
 import { loadFlowContractPlan } from "./flow-contract.js";
 import { loadModelCatalog, mergeModelCatalogWithLiveSnapshot } from "./model-catalog.js";
-import { loadModelSelection, resolveModelSelectionForSystem, withDefaultModelSelection } from "./model-selection.js";
+import { resolveModelSelectionForSystem } from "./model-selection.js";
 import { loadSystemFromMermaid, parseSystemFromMermaidSource } from "./parse-mermaid.js";
 import { buildRunPlanFingerprint } from "./plan-fingerprint.js";
 import { createRuntimeError } from "./runtime-errors.js";
 import { filesystemRunStore } from "./run-store.js";
 import { loadOgsSpecification, type OgsSpecificationSnapshot } from "./ogs-spec-loader.js";
 import { compileSemanticIR } from "./semantic-ir-compiler.js";
+import { defaultBackendRegistry } from "./model-backend-registry.js";
+import {
+  assertCapabilitySnapshot,
+  createEffectiveExecutionPolicy,
+  createRunCapabilitySnapshot,
+  resolveEffectiveEnvironmentPolicy
+} from "./v2-execution-policy.js";
 import type { SemanticIR } from "./semantic-ir.js";
 import { designDigest, designToSystemDefinition, loadSystemDesign } from "../design/index.js";
 import { resolveProjectTargetDirectory } from "./project-target.js";
 import { assertProjectAssetSnapshot, snapshotProjectAssets } from "./project-run-snapshot.js";
 import {
   loadLaws,
-  loadProfiles,
   loadRolePackages,
   loadRuntimeConfig,
-  loadTools,
   loadUserProfile
 } from "./runtime-loader.js";
+import { createRunId } from "./run-artifacts.js";
 import type { RunPlanFingerprint } from "./run-artifacts.js";
 import type {
   CliTool,
@@ -41,13 +49,173 @@ import type {
   LawSpec,
   LoadedRolePackage,
   ModelCatalogEntry,
-  ModelSelectionDefaults,
   ReasoningEffortLevel,
   RuntimeConfig,
   RunContext,
   SystemDefinition,
   UserProfile
 } from "./types.js";
+
+/** Freeze the technical decision for every model node before a Backend session starts. */
+async function materializeV2ExecutionPolicies(
+  plan: ExecutionPlan,
+  runRoot: string,
+  frozenByRoleId?: Record<string, Record<string, unknown>>,
+  harnessTemplatesByRoleId?: Record<string, HarnessTemplateV2>,
+  options?: { skipCapabilityDiscovery?: boolean }
+): Promise<Record<string, Record<string, unknown>>> {
+  if (Object.keys(harnessTemplatesByRoleId ?? {}).length > 0) await mkdir(runRoot, { recursive: true });
+  const resolved: Record<string, Record<string, unknown>> = {};
+  const discoveryByBackendModel = new Map<string, { verifiedTools: string[]; resources?: { filesystem: boolean; process: boolean; network: boolean } }>();
+  for (const roleId of plan.roleIds) {
+    const node = plan.nodesByRoleId.get(roleId);
+    if (!node || node.binding.kind !== "model") continue;
+    const adapter = defaultBackendRegistry.getAdapter(node.binding.backend);
+    const template = harnessTemplatesByRoleId?.[roleId];
+    if (template && !adapter) throw new Error(`V2_HARNESS_BACKEND_UNAVAILABLE: ${node.binding.backend}`);
+    const adapterVersion = adapter?.adapterVersion ?? `unversioned:${node.binding.backend}`;
+    const frozen = frozenByRoleId?.[roleId];
+    let snapshot = frozen?.capabilitySnapshot as import("./v2-execution-policy.js").RunCapabilitySnapshot | undefined;
+    if (snapshot) {
+      assertCapabilitySnapshot(snapshot);
+      if (snapshot.backend !== node.binding.backend || snapshot.model !== node.binding.modelId) {
+        throw new Error(`V2_RECOVERY_SNAPSHOT_MISMATCH: ${roleId} capability identity changed during recovery`);
+      }
+    } else {
+      snapshot = createRunCapabilitySnapshot({
+        backend: node.binding.backend,
+        model: node.binding.modelId,
+        adapterVersion,
+        verifiedAt: new Date().toISOString(),
+        // Dry-run planning does not execute an Adapter probe. It therefore has
+        // no verified native capability facts and must never promote the
+        // Harness allow-list into the frozen snapshot.
+        verifiedTools: []
+      });
+    }
+    // A resume is a replay of the original technical decision.  Do not
+    // recalculate the tool set or policy from the current Harness Template:
+    // the project may have been edited after the Run was created.  The
+    // resolved config is the immutable source for recovery.
+    if (frozen) {
+      const frozenAllowedTools = frozen.allowedTools;
+      const frozenVerifiedTools = frozen.verifiedTools;
+      const frozenEnvironment = frozen.effectiveEnvironmentPolicy;
+      const frozenPolicyDigest = frozen.policyDigest;
+      const frozenRecoveryIdentity = frozen.recoveryIdentity;
+      if (!Array.isArray(frozenAllowedTools) || !frozenAllowedTools.every((tool) => typeof tool === "string")
+        || !Array.isArray(frozenVerifiedTools) || !frozenVerifiedTools.every((tool) => typeof tool === "string")
+        || !frozenEnvironment || typeof frozenEnvironment !== "object" || Array.isArray(frozenEnvironment)
+        || typeof frozenPolicyDigest !== "string" || !frozenPolicyDigest
+        || typeof frozenRecoveryIdentity !== "string" || !frozenRecoveryIdentity) {
+        throw new Error(`V2_RECOVERY_FROZEN_CONFIG_INVALID: ${roleId} resolved technical binding is incomplete`);
+      }
+      if (frozen.capabilityDigest !== undefined && frozen.capabilityDigest !== snapshot.digest) {
+        throw new Error(`V2_RECOVERY_SNAPSHOT_MISMATCH: ${roleId} capability digest changed during recovery`);
+      }
+      const environment = frozenEnvironment as import("./v2-execution-policy.js").EffectiveEnvironmentPolicy;
+      const verifiedFrozenPolicy = createEffectiveExecutionPolicy({
+        allowedTools: frozenAllowedTools as string[],
+        snapshot,
+        environment
+      });
+      if (verifiedFrozenPolicy.policyDigest !== frozenPolicyDigest) {
+        throw new Error(`V2_RECOVERY_FROZEN_CONFIG_INVALID: ${roleId} frozen policy digest does not match its facts`);
+      }
+      node.capabilitySnapshot = snapshot;
+      node.effectiveTools = [...verifiedFrozenPolicy.effectiveTools];
+      node.effectiveEnvironmentPolicy = environment;
+      node.capabilityDigest = snapshot.digest;
+      node.policyDigest = frozenPolicyDigest;
+      node.recoveryIdentity = frozenRecoveryIdentity;
+      resolved[roleId] = {
+        roleId,
+        backend: node.binding.backend,
+        model: node.binding.modelId,
+        harnessTemplate: frozen.harnessTemplate,
+        allowedTools: [...frozenAllowedTools] as string[],
+        capabilitySnapshot: snapshot,
+        verifiedTools: [...frozenVerifiedTools] as string[],
+        effectiveEnvironmentPolicy: environment,
+        capabilityDigest: snapshot.digest,
+        policyDigest: frozenPolicyDigest,
+        recoveryIdentity: frozenRecoveryIdentity
+      };
+      continue;
+    }
+    const discoveryKey = `${node.binding.backend}:${node.binding.modelId}`;
+    let discovered = discoveryByBackendModel.get(discoveryKey);
+    if (template && !frozen && !options?.skipCapabilityDiscovery && !discovered && adapter?.discoverNativeTools) {
+      discovered = await adapter.discoverNativeTools({
+        modelId: node.binding.modelId,
+        workdir: runRoot,
+        timeoutMs: node.binding.timeoutMs ?? 600_000
+      });
+      discoveryByBackendModel.set(discoveryKey, discovered);
+    }
+    if (template && template.allowedTools.length > 0 && !frozen && !options?.skipCapabilityDiscovery && !discovered) {
+      throw new Error(`V2_CAPABILITY_DISCOVERY_UNAVAILABLE: ${node.binding.backend} does not expose native tool discovery`);
+    }
+    if (template && template.allowedTools.length > 0 && !frozen && options?.skipCapabilityDiscovery) {
+      throw new Error(`V2_CAPABILITY_DISCOVERY_REQUIRED: dry-run cannot verify Harness tools; refresh Capability Preview or run without dry-run`);
+    }
+    const resources = discovered?.resources ?? adapter?.getResourceCapabilities?.() ?? { filesystem: true, process: false, network: false };
+    if (discovered && !frozen) {
+      snapshot = createRunCapabilitySnapshot({
+        backend: node.binding.backend,
+        model: node.binding.modelId,
+        adapterVersion,
+        verifiedAt: new Date().toISOString(),
+        verifiedTools: discovered.verifiedTools
+      });
+    }
+    const intent = template?.environment
+      ? {
+          filesystem: template.environment.filesystem,
+          process: template.environment.process,
+          network: template.environment.network,
+          limits: template.environment.limits
+        }
+      : { filesystem: { read: true, write: false }, process: false, network: false };
+    const environment = resolveEffectiveEnvironmentPolicy({
+      root: runRoot,
+      resources,
+      intent,
+      limits: {
+        timeoutMs: node.binding.timeoutMs ?? 600_000,
+        maxOutputBytes: node.binding.maxOutputBytes ?? 2 * 1024 * 1024,
+        maxStorageBytes: 200 * 1024 * 1024
+      }
+      });
+    const policy = createEffectiveExecutionPolicy({
+      allowedTools: template?.allowedTools ?? [],
+      snapshot,
+      environment,
+      validateToolResources: adapter?.validateToolResources?.bind(adapter)
+    });
+    const recoveryIdentity = `${plan.systemId}@${plan.systemVersion}:${roleId}:${snapshot.digest}:${policy.policyDigest}`;
+    node.capabilitySnapshot = snapshot;
+    node.effectiveTools = policy.effectiveTools;
+    node.effectiveEnvironmentPolicy = environment;
+    node.capabilityDigest = snapshot.digest;
+    node.policyDigest = policy.policyDigest;
+    node.recoveryIdentity = recoveryIdentity;
+    resolved[roleId] = {
+      roleId,
+      backend: node.binding.backend,
+      model: node.binding.modelId,
+      harnessTemplate: template?.templateId,
+      allowedTools: policy.allowedTools,
+      capabilitySnapshot: snapshot,
+      verifiedTools: policy.verifiedTools,
+      effectiveEnvironmentPolicy: environment,
+      capabilityDigest: snapshot.digest,
+      policyDigest: policy.policyDigest,
+      recoveryIdentity
+    };
+  }
+  return resolved;
+}
 
 const PROJECT_RUN_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
@@ -178,7 +346,10 @@ export function validateSemanticRoleContracts(args: { semanticIR: SemanticIR; sp
       if (contract.constraints.writableStateFields.includes(field)) throw new Error(`[IR_CONTRACT_INVALID] ${roleId} doesNotOwn ${field} but may write it`);
     }
     const outputFields = new Set<string>();
-    for (const eventType of contract.outputs.events) {
+    const roleEventTypes = args.semanticIR.transitions
+      .filter((transition) => transition.fromRoleId === roleId && transition.channel === "normal")
+      .map((transition) => transition.eventType);
+    for (const eventType of roleEventTypes) {
       const event = args.semanticIR.events?.[eventType];
       for (const field of schemaProperties(event?.payloadSchema)) outputFields.add(field);
     }
@@ -187,11 +358,6 @@ export function validateSemanticRoleContracts(args: { semanticIR: SemanticIR; sp
         throw new Error(`[IR_CONTRACT_INVALID] ${roleId} contributes unknown state or declared output field ${field}`);
       }
     }
-    if (!Object.prototype.hasOwnProperty.call(args.semanticIR.capabilities.allowedToolsByRoleId, roleId)) {
-      throw new Error(`[IR_CONTRACT_INVALID] capability policy must declare tools for role ${roleId}`);
-    }
-    const allowedTools = args.semanticIR.capabilities.allowedToolsByRoleId[roleId];
-    if (!contract.constraints.allowedTools.every((tool) => allowedTools.includes(tool))) throw new Error(`[IR_CONTRACT_INVALID] ${roleId} contract requests tools outside capability policy`);
   }
 }
 
@@ -328,7 +494,6 @@ export async function prepareRuntimeSetup(args: {
   lawsPath?: string;
   runtimeConfigPath?: string;
   userProfilePath?: string;
-  modelSelectionDefaults?: ModelSelectionDefaults;
   modelCatalogModels?: ModelCatalogEntry[];
   modelCatalogGeneratedAt?: string;
   resumeRunDir?: string;
@@ -398,6 +563,30 @@ export async function prepareRuntimeSetup(args: {
   const assetWorkdir = projectResume
     ? await assertProjectAssetSnapshot(resolve(resumeRoot, args.resumeRunDir!), projectResumeManifestDigest)
     : resolve(args.assetSource ?? args.workdir);
+  // Recovery is anchored by the immutable resolved-config written in the Run
+  // directory. It must remain possible even if the project Harness document
+  // was edited or removed after the Run was created.
+  const resumeEvidenceDir = args.resumeRunDir
+    ? (projectResume
+      ? resolve(resumeRoot, args.resumeRunDir)
+      : (args.resumeRunDir.startsWith("/")
+        ? resolve(args.resumeRunDir)
+        : resolve(args.workdir, ".ogs", "runs", args.resumeRunDir)))
+    : undefined;
+  let frozenV2ExecutionPlans: Record<string, Record<string, unknown>> | undefined;
+  let frozenResolvedConfig: Record<string, unknown> | undefined;
+  if (resumeEvidenceDir) {
+    frozenResolvedConfig = await readFile(resolve(resumeEvidenceDir, "resolved-config.json"), "utf8")
+      .then((source) => JSON.parse(source) as Record<string, unknown>)
+      .catch(() => undefined);
+    const effective = frozenResolvedConfig?.effective;
+    const previousPlans = effective && typeof effective === "object" && !Array.isArray(effective)
+      ? (effective as Record<string, unknown>).resolvedExecutionPlans
+      : undefined;
+    if (previousPlans && typeof previousPlans === "object" && !Array.isArray(previousPlans)) {
+      frozenV2ExecutionPlans = previousPlans as Record<string, Record<string, unknown>>;
+    }
+  }
   const effectiveSystemPath = projectResume
     ? resolve(assetWorkdir, "system.mmd")
     : args.systemPath;
@@ -444,52 +633,149 @@ export async function prepareRuntimeSetup(args: {
         `semantic files are ${specificationSnapshot.systemId}@${specificationSnapshot.systemVersion}`
     );
   }
-  const runtimeConfig = await loadRuntimeConfig(projectResume ? undefined : args.runtimeConfigPath, assetWorkdir);
-  const storedModelSelection = await loadModelSelection(resolve(assetWorkdir, ".ogs", "model-selection.json"));
-  const effectiveModelSelection = withDefaultModelSelection(storedModelSelection, args.modelSelectionDefaults);
-  const designModelOverrides = activeDesign
-    ? Object.fromEntries(Object.entries(activeDesign.seats).flatMap(([roleId, seat]) => {
-        if (seat.binding.kind !== "model" || !seat.binding.modelRef) return [];
-        const separator = seat.binding.modelRef.indexOf("/");
-        if (separator <= 0 || separator === seat.binding.modelRef.length - 1) return [];
-        return [[roleId, {
-          backend: seat.binding.modelRef.slice(0, separator),
-          modelId: seat.binding.modelRef.slice(separator + 1),
-          fallback: effectiveModelSelection?.roles?.[roleId]?.fallback
-        }]];
-      }))
-    : {};
-  const modelSelection = activeDesign && Object.keys(designModelOverrides).length
-    ? {
-        configVersion: "3" as const,
-        defaults: effectiveModelSelection?.defaults,
-        roles: { ...(effectiveModelSelection?.roles ?? {}), ...designModelOverrides }
-      }
-    : effectiveModelSelection;
-  const storedModelCatalog = await loadModelCatalog(resolve(assetWorkdir, ".ogs", "model-catalog.json"));
-  const modelCatalog = mergeModelCatalogWithLiveSnapshot(
-    storedModelCatalog,
-    args.modelCatalogModels,
-    args.modelCatalogGeneratedAt
-  );
-  const resumeEvidenceDir = args.resumeRunDir
-    ? (projectResume
-      ? resolve(resumeRoot, args.resumeRunDir)
-      : (args.resumeRunDir.startsWith("/")
-        ? resolve(args.resumeRunDir)
-        : resolve(args.workdir, runtimeConfig.runsDir, args.resumeRunDir)))
+  // Contract Set v2 has no compatibility reader for the v1 fixed-command
+  // registry. Reject these files at the project boundary even when a project
+  // has not yet persisted an explicit Harness binding index.
+  await assertNoLegacyV1ExecutionAssets(assetWorkdir);
+  const executionBindingsPath = resolve(assetWorkdir, ".ogs", "execution-bindings.json");
+  let executionBindings: ExecutionBindingsV2;
+  const frozenEffective = frozenResolvedConfig?.effective;
+  const persistedFrozenBindings = frozenEffective && typeof frozenEffective === "object" && !Array.isArray(frozenEffective)
+    ? (frozenEffective as Record<string, unknown>).executionBindings
     : undefined;
+  if (args.resumeRunDir && frozenV2ExecutionPlans && persistedFrozenBindings && typeof persistedFrozenBindings === "object" && !Array.isArray(persistedFrozenBindings)) {
+    executionBindings = persistedFrozenBindings as ExecutionBindingsV2;
+  } else if (args.resumeRunDir && frozenV2ExecutionPlans) {
+    const harnessTemplates: Record<string, HarnessTemplateV2> = {};
+    const roles: ExecutionBindingsV2["roles"] = {};
+    for (const roleId of system.roleIds) {
+      const frozen = frozenV2ExecutionPlans[roleId];
+      if (!frozen || typeof frozen.backend !== "string" || typeof frozen.model !== "string"
+        || !Array.isArray(frozen.allowedTools) || !Array.isArray(frozen.verifiedTools)
+        || !frozen.effectiveEnvironmentPolicy || typeof frozen.effectiveEnvironmentPolicy !== "object") {
+        throw new Error(`V2_RECOVERY_FROZEN_CONFIG_INVALID: ${roleId} has no complete frozen Harness binding`);
+      }
+      const policy = frozen.effectiveEnvironmentPolicy as Record<string, unknown>;
+      const templateId = typeof frozen.harnessTemplate === "string" && frozen.harnessTemplate
+        ? frozen.harnessTemplate
+        : `recovery-${roleId}`;
+      harnessTemplates[templateId] = {
+        ogsContractVersion: 2,
+        schemaVersion: 1,
+        kind: "harness",
+        templateId,
+        backend: frozen.backend,
+        model: frozen.model,
+        allowedTools: frozen.allowedTools.filter((tool): tool is string => typeof tool === "string"),
+        environment: {
+          filesystem: {
+            read: Boolean((policy.filesystem as Record<string, unknown> | undefined)?.read),
+            write: Boolean((policy.filesystem as Record<string, unknown> | undefined)?.write)
+          },
+          process: policy.process === true ? "allow" : "deny",
+          network: policy.network === true ? "allow" : "deny",
+          limits: policy.limits as HarnessTemplateV2["environment"]["limits"]
+        }
+      };
+      roles[roleId] = { kind: "harness", harnessTemplate: templateId };
+    }
+    executionBindings = { ogsContractVersion: 2, schemaVersion: 1, harnessTemplates, roles };
+  } else {
+    if (args.resumeRunDir && !frozenV2ExecutionPlans) {
+      throw new Error("V2_RECOVERY_FROZEN_CONFIG_REQUIRED: resolved-config.json must contain frozen execution plans");
+    }
+    if (!(await filesystemRunStore.pathExists(executionBindingsPath))) {
+      throw new Error("V2_EXECUTION_BINDINGS_REQUIRED: .ogs/execution-bindings.json must declare Harness Templates for every Role");
+    }
+    executionBindings = await loadExecutionBindingsV2(executionBindingsPath);
+  }
+  const harnessTemplatesByRoleId: Record<string, HarnessTemplateV2> = {};
+  {
+    const defaultTemplateId = executionBindings.defaults?.harnessTemplate;
+    for (const roleId of system.roleIds) {
+      const templateId = executionBindings.roles[roleId]?.harnessTemplate ?? defaultTemplateId;
+      if (!templateId) {
+        throw new Error(`V2_HARNESS_BINDING_REQUIRED: role "${roleId}" has no Harness Template reference`);
+      }
+      const template = executionBindings.harnessTemplates?.[templateId];
+      if (!template) throw new Error(`V2_HARNESS_TEMPLATE_UNRESOLVED: ${templateId}`);
+      harnessTemplatesByRoleId[roleId] = template;
+    }
+  }
+  const runtimeConfig = await loadRuntimeConfig(projectResume ? undefined : args.runtimeConfigPath, assetWorkdir);
+  const harnessModelOverrides = Object.fromEntries(Object.entries(harnessTemplatesByRoleId).map(([roleId, template]) => {
+    const separator = template.model.indexOf("/");
+    if (!template.backend.trim() || !template.model.trim() || (separator === 0 || separator === template.model.length - 1)) {
+      throw new Error(`V2_HARNESS_MODEL_INVALID: ${roleId} template requires a backend and model`);
+    }
+    return [roleId, {
+      backend: template.backend,
+      // Backend catalogs and native SDKs use the provider/model reference as
+      // the immutable model identity; keep it intact for Adapter execution.
+      modelId: template.model,
+    }];
+  }));
+  // The model-selection resolver is an internal normalization adapter only.
+  // Its input is synthesized from the authoritative Harness Templates and is
+  // never read from or written to a model-selection asset.
+  const harnessResolutionInput = {
+    configVersion: "3" as const,
+    roles: harnessModelOverrides
+  };
   const frozenReasoningByRoleId = resumeEvidenceDir
     ? await loadFrozenReasoningFromAudit(resumeEvidenceDir)
     : undefined;
-  const resolvedModelSelection = resolveModelSelectionForSystem({
-    system: activeDesign ? { ...system, modelBinding: {} } : system,
-    selection: modelSelection,
-    catalog: modelCatalog,
-    frozenReasoningByRoleId
-  });
+  let resolvedHarnessBindings: ReturnType<typeof resolveModelSelectionForSystem>;
+  if (frozenV2ExecutionPlans) {
+    resolvedHarnessBindings = (() => {
+        // Recovery must replay the frozen technical identity. The current project
+        // model catalog may be stale, missing, or describe a different provider;
+        // it is diagnostic input for new Runs only and must not gate resume.
+        const persisted = frozenEffective && typeof frozenEffective === "object" && !Array.isArray(frozenEffective)
+          ? (frozenEffective as Record<string, unknown>).resolvedHarnessBindings
+          : undefined;
+        const persistedByRole = persisted && typeof persisted === "object" && !Array.isArray(persisted)
+          ? persisted as Record<string, Record<string, unknown>>
+          : {};
+        const resolvedByRoleId = new Map<string, import("./model-selection.js").ResolvedModelRuntimeConfig>();
+        for (const roleId of system.roleIds) {
+          const frozen = frozenV2ExecutionPlans[roleId];
+          if (!frozen || typeof frozen.backend !== "string" || typeof frozen.model !== "string") {
+            throw new Error(`V2_RECOVERY_FROZEN_CONFIG_INVALID: ${roleId} has no frozen backend/model identity`);
+          }
+          const previous = persistedByRole[roleId] ?? {};
+          resolvedByRoleId.set(roleId, {
+            backend: frozen.backend as import("./model-selection.js").ModelBackend,
+            modelId: frozen.model,
+            modelRef: typeof previous.modelRef === "string" ? previous.modelRef : frozen.model,
+            ...(typeof previous.variant === "string" ? { variant: previous.variant } : {}),
+            ...(typeof previous.timeoutMs === "number" ? { timeoutMs: previous.timeoutMs } : {}),
+            ...(typeof previous.maxOutputBytes === "number" ? { maxOutputBytes: previous.maxOutputBytes } : {}),
+            ...(typeof previous.reasoningEffort === "string" ? { reasoningEffort: previous.reasoningEffort as import("./types.js").ReasoningEffort } : {}),
+            ...(typeof previous.effectiveReasoningEffort === "string" ? { effectiveReasoningEffort: previous.effectiveReasoningEffort as import("./types.js").ReasoningEffortLevel } : {}),
+            ...(typeof previous.frozenReasoningEffort === "string" ? { frozenReasoningEffort: previous.frozenReasoningEffort as import("./types.js").ReasoningEffortLevel } : {}),
+            bindingSource: "selection"
+          });
+        }
+        return { resolvedByRoleId, warnings: [] };
+      })();
+  } else {
+    const storedModelCatalog = await loadModelCatalog(resolve(assetWorkdir, ".ogs", "model-catalog.json"));
+    const modelCatalog = mergeModelCatalogWithLiveSnapshot(
+      storedModelCatalog,
+      args.modelCatalogModels,
+      args.modelCatalogGeneratedAt
+    );
+    resolvedHarnessBindings = resolveModelSelectionForSystem({
+      system: { ...system, modelBinding: {} },
+      selection: harnessResolutionInput,
+      catalog: modelCatalog,
+      frozenReasoningByRoleId,
+      sourceLabel: "Harness Template"
+    });
+  }
   if (args.resumeRunDir) {
-    for (const [roleId, resolved] of resolvedModelSelection.resolvedByRoleId) {
+    for (const [roleId, resolved] of resolvedHarnessBindings.resolvedByRoleId) {
       if (resolved.reasoningEffort !== "auto" || resolved.frozenReasoningEffort || resolved.effectiveReasoningEffort) continue;
       if (resolved.reasoningCapability?.kind === "none") continue;
       throw createRuntimeError({
@@ -502,19 +788,21 @@ export async function prepareRuntimeSetup(args: {
       });
     }
   }
-  const plan = createExecutionPlan(system, resolvedModelSelection.resolvedByRoleId);
-  const resolvedProfilesPath = resolveOptionalProjectPath({
-    workdir: assetWorkdir,
-    explicitPath: projectResume ? undefined : args.profilesPath,
-    defaultBasename: "profiles.json"
-  });
-  const resolvedToolsPath = resolveOptionalProjectPath({
-    workdir: assetWorkdir,
-    explicitPath: projectResume ? undefined : args.toolsPath,
-    defaultBasename: "tools.json"
-  });
-  const profiles = await loadProfiles(projectResume ? undefined : args.profilesPath, assetWorkdir);
-  const tools = await loadTools(projectResume ? undefined : args.toolsPath, assetWorkdir);
+  const plan = createExecutionPlan(system, resolvedHarnessBindings.resolvedByRoleId);
+  const v2RunId = args.resumeRunDir?.split(/[\\/]/).at(-1) ?? args.runId ?? createRunId(new Date());
+  const v2RunRoot = resolve(runEvidenceRoot ?? assetWorkdir, runtimeConfig.runsDir, v2RunId);
+  const resolvedV2ExecutionPlans = await materializeV2ExecutionPolicies(
+    plan,
+    v2RunRoot,
+    frozenV2ExecutionPlans,
+    harnessTemplatesByRoleId,
+    { skipCapabilityDiscovery: args.dryRun === true }
+  );
+  if (args.profilesPath || args.toolsPath) {
+    throw new Error("V2_LEGACY_EXECUTION_ARGUMENT: profilesPath/toolsPath are not accepted by Contract Set v2; use Harness Templates.");
+  }
+  const profiles: ExecutionProfile[] = [];
+  const tools: CliTool[] = [];
   const lawCatalog = await loadLaws(projectResume ? undefined : args.lawsPath, assetWorkdir);
   const userProfile = await loadUserProfile(projectResume ? undefined : args.userProfilePath, assetWorkdir);
   const baseLaw = resolveEffectiveLaw(system, lawCatalog);
@@ -537,7 +825,8 @@ export async function prepareRuntimeSetup(args: {
     ? compileSemanticIR({
         system,
         specification: specificationSnapshot,
-        maxTransitionsPerRun: effectiveLaw.maxTransitions ?? 100
+        maxTransitionsPerRun: effectiveLaw.maxTransitions ?? 100,
+        harnessTemplateByRoleId: new Map(Object.entries(harnessTemplatesByRoleId).map(([roleId, template]) => [roleId, template.templateId]))
       })
     : undefined;
   if (compiledSemanticIR) {
@@ -586,7 +875,8 @@ export async function prepareRuntimeSetup(args: {
       system,
       specification: specificationSnapshot,
       maxTransitionsPerRun: effectiveLaw.maxTransitions ?? 100,
-      rolePackagesByRoleId
+      rolePackagesByRoleId,
+      harnessTemplateByRoleId: new Map(Object.entries(harnessTemplatesByRoleId).map(([roleId, template]) => [roleId, template.templateId]))
     });
     validateSemanticRoleContracts({ semanticIR: contractedSemanticIR.ir, specification: specificationSnapshot, rolePackagesByRoleId });
     if (contractedSemanticIR.ir.composites?.length) {
@@ -600,7 +890,7 @@ export async function prepareRuntimeSetup(args: {
     rolePackagesByRoleId,
     contractPlan,
     effectiveLaw,
-    resolvedModelsByRoleId: resolvedModelSelection.resolvedByRoleId,
+    resolvedModelsByRoleId: resolvedHarnessBindings.resolvedByRoleId,
   });
   if (!compilerResult.ok) {
     throw new Error(
@@ -612,7 +902,7 @@ export async function prepareRuntimeSetup(args: {
   const planFingerprint = buildRunPlanFingerprint({
     system,
     rolePackagesByRoleId,
-    resolvedModelsByRoleId: resolvedModelSelection.resolvedByRoleId,
+    resolvedModelsByRoleId: resolvedHarnessBindings.resolvedByRoleId,
     effectiveLaw,
     contractPlan,
     compilerSnapshot: compilerResult.snapshot,
@@ -621,20 +911,20 @@ export async function prepareRuntimeSetup(args: {
     runtimeConfig,
     profiles,
     tools,
-    userProfile
+    userProfile,
+    executionBindings
   });
   const resolvedConfigSnapshot: Record<string, unknown> = {
-    version: 1,
+    ogsContractVersion: 2,
+    schemaVersion: 1,
     resolvedAt: new Date().toISOString(),
     sources: {
       runtimeConfigPath: projectResume ? resolve(assetWorkdir, ".ogs/runtime.json") : args.runtimeConfigPath ?? ".ogs/runtime.json",
       designPath: activeDesign ? "system.design.json" : null,
-      modelSelectionPath: ".ogs/model-selection.json",
       modelCatalogPath: ".ogs/model-catalog.json",
+      executionBindingsPath: args.resumeRunDir && frozenV2ExecutionPlans ? null : executionBindingsPath,
       userProfilePath: projectResume ? resolve(assetWorkdir, ".ogs/user-profile.json") : args.userProfilePath ?? ".ogs/user-profile.json",
       lawsPath: projectResume ? resolve(assetWorkdir, ".ogs/laws.json") : args.lawsPath ?? ".ogs/laws.json",
-      profilesPath: profiles.length > 0 ? resolvedProfilesPath ?? null : null,
-      toolsPath: tools.length > 0 ? resolvedToolsPath ?? null : null
     },
     effective: {
       runtimeConfig,
@@ -642,13 +932,15 @@ export async function prepareRuntimeSetup(args: {
       invocation: {
         dryRun: args.dryRun === true
       },
-      resolvedModelSelection: Object.fromEntries(
-        Array.from(resolvedModelSelection.resolvedByRoleId.entries()).map(([roleId, selection]) => [
+      resolvedHarnessBindings: Object.fromEntries(
+        Array.from(resolvedHarnessBindings.resolvedByRoleId.entries()).map(([roleId, selection]) => [
           roleId,
           selection
         ])
       ),
-      advisoryWarnings: resolvedModelSelection.warnings,
+      resolvedExecutionPlans: resolvedV2ExecutionPlans,
+      advisoryWarnings: resolvedHarnessBindings.warnings,
+      executionBindings,
       runsDir: projectRun
         ? resolve(runEvidenceRoot!, ".ogs/runs")
         : resolve(runEvidenceRoot ?? args.workdir, runtimeConfig.runsDir),
@@ -687,7 +979,7 @@ export async function prepareRuntimeSetup(args: {
     runtimeConfig: runRuntimeConfig,
     resolvedConfigSnapshot,
     resumeRunDir: args.resumeRunDir,
-    runId: args.runId,
+    runId: v2RunId,
     runEvidenceRoot,
     runEvidenceDirectory: args.runEvidenceDirectory
   });

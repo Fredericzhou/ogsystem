@@ -233,7 +233,7 @@ export function createAcpRunSession(definition: AcpAdapterDefinition, args: { ta
         effectiveReasoning = await client.setReasoning(sessionId, configuredReasoning, reasoningCapability, request.timeoutMs);
       }
       activeSessionIds.add(sessionId);
-      const emitter = createAgentEventEmitter({ runId: request.runId ?? args.runContext.runId, roleId: request.roleId, executionId: request.executionId ?? "unknown", attempt: request.attempt ?? 1, backend: definition.backendId, sessionId, onEvent: request.onEvent });
+      const emitter = createAgentEventEmitter({ runId: request.runId ?? args.runContext.runId, roleId: request.roleId, executionId: request.executionId ?? "unknown", attempt: request.attempt ?? 1, backend: definition.backendId, model: request.modelId, sessionId, policyDigest: request.policyDigest, onEvent: request.onEvent });
       if (recreatedFrom) await emitter.emit({ type: "session_recreated", previousSessionId: recreatedFrom, sessionId, reason: "resume_failed" });
       let output = "";
       const unsubscribe = client.onNotification((message) => {

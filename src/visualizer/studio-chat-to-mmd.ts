@@ -80,7 +80,6 @@ export type StudioChatToMmdRequest = {
   runtimeConfigPath?: string;
   runtimePath?: string;
   lawsPath?: string;
-  profilesPath?: string;
   userProfilePath?: string;
 };
 
@@ -141,8 +140,19 @@ function normalizeOptionalString(value: unknown): string | undefined {
 
 function normalizeAuthoring(value: unknown): StudioAuthoringDocument | undefined {
   const record = asRecord(value);
-  if (!record || record.version !== 1) {
-    return undefined;
+  if (!record) return undefined;
+  if (record.version !== 2 || record.ogsContractVersion !== 2) {
+    throw new Error("V2_STUDIO_CONTRACT_REQUIRED: Studio authoring must declare ogsContractVersion=2 and version=2.");
+  }
+  const roles = asRecord(record.roles) ?? {};
+  for (const [roleId, value] of Object.entries(roles)) {
+    const role = asRecord(value);
+    if (!role || role.bindingKind !== "model" || role.profileId !== undefined || role.fallback !== undefined) {
+      throw new Error(`V2_STUDIO_LEGACY_BINDING: role "${roleId}" must use a Harness/model binding.`);
+    }
+  }
+  if (!record.roles || !record.flows || !record.layout) {
+    throw new Error("V2_STUDIO_CONTRACT_REQUIRED: Studio authoring roles, flows, and layout are required.");
   }
   return record as StudioAuthoringDocument;
 }
@@ -185,7 +195,6 @@ export function parseStudioChatToMmdRequest(body: Record<string, unknown>): Stud
     runtimeConfigPath: normalizeOptionalString(body.runtimeConfigPath ?? body.runtimePath),
     runtimePath: normalizeOptionalString(body.runtimePath),
     lawsPath: normalizeOptionalString(body.lawsPath),
-    profilesPath: normalizeOptionalString(body.profilesPath),
     userProfilePath: normalizeOptionalString(body.userProfilePath)
   };
 }
@@ -315,8 +324,7 @@ function roleCommandShape(role: StudioAuthoringRole): Record<string, unknown> {
     roleId: role.roleId,
     title: role.title,
     bindingKind: role.bindingKind,
-    modelRef: role.modelRef,
-    profileId: role.profileId
+    modelRef: role.modelRef
   };
 }
 
@@ -423,8 +431,7 @@ function diffAuthoringToCommands(
         roleId: nextRole.roleId,
         title: nextRole.title,
         bindingKind: nextRole.bindingKind,
-        modelRef: nextRole.modelRef,
-        profileId: nextRole.profileId
+        modelRef: nextRole.modelRef
       });
     }
   }
@@ -444,7 +451,6 @@ function diffAuthoringToCommands(
       title: role.title,
       bindingKind: role.bindingKind,
       modelRef: role.modelRef,
-      profileId: role.profileId,
       x: next.layout.nodes?.[roleId]?.x,
       y: next.layout.nodes?.[roleId]?.y
     });
@@ -606,7 +612,6 @@ export async function runStudioChatToMmdTurn(args: {
     "runtimeConfigPath"
   );
   const lawsPath = resolveOptionalPathWithinWorkdir(args.workdir, args.request.lawsPath, "lawsPath");
-  const profilesPath = resolveOptionalPathWithinWorkdir(args.workdir, args.request.profilesPath, "profilesPath");
   const userProfilePath = resolveOptionalPathWithinWorkdir(
     args.workdir,
     args.request.userProfilePath,
@@ -651,7 +656,6 @@ export async function runStudioChatToMmdTurn(args: {
         validationWarnings
       },
       lawsPath,
-      profilesPath,
       userProfilePath
     });
   } catch (error) {

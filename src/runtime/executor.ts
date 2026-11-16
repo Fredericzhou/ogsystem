@@ -15,6 +15,7 @@ import {
   type WorkspaceCapabilityPolicy
 } from "./model-backend-registry.js";
 import { assertWorkspaceExecutionDirectory } from "./backend-capabilities.js";
+import type { EffectiveEnvironmentPolicy } from "./v2-execution-policy.js";
 import { getSideEffectByKey, recordSideEffect } from "./side-effect-store.js";
 import { runCliTool, ToolExecutionError } from "./tool-runner.js";
 import type {
@@ -104,6 +105,13 @@ export type ExecutorRequest = {
   timeoutMs: number;
   maxOutputBytes: number;
   workspaceCapabilityPolicy?: WorkspaceCapabilityPolicy;
+  /** Frozen v2 native tool set. A backend request must not expand this set. */
+  effectiveTools?: string[];
+  /** Frozen v2 resource policy paired with effectiveTools. */
+  effectiveEnvironmentPolicy?: EffectiveEnvironmentPolicy;
+  /** Digest of the frozen v2 execution policy for Evidence. */
+  policyDigest?: string;
+  artifactToolPhase?: boolean;
   reasoningEffort?: ReasoningEffort;
   effectiveReasoningEffort?: ReasoningEffortLevel;
   signal?: AbortSignal;
@@ -197,6 +205,9 @@ export function createDefaultExecutor(args: {
     },
 
     async execute(request) {
+      if (request.binding.kind === "profile") {
+        throw new Error("V2_LEGACY_EXECUTION_BINDING: profile and local CLI tool execution are not supported by Contract Set v2; use a Harness Template backed by a verified Backend.");
+      }
       if (request.binding.kind === "model") {
         const backendId = request.binding.backend;
         const adapter = defaultBackendRegistry.getAdapter(backendId);
@@ -287,6 +298,10 @@ export function createDefaultExecutor(args: {
           timeoutMs: request.timeoutMs,
           maxOutputBytes: request.maxOutputBytes,
           workspaceCapabilityPolicy: request.workspaceCapabilityPolicy,
+          effectiveTools: request.effectiveTools,
+          effectiveEnvironmentPolicy: request.effectiveEnvironmentPolicy,
+          policyDigest: request.policyDigest,
+          artifactToolPhase: request.artifactToolPhase,
           signal: request.signal,
           promptCallPhase: request.promptCallPhase,
           onPromptCall: request.onPromptCall,
@@ -301,95 +316,7 @@ export function createDefaultExecutor(args: {
         };
       }
 
-      // CLI tool executions are isolated per request and do not rely on model backend state.
-      const sideEffectKey = `${args.runContext.runId}:tool:${request.sessionKey ?? request.roleId}`;
-      if (args.sandbox && args.runContext.runDir) {
-        const prior = await getSideEffectByKey(args.runContext.runDir, sideEffectKey);
-        if (prior?.status === "completed" && prior.result && typeof prior.result === "object") {
-          return prior.result as ExecutorResult;
-        }
-        if (prior?.status === "unknown" || prior?.status === "needs_review") {
-          throw new Error(`SIDE_EFFECT_TERMINAL_UNCERTAIN: ${sideEffectKey} is ${prior.status}`);
-        }
-        await recordSideEffect(args.runContext.runDir, {
-          operationId: `tool:${request.sessionKey ?? request.roleId}`,
-          idempotencyKey: sideEffectKey,
-          approvalId: null,
-          status: "requested",
-          startedAt: new Date().toISOString()
-        });
-        await recordSideEffect(args.runContext.runDir, {
-          operationId: `tool:${request.sessionKey ?? request.roleId}`,
-          idempotencyKey: sideEffectKey,
-          approvalId: null,
-          status: "running",
-          startedAt: new Date().toISOString()
-        });
-      }
-      let result: Awaited<ReturnType<typeof runCliTool>>;
-      try {
-        result = args.sandbox && args.sandboxToolExecutor
-          ? await args.sandboxToolExecutor(request)
-          : await runCliTool({
-              tool: request.binding.tool,
-              vars: { prompt: request.prompt },
-              env: request.env,
-              environmentPolicy: args.toolEnvironmentPolicy,
-              envAllowlist: args.toolEnvAllowlist,
-              commandBaseDir: request.commandBaseDir ?? request.workdir,
-              workdir: request.workdir,
-              timeoutMs: request.timeoutMs,
-              maxOutputBytes: request.maxOutputBytes,
-              signal: request.signal,
-              dryRun: args.dryRun || args.sandbox,
-              dryRunOutput: {
-                event: request.dryRunOutputEvent,
-                output: buildDryRunRoleOutput(request.schema, request.dryRunOutputEvent, "")
-              }
-            });
-        if (result.exitCode !== 0) {
-          throw new ToolExecutionError("exit_code", `Sandbox tool exited with code ${result.exitCode}`);
-        }
-        if (args.sandbox && args.runContext.runDir) await recordSideEffect(args.runContext.runDir, {
-          operationId: `tool:${request.sessionKey ?? request.roleId}`,
-          idempotencyKey: sideEffectKey,
-          approvalId: null,
-          status: "completed",
-          completedAt: new Date().toISOString(),
-          result: { ...result, simulated: true }
-        });
-      } catch (error) {
-        if (args.sandbox && args.runContext.runDir) {
-          const status = error && typeof error === "object" && "sideEffectStatus" in error
-            ? String((error as { sideEffectStatus?: unknown }).sideEffectStatus)
-            : request.signal?.aborted || (error instanceof Error && error.name === "AbortError")
-              ? "interrupted"
-              : error instanceof ToolExecutionError && error.category === "timeout"
-                ? "timeout"
-                : error instanceof ToolExecutionError && error.category === "exit_code"
-                  ? "failed"
-                  : "unknown";
-          const acceptedStatus = ["failed", "timeout", "interrupted", "unknown", "needs_review"].includes(status)
-            ? status as "failed" | "timeout" | "interrupted" | "unknown" | "needs_review"
-            : "unknown";
-          await recordSideEffect(args.runContext.runDir, {
-            operationId: `tool:${request.sessionKey ?? request.roleId}`,
-            idempotencyKey: sideEffectKey,
-            approvalId: null,
-            status: acceptedStatus,
-            completedAt: new Date().toISOString(),
-            error: error instanceof Error ? error.message : String(error)
-          });
-        }
-        throw error;
-      }
-
-      return {
-        ...result,
-        profileId: request.binding.profile.profileId,
-        toolRef: request.binding.tool.toolRef,
-        command: request.binding.tool.command
-      };
+      throw new Error("V2_LEGACY_EXECUTION_BINDING: unreachable profile execution branch");
     },
 
     async abortSession(run) {

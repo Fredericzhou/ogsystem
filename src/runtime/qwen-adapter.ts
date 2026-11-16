@@ -51,7 +51,9 @@ export const qwenBackendDescriptor: BackendDescriptor = {
 };
 
 export const qwenBackendAdapter: BackendAdapter = {
-  backendId: "qwen", verifiedRunnable: true,
+  // ACP model discovery is not native tool discovery. Stay unavailable until
+  // the adapter can prove and constrain its tool registry.
+  backendId: "qwen", verifiedRunnable: false,
   async discover({ workdir }) {
     const configuredModels = await discoverConfiguredQwenModels();
     const command = await resolveExecutable("qwen", [join(process.env.QWEN_HOME || join(homedir(), ".qwen"), "bin", "qwen")]);

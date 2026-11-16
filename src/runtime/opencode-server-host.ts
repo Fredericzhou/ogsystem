@@ -1,15 +1,7 @@
 import { createInterface } from "node:readline";
 import { createServer } from "node:net";
 import { createOpencodeServer } from "@opencode-ai/sdk/v2/server";
-
-function resolveChatCompatibleProviders(): Record<string, { npm: "@ai-sdk/openai-compatible" }> {
-  const configured = process.env.OGS_OPENCODE_COMPATIBLE_PROVIDERS ?? "codex-gateway";
-  const providerIds = configured
-    .split(",")
-    .map((value) => value.trim())
-    .filter(Boolean);
-  return Object.fromEntries(providerIds.map((providerId) => [providerId, { npm: "@ai-sdk/openai-compatible" }]));
-}
+import { resolveChatCompatibleProviders } from "./opencode-provider-config.js";
 
 async function findFreePort(): Promise<number> {
   const probe = createServer();

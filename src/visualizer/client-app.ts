@@ -38,7 +38,6 @@ import {
   renderStudioBoundaryConfigEditor,
   renderStudioContractEditor,
   renderStudioRoleConfigEditor,
-  renderStudioExecutionConfigEditor,
   renderStudioFlowConfigEditor,
   renderStudioRolePackageEditor,
   renderStudioBridgeStructureHtml,
@@ -290,7 +289,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const renderStudioSystemSettingsEditor = ${renderStudioSystemSettingsEditor.toString()};
     const renderStudioBoundaryConfigEditor = ${renderStudioBoundaryConfigEditor.toString()};
     const renderStudioContractEditor = ${renderStudioContractEditor.toString()};
-    const renderStudioExecutionConfigEditor = ${renderStudioExecutionConfigEditor.toString()};
     const renderStudioRolePackageEditor = ${renderStudioRolePackageEditor.toString()};
     const renderStudioFlowConfigEditor = ${renderStudioFlowConfigEditor.toString()};
     const issue = ${issue.toString()};
@@ -1016,7 +1014,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             height: Number.isFinite(layout.height) ? layout.height : 84,
             label: role.title || roleId,
             badges: role.badges || [],
-            bindingKind: role.bindingKind || "noop"
+            bindingKind: role.bindingKind || "model"
           };
         }),
         edges: flows.map((flow) => ({
@@ -1144,7 +1142,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           const badges = [
             flows.some((flow) => flow?.fromRoleId === STUDIO_SYSTEM_START_ROLE_ID && flow?.toRoleId === roleId) ? "entry" : "",
             role?.bindingKind === "model" ? "M" : "",
-            role?.bindingKind === "exec" ? "E" : "",
             role?.routingMode === "parallel_split" ? "P" : "",
             role?.joinMode ? "J" : "",
             role?.loopMax ? "L" : "",
@@ -1501,13 +1498,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         title: t("studio.form.title", undefined, "Title"),
         bindingKind: t("studio.form.bindingKind", undefined, "Binding"),
         modelRef: t("studio.form.modelRef", undefined, "Model"),
-        profileId: t("studio.form.profileId", undefined, "Execution profile"),
-        existingProfile: t("studio.form.existingProfile", undefined, "Reuse existing execution config"),
-        createProfile: t("studio.form.createProfile", undefined, "Create project execution config"),
-        newProfileId: t("studio.form.newProfileId", undefined, "Generated profile id"),
-        newProfileToolRef: t("studio.form.newProfileToolRef", undefined, "Tool"),
-        newProfileTimeoutMs: t("studio.form.newProfileTimeoutMs", undefined, "Timeout ms"),
-        newProfileMaxOutputBytes: t("studio.form.newProfileMaxOutputBytes", undefined, "Max output bytes"),
         sourceRole: t("studio.form.sourceRole", undefined, "Source role"),
         targetRole: t("studio.form.targetRole", undefined, "Target role"),
         eventType: t("studio.form.eventType", undefined, "Event type"),
@@ -1519,8 +1509,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         save: t("action.save", undefined, "Save"),
         noRepositoryRoles: t("studio.form.noRepositoryRoles", undefined, "No role library entries"),
         noModels: t("studio.form.noModels", undefined, "No models available"),
-        noProfiles: t("studio.form.noProfiles", undefined, "No profiles available"),
-        noTools: t("studio.form.noTools", undefined, "No tools available"),
         rolePackageSource: t("studio.form.rolePackageSource", undefined, "From this project's role repository."),
         outputTarget: t("studio.form.outputTarget", undefined, "output/end")
       };
@@ -2843,12 +2831,15 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const selectionEndValue = Reflect.get(active, "selectionEnd");
       const selectionStart = typeof selectionStartValue === "number" ? selectionStartValue : null;
       const selectionEnd = typeof selectionEndValue === "number" ? selectionEndValue : selectionStart;
+      const boundarySetting = readAttribute("data-boundary-setting");
+      const boundaryValue = boundarySetting ? String(Reflect.get(active, "value") || "") : "";
       return {
         id: typeof Reflect.get(active, "id") === "string" ? String(Reflect.get(active, "id")) : "",
         roleConfigField: readAttribute("data-role-config-field"),
-        executionConfigField: readAttribute("data-execution-config-field"),
         flowConfigField: readAttribute("data-flow-config-field"),
         rolePackageFile: readAttribute("data-role-package-file"),
+        boundarySetting,
+        boundaryValue,
         selectionStart,
         selectionEnd
       };
@@ -2863,12 +2854,12 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         ? document.getElementById(snapshot.id)
         : snapshot.roleConfigField
           ? query('[data-role-config-field="' + snapshot.roleConfigField + '"]')
-          : snapshot.executionConfigField
-            ? query('[data-execution-config-field="' + snapshot.executionConfigField + '"]')
-            : snapshot.flowConfigField
+          : snapshot.flowConfigField
               ? query('[data-flow-config-field="' + snapshot.flowConfigField + '"]')
               : snapshot.rolePackageFile
                 ? query('[data-role-package-file="' + snapshot.rolePackageFile + '"]')
+                : snapshot.boundarySetting
+                  ? query('[data-boundary-setting="' + snapshot.boundarySetting + '"]')
                 : null;
       if (!nextActive || typeof nextActive.focus !== "function") {
         return;
@@ -2946,12 +2937,11 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const draft = {
         roleId: state.studioRoleConfigEditor?.roleId || selectedStudioRoleId(),
         title: current.title || "",
-        bindingKind: current.bindingKind || "noop",
+        bindingKind: "model",
         backend: current.backend || "",
         modelId: current.modelId || "",
         modelSelectionSource: current.modelSelectionSource || "role",
         modelRef: current.modelRef || "",
-        profileId: current.profileId || current.generatedProfileId || "",
         contextMap: current.contextMap && typeof current.contextMap === "object" ? current.contextMap : {},
         roleSettings: current.roleSettings || {
           routingMode: current.routingMode,
@@ -2966,11 +2956,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         const field = element.getAttribute("data-role-config-field") || "";
         const value = typeof element.value === "string" ? element.value : "";
         if (field === "title") draft.title = value;
-        if (field === "bindingKind") draft.bindingKind = value;
         if (field === "backend") draft.backend = value;
         if (field === "modelId") draft.modelId = value;
         if (field === "modelRef") draft.modelRef = value;
-        if (field === "profileId") draft.profileId = value;
       }
       draft.contextMap = readStudioContextMapRows(contextMapRoot);
       const settings = {};
@@ -3006,46 +2994,12 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       return state.studioRoleConfigEditor?.dirty === true;
     }
 
-    function executionConfigEditorFieldElements() {
-      return Array.from(workbenchBodyEl.querySelectorAll("[data-execution-config-field]") || []);
-    }
-
     function flowConfigEditorFieldElements(root = document.getElementById("workbench-body") || workbenchBodyEl) {
       return Array.from(root?.querySelectorAll("[data-flow-config-field]") || []);
     }
 
-    function readExecutionConfigEditorDraft() {
-      const current = state.studioExecutionConfigEditor?.data || {};
-      const draft = {
-        roleId: state.studioExecutionConfigEditor?.roleId || selectedStudioRoleId(),
-        profileId: current.profileId || "",
-        toolRef: current.toolRef || "",
-        command: current.command || "",
-        argsTemplate: current.argsTemplate || [],
-        stdinMode: current.stdinMode || "text",
-        timeoutMs: current.timeoutMs,
-        maxOutputBytes: current.maxOutputBytes
-      };
-      for (const element of executionConfigEditorFieldElements()) {
-        const field = element.getAttribute("data-execution-config-field") || "";
-        const value = typeof element.value === "string" ? element.value : "";
-        if (field === "command") draft.command = value;
-        if (field === "stdinMode") draft.stdinMode = value;
-        if (field === "timeoutMs") draft.timeoutMs = value;
-        if (field === "maxOutputBytes") draft.maxOutputBytes = value;
-        if (field === "argsTemplate") {
-          try {
-            draft.argsTemplate = JSON.parse(value || "[]");
-          } catch {
-            draft.argsTemplate = value;
-          }
-        }
-      }
-      return draft;
-    }
-
     function hasDirtyStudioExecutionConfigEditor() {
-      return state.studioExecutionConfigEditor?.dirty === true;
+      return false;
     }
 
     function hasDirtyStudioRolePackageEditor() {
@@ -3162,32 +3116,12 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
 
     function renderStudioDebugTabContent() {
       const selectedRoleIdValue = state.studioBridgeSelectedRoleId || "";
-      if (selectedRoleIdValue) {
-        ensureStudioExecutionConfigEditor(selectedRoleIdValue);
-      }
       const draft = syncWorkbenchRunDraft({
         systemPath: state.workbenchSavedPath || "system.mmd",
         dryRun: true
       }, { keepErrors: true });
       const errors = state.workbenchRunDraftErrors || {};
       const disabled = state.actionBusy ? " disabled" : "";
-      const roleConfigHtml = selectedRoleIdValue
-        ? renderStudioExecutionConfigEditor({
-            roleId: selectedRoleIdValue,
-            editor: state.studioExecutionConfigEditor,
-            t
-          })
-        : '<div class="event"><div class="event-top"><span>' + escapeText(t("studio.executionConfig", undefined, "execution config")) + '</span><span>' + escapeText(t("common.optional", undefined, "optional")) + '</span></div><strong>' + escapeText(t("studio.executionConfigSelectionHint", undefined, "Select an exec role to inspect its project-local execution config.")) + '</strong><div class="hint">' + escapeText(t("studio.executionConfigHint", undefined, "Repository content is copied into this project. Business fields below are editable; ids stay system-managed.")) + '</div></div>';
-      const roleConfigSectionHtml = selectedRoleIdValue
-        ? renderDisclosureCard({
-            title: t("studio.executionConfig", undefined, "execution config"),
-            headline: selectedRoleIdValue,
-            meta: t("common.optional", undefined, "optional"),
-            hint: t("studio.executionConfigHint", undefined, "Repository content is copied into this project. Business fields below are editable; ids stay system-managed."),
-            bodyHtml: roleConfigHtml,
-            open: false
-          })
-        : roleConfigHtml;
       const overridesHtml = renderDisclosureCard({
         title: t("studio.debugOverrides", undefined, "path overrides"),
         headline: t("studio.debugOverridesHeadline", undefined, "Optional launch overrides"),
@@ -3212,7 +3146,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           ((state.selectedRunId || state.studioBridgeLastDryRunId) ? '<button class="button subtle" id="studio-debug-open-operate"' + disabled + '>' + escapeText(t("build.openOperate", undefined, "Open Run")) + '</button>' : '') +
         '</div>',
         overridesHtml,
-        roleConfigSectionHtml,
         '</div>'
       ].join("");
     }
@@ -3374,8 +3307,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         Number.isFinite(data?.loopIteration) ? "loop " + String(data.loopIteration) : "",
         data?.selectedEvent ? "event " + String(data.selectedEvent) : "",
         audit?.durationMs ? "duration " + String(audit.durationMs) + "ms" : "",
-        audit?.toolRef ? "tool " + String(audit.toolRef) : "",
-        audit?.profileId ? "profile " + String(audit.profileId) : "",
         session?.sessionId ? "session " + String(session.sessionId) : ""
       ].filter(Boolean).join(" · ");
       const inputMarkdown = String(data?.inboxMarkdown || "");
@@ -3526,6 +3457,51 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
 
     function renderStudioSelectionDialog() {
       const focusState = captureStudioSelectionFocusState();
+      const selectedBoundaryKind = state.studioBridgeSelectedRoleId === STUDIO_SYSTEM_START_ROLE_ID
+        ? "start"
+        : state.studioBridgeSelectedRoleId === STUDIO_SYSTEM_END_ROLE_ID
+          ? "end"
+          : "";
+      const existingBoundaryEditor = selectedBoundaryKind
+        ? workbenchBodyEl.querySelector('[data-boundary-config-editor="' + selectedBoundaryKind + '"]')
+        : null;
+      if (existingBoundaryEditor) {
+        const modeFieldName = selectedBoundaryKind === "start" ? "startMode" : "endMode";
+        const countFieldName = selectedBoundaryKind === "start" ? "startCount" : "endMin";
+        const currentMode = String(existingBoundaryEditor.querySelector('[data-boundary-setting="' + modeFieldName + '"]')?.value || (selectedBoundaryKind === "start" ? "all" : "all_of"));
+        const currentCount = Number(existingBoundaryEditor.querySelector('[data-boundary-setting="' + countFieldName + '"]')?.value || 1);
+        const committedSystem = asRecord(state.studioBridge?.authoring?.system) || {};
+        const committedBoundary = asRecord(committedSystem[selectedBoundaryKind === "start" ? "startDispatch" : "endJoin"]) || {};
+        const committedMode = String(committedBoundary.mode || (selectedBoundaryKind === "start" ? "all" : "all_of"));
+        const committedCount = Number(committedBoundary[selectedBoundaryKind === "start" ? "count" : "min"] || (selectedBoundaryKind === "start" ? 1 : currentCount));
+        if (currentMode !== committedMode || (currentMode === (selectedBoundaryKind === "start" ? "random_n" : "quorum_of") && currentCount !== committedCount)) {
+          state.studioBoundaryConfigDraft = {
+            kind: selectedBoundaryKind,
+            mode: currentMode,
+            count: currentCount
+          };
+        }
+      }
+      // Boundary editors are rebuilt with the selection panel. Preserve an in-progress
+      // native input before replacing that DOM so an async graph refresh cannot restore
+      // the last committed value over the operator's current edit.
+      if (focusState?.boundarySetting) {
+        const boundaryEditor = focusState.boundarySetting.startsWith("start")
+          ? workbenchBodyEl.querySelector('[data-boundary-config-editor="start"]')
+          : workbenchBodyEl.querySelector('[data-boundary-config-editor="end"]');
+        const kind = focusState.boundarySetting.startsWith("start") ? "start" : "end";
+        const modeFieldName = kind === "start" ? "startMode" : "endMode";
+        const countFieldName = kind === "start" ? "startCount" : "endMin";
+        const mode = String(boundaryEditor?.querySelector('[data-boundary-setting="' + modeFieldName + '"]')?.value || (kind === "start" ? "all" : "all_of"));
+        const countValue = focusState.boundarySetting === modeFieldName
+          ? boundaryEditor?.querySelector('[data-boundary-setting="' + countFieldName + '"]')?.value
+          : focusState.boundaryValue;
+        state.studioBoundaryConfigDraft = {
+          kind,
+          mode,
+          count: Number(countValue || 1)
+        };
+      }
       const shell = findStudioBridgeElement("[data-studio-canvas-shell]");
       const overlay = findStudioBridgeElement("[data-studio-selection-overlay]");
       const dialog = findStudioBridgeElement("[data-studio-selection-dialog]");
@@ -3686,18 +3662,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           authoring: state.studioBridge?.authoring || null,
           contracts: state.contracts,
           t
-          }),
-          renderDisclosureCard({
-            title: t("studio.executionConfig", undefined, "execution config"),
-            headline: selectedRoleIdValue,
-            meta: displayBindingKind(state.studioBridge?.authoring?.roles?.[selectedRoleIdValue]?.bindingKind, t),
-            hint: t("studio.executionConfigHint", undefined, "Repository content is copied into this project. Business fields below are editable; ids stay system-managed."),
-            bodyHtml: renderStudioExecutionConfigEditor({
-              roleId: selectedRoleIdValue,
-              editor: state.studioExecutionConfigEditor,
-              t
-            }),
-            open: false
           }),
           renderDisclosureCard({
             title: t("studio.rolePackage", undefined, "role package"),
@@ -3978,12 +3942,11 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         data: {
           roleId: selectedRoleIdValue,
           title: String(role.title || ""),
-          bindingKind: String(role.bindingKind || "noop"),
+          bindingKind: "model",
           backend: String(role.backend || ""),
           modelId: String(role.modelId || ""),
           modelSelectionSource: String(role.modelSelectionSource || "role"),
           modelRef: String(role.modelRef || ""),
-          profileId: String(role.profileId || ""),
           contextMap: role.contextMap && typeof role.contextMap === "object" ? role.contextMap : {},
           routingMode: role.routingMode,
           routeOrder: role.routeOrder,
@@ -3992,8 +3955,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           joinSources: role.joinSources,
           loopMax: role.loopMax,
           review: role.review,
-          generatedProfileId: generatedExecutionProfileIdForRole(selectedRoleIdValue),
-          generatedToolRef: generatedExecutionToolRefForRole(selectedRoleIdValue)
         },
         draft: null
       };
@@ -4044,9 +4005,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
               : formDraft.contextMap
           }
         : formDraft;
-      const bindingKind = draft.bindingKind === "model" || draft.bindingKind === "exec"
-        ? draft.bindingKind
-        : "noop";
+      const bindingKind = "model";
       if (bindingKind === "model" && (!String(draft.backend || "").trim() || !String(draft.modelId || "").trim())) {
         state.studioRoleConfigEditor = {
           ...(state.studioRoleConfigEditor || {}),
@@ -4054,18 +4013,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           saving: false,
           dirty: true,
           error: t("studio.roleConfigModelRequired", undefined, "Model ref is required when the role runs as an Agent."),
-          draft
-        };
-        renderStudioSelectionDialog();
-        return;
-      }
-      if (bindingKind === "exec" && !String(draft.profileId || "").trim()) {
-        state.studioRoleConfigEditor = {
-          ...(state.studioRoleConfigEditor || {}),
-          roleId: selectedRoleIdValue,
-          saving: false,
-          dirty: true,
-          error: t("studio.roleConfigProfileRequired", undefined, "Execution profile is required when the role runs as a Tool."),
           draft
         };
         renderStudioSelectionDialog();
@@ -4129,13 +4076,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         renderStudioSelectionDialog();
         return;
       }
-      const projectConfig = state.project?.config || {};
-      const profiles = Array.isArray(projectConfig.profiles) ? projectConfig.profiles : [];
-      const generatedProfileId = String(current.generatedProfileId || generatedExecutionProfileIdForRole(selectedRoleIdValue));
-      const generatedToolRef = String(current.generatedToolRef || generatedExecutionToolRefForRole(selectedRoleIdValue));
-      const needsGeneratedExecutionConfig = bindingKind === "exec"
-        && String(draft.profileId || "").trim() === generatedProfileId
-        && !profiles.some((entry) => String(entry?.profileId || "") === generatedProfileId);
       state.studioRoleConfigEditor = {
         ...(state.studioRoleConfigEditor || {}),
         roleId: selectedRoleIdValue,
@@ -4161,28 +4101,14 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
                 : "role")
             : undefined,
           modelRef: bindingKind === "model" ? \`\${String(draft.backend || "").trim()}/\${String(draft.modelId || "").trim()}\` : undefined,
-          profileId: bindingKind === "exec" ? String(draft.profileId || "").trim() : undefined,
           contextMap: draft.contextMap,
-          roleSettings: settings,
-          profileDraft: needsGeneratedExecutionConfig ? {
-            profileId: generatedProfileId,
-            toolRef: generatedToolRef,
-            timeoutMs: 30000
-          } : undefined,
-          toolDraft: needsGeneratedExecutionConfig ? {
-            toolRef: generatedToolRef,
-            runner: "local_shell",
-            command: "node",
-            argsTemplate: ["scripts/console-print.mjs"],
-            stdinMode: "text"
-          } : undefined
+          roleSettings: settings
         }
       });
       await applyStudioGraphAuthoringCommand(result, {
         successMessage: t("studio.roleConfigSaved", { roleId: selectedRoleIdValue }, "Role config saved: {roleId}."),
         afterApply: () => {
           loadStudioRoleConfigEditor(result.selectedRoleId || selectedRoleIdValue, { force: true });
-          ensureStudioExecutionConfigEditor(result.selectedRoleId || selectedRoleIdValue);
         }
       });
     }
@@ -4549,7 +4475,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       for (const element of roleConfigEditorFieldElements()) {
         const syncRoleConfigDraft = () => {
           const field = element.getAttribute("data-role-config-field") || "";
-          const previousBindingKind = String(state.studioRoleConfigEditor?.draft?.bindingKind || state.studioRoleConfigEditor?.data?.bindingKind || "noop");
           const draft = readStudioRoleConfigDraft();
           state.studioRoleConfigEditor = {
             ...(state.studioRoleConfigEditor || {}),
@@ -4560,7 +4485,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             draft
           };
           enableStudioEditorButtons(["[data-role-config-save]", "[data-role-config-revert]"]);
-          if ((field === "bindingKind" && String(draft.bindingKind || "noop") !== previousBindingKind) || field === "backend") {
+          if (field === "backend") {
             renderStudioSelectionDialog();
           }
         };
@@ -4585,217 +4510,23 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       renderProject();
     }
 
-    async function loadStudioExecutionConfigEditor(roleId, options) {
-      const selectedRoleIdValue = roleId || selectedStudioRoleId();
-      if (!selectedRoleIdValue) {
-        return;
-      }
-      if (state.studioExecutionConfigEditor?.dirty && !options?.force) {
-        if (selectedRoleIdValue !== state.studioExecutionConfigEditor?.roleId) {
-          setFlash("info", t("studio.rolePackageDirtySwitchBlocked", {
-            roleId: String(state.studioExecutionConfigEditor?.roleId || "")
-          }, "Role package changes for {roleId} are unsaved. Save or revert before switching role packages."));
-        }
-        renderStudioSelectionDialog();
-        return;
-      }
-      const projectConfig = state.project?.config || {};
-      const profiles = Array.isArray(projectConfig.profiles) ? projectConfig.profiles : [];
-      const tools = Array.isArray(projectConfig.tools) ? projectConfig.tools : [];
-      const role = state.studioBridge?.authoring?.roles?.[selectedRoleIdValue] || null;
-      const profileId = String(role?.profileId || "");
-      const profile = profiles.find((entry) => String(entry?.profileId || "") === profileId) || null;
-      const tool = tools.find((entry) => String(entry?.toolRef || "") === String(profile?.toolRef || "")) || null;
-      state.studioExecutionConfigEditor = {
-        ...(state.studioExecutionConfigEditor || {}),
-        roleId: selectedRoleIdValue,
-        loading: true,
-        saving: false,
-        loaded: false,
-        dirty: false,
-        error: "",
-        data: null,
-        draft: null
-      };
-      renderStudioSelectionDialog();
-      if (!role || role.bindingKind !== "exec" || !profile || !tool) {
-        state.studioExecutionConfigEditor = {
-          roleId: selectedRoleIdValue,
-          loading: false,
-          saving: false,
-          loaded: false,
-          dirty: false,
-          error: t("studio.executionConfigMissing", undefined, "This role is not bound to a project execution config yet."),
-          data: null,
-          draft: null
-        };
-        renderStudioSelectionDialog();
-        return;
-      }
-      state.studioExecutionConfigEditor = {
-        roleId: selectedRoleIdValue,
-        loading: false,
-        saving: false,
-        loaded: true,
-        dirty: false,
-        error: "",
-        data: {
-          roleId: selectedRoleIdValue,
-          profileId: profile.profileId,
-          toolRef: profile.toolRef,
-          timeoutMs: profile.timeoutMs ?? "",
-          maxOutputBytes: profile.maxOutputBytes ?? "",
-          command: tool.command ?? "",
-          argsTemplate: Array.isArray(tool.argsTemplate) ? tool.argsTemplate : [],
-          stdinMode: tool.stdinMode ?? "text"
-        },
-        draft: null
-      };
-      renderStudioSelectionDialog();
+    // Contract Set v2 keeps technical execution in Harness Templates. The
+    // former profile/tool editor is intentionally inert so legacy UI paths
+    // cannot write v1 assets or invoke the removed execution-config endpoint.
+    function loadStudioExecutionConfigEditor() {
+      state.studioExecutionConfigEditor = undefined;
     }
 
-    function ensureStudioExecutionConfigEditor(roleId) {
-      const roleIdValue = roleId || "";
-      if (!roleIdValue) {
-        return;
-      }
-      const role = state.studioBridge?.authoring?.roles?.[roleIdValue] || null;
-      if (!role || role.bindingKind !== "exec") {
-        state.studioExecutionConfigEditor = {
-          ...(state.studioExecutionConfigEditor || {}),
-          roleId: roleIdValue,
-          loading: false,
-          saving: false,
-          loaded: false,
-          dirty: false,
-          error: "",
-          data: null,
-          draft: null
-        };
-        return;
-      }
-      const editor = state.studioExecutionConfigEditor || {};
-      if (editor.dirty || editor.loading || editor.saving) {
-        return;
-      }
-      if (editor.roleId === roleIdValue && editor.loaded && !editor.error) {
-        return;
-      }
-      void loadStudioExecutionConfigEditor(roleIdValue);
+    function ensureStudioExecutionConfigEditor() {
+      state.studioExecutionConfigEditor = undefined;
     }
 
-    async function saveStudioExecutionConfigEditor(roleId) {
-      const selectedRoleIdValue = roleId || state.studioExecutionConfigEditor?.roleId || selectedStudioRoleId();
-      if (!selectedRoleIdValue) {
-        return;
-      }
-      const draft = readExecutionConfigEditorDraft();
-      const timeoutMs = String(draft.timeoutMs || "").trim();
-      const maxOutputBytes = String(draft.maxOutputBytes || "").trim();
-      let argsTemplate = draft.argsTemplate;
-      if (!Array.isArray(argsTemplate) || argsTemplate.some((item) => typeof item !== "string")) {
-        state.studioExecutionConfigEditor = {
-          ...(state.studioExecutionConfigEditor || {}),
-          roleId: selectedRoleIdValue,
-          saving: false,
-          dirty: true,
-          error: t("studio.executionConfigArgsInvalid", undefined, "Args template must be a JSON array of strings."),
-          draft
-        };
-        renderStudioSelectionDialog();
-        return;
-      }
-      state.studioExecutionConfigEditor = {
-        ...(state.studioExecutionConfigEditor || {}),
-        roleId: selectedRoleIdValue,
-        saving: true,
-        error: "",
-        draft
-      };
-      renderStudioSelectionDialog();
-      try {
-        const payload = await requestAction(API_PREFIX + "/ogs/workspace/execution-config", {
-          profiles: [{
-            profileId: draft.profileId,
-            toolRef: draft.toolRef,
-            ...(timeoutMs ? { timeoutMs: Number(timeoutMs) } : {}),
-            ...(maxOutputBytes ? { maxOutputBytes: Number(maxOutputBytes) } : {})
-          }],
-          tools: [{
-            toolRef: draft.toolRef,
-            runner: "local_shell",
-            command: String(draft.command || "").trim(),
-            argsTemplate,
-            stdinMode: draft.stdinMode === "none" ? "none" : "text"
-          }]
-        });
-        state.project = Object.assign({}, state.project || {}, {
-          config: Object.assign({}, state.project?.config || {}, {
-            profiles: payload.profiles || state.project?.config?.profiles || [],
-            tools: payload.tools || state.project?.config?.tools || []
-          })
-        });
-        state.studioExecutionConfigEditor = {
-          roleId: selectedRoleIdValue,
-          loading: false,
-          saving: false,
-          loaded: true,
-          dirty: false,
-          error: "",
-          data: {
-            roleId: selectedRoleIdValue,
-            profileId: draft.profileId,
-            toolRef: draft.toolRef,
-            timeoutMs: timeoutMs,
-            maxOutputBytes: maxOutputBytes,
-            command: String(draft.command || "").trim(),
-            argsTemplate,
-            stdinMode: draft.stdinMode === "none" ? "none" : "text"
-          },
-          draft: null
-        };
-        setFlash("success", t("studio.executionConfigSaved", { roleId: selectedRoleIdValue }, "Execution config saved: {roleId}."));
-      } catch (error) {
-        state.studioExecutionConfigEditor = {
-          ...(state.studioExecutionConfigEditor || {}),
-          roleId: selectedRoleIdValue,
-          saving: false,
-          dirty: true,
-          error: error instanceof Error ? error.message : String(error),
-          draft
-        };
-      }
-      renderStudioSelectionDialog();
+    function saveStudioExecutionConfigEditor() {
+      state.studioExecutionConfigEditor = undefined;
     }
 
     function bindStudioExecutionConfigEditorControls() {
-      for (const button of Array.from(workbenchBodyEl.querySelectorAll("[data-execution-config-load]") || [])) {
-        bindOnce(button, "click", "execution-config-load", () => {
-          void loadStudioExecutionConfigEditor(button.getAttribute("data-execution-config-load") || selectedStudioRoleId(), { force: true });
-        });
-      }
-      for (const button of Array.from(workbenchBodyEl.querySelectorAll("[data-execution-config-save]") || [])) {
-        bindOnce(button, "click", "execution-config-save", () => {
-          void saveStudioExecutionConfigEditor(button.getAttribute("data-execution-config-save") || selectedStudioRoleId());
-        });
-      }
-      for (const button of Array.from(workbenchBodyEl.querySelectorAll("[data-execution-config-revert]") || [])) {
-        bindOnce(button, "click", "execution-config-revert", () => {
-          void loadStudioExecutionConfigEditor(button.getAttribute("data-execution-config-revert") || selectedStudioRoleId(), { force: true });
-        });
-      }
-      for (const element of executionConfigEditorFieldElements()) {
-        bindOnce(element, "input", "execution-config-field", () => {
-          state.studioExecutionConfigEditor = {
-            ...(state.studioExecutionConfigEditor || {}),
-            roleId: state.studioExecutionConfigEditor?.roleId || selectedStudioRoleId(),
-            dirty: true,
-            error: "",
-            draft: readExecutionConfigEditorDraft()
-          };
-          enableStudioEditorButtons(["[data-execution-config-save]", "[data-execution-config-revert]"]);
-        });
-      }
+      // Harness binding controls are rendered read-only by the v2 role editor.
     }
 
     function resolveSelectedStudioFlowByKey(flowKey) {
@@ -6124,20 +5855,16 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           ? t("review.approve")
           : decision === "rework"
             ? t("review.requestRework")
-            : decision === "pause"
-              ? t("review.pause")
-              : decision === "continue"
-                ? "Continue with budget"
-                : decision === "reject"
-                  ? "Reject and route"
-                  : t("review.terminateScope", { scope });
+            : decision === "continue"
+              ? "Continue with budget"
+              : decision === "reject"
+                ? "Reject and route"
+                : t("review.terminateScope", { scope });
         const effectKey = decision === "approve"
           ? "form.reviewEffectApprove"
           : decision === "rework"
             ? "form.reviewEffectRework"
-            : decision === "pause"
-              ? "form.reviewEffectPause"
-              : decision === "continue" || decision === "reject" ? "form.reviewEffectApprove" : "form.reviewEffectTerminate";
+            : decision === "continue" || decision === "reject" ? "form.reviewEffectApprove" : "form.reviewEffectTerminate";
         actionFormEl.innerHTML = [
           '<div class="event"><div class="event-top"><span>' + escapeText(t("form.confirmReviewDecision")) + '</span><span>' + escapeText(form.fields.reviewId || state.selectedReviewId || "n/a") + '</span></div><strong>' + escapeText(decisionLabel) + '</strong><div class="hint">' + escapeText(t(effectKey, { scope })) + '</div></div>',
           '<dl class="form-grid review-decision-preview">',
@@ -6157,9 +5884,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           ? "form.reviewReasonApprove"
           : form.fields.decision === "rework"
             ? "form.reviewReasonRework"
-            : form.fields.decision === "pause"
-              ? "form.reviewReasonPause"
-              : "form.reviewReasonTerminate";
+            : "form.reviewReasonTerminate";
         actionFormEl.innerHTML = [
           '<div class="event"><div class="event-top"><span>' + escapeText(t("form.reviewDecision")) + '</span><span>' + escapeText(form.fields.reviewId || state.selectedReviewId || "n/a") + '</span></div><strong>' + escapeText(form.fields.decision || t("form.decision")) + '</strong><div class="hint">' + escapeText(t("form.reviewDecisionHint")) + '</div></div>',
           '<div class="form-grid">',
@@ -6386,7 +6111,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const selectedTemplateHint = draft.templateId === "minimal"
         ? t("projectWizard.templateHint.minimal", undefined, "One role, one local script, zero model setup. Running it prints Hello OGSystem world.")
         : draft.templateId === "advanced-features"
-          ? t("projectWizard.templateHint.advancedFeatures", undefined, "Parallel split, join, and review/rework loop using local exec tools so the flow is runnable out of the box.")
+          ? t("projectWizard.templateHint.advancedFeatures", undefined, "Parallel split, join, and review/rework loop using verified native Harness tools.")
           : draft.templateId === "software-dev"
             ? t("projectWizard.templateHint.softwareDev", undefined, "A multi-role delivery flow with parallel branches and a final operator join.")
             : draft.templateId === "consultation"
@@ -6839,7 +6564,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         ? [
           detail?.kind === "loop_budget"
             ? '<button class="button primary" data-review-action="continue">Continue with budget</button><button class="button" data-review-action="rework">Rework with budget</button><button class="button" data-review-action="reject">Reject and route</button>'
-            : '<button class="button primary" data-review-action="approve">' + escapeText(t("review.approve")) + '</button><button class="button" data-review-action="rework">' + escapeText(t("review.requestRework")) + '</button><button class="button warn" data-review-action="pause">' + escapeText(t("review.pause")) + '</button>' ,
+            : '<button class="button primary" data-review-action="approve">' + escapeText(t("review.approve")) + '</button><button class="button" data-review-action="rework">' + escapeText(t("review.requestRework")) + '</button>' ,
           '<button class="button danger" data-review-action="terminate" data-review-scope="' + escapeText(detail.scope || "branch") + '">' + escapeText(t("review.terminateScope", { scope: detail.scope || "branch" })) + '</button>'
           ].join("")
         : "";
@@ -7377,7 +7102,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           });
           await refreshRolePackageDependentProjectState();
         }
-        await persistStudioExecutionConfigDrafts(result.profileDrafts, result.toolDrafts);
         await applyStudioGraphPayload({
           authoring: result.authoring,
           canvas: result.canvas,
@@ -7386,24 +7110,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           successMessage: options?.successMessage || t("studio.graph.draftUpdated", undefined, "Studio graph draft updated.")
         });
         options?.afterApply?.();
-      });
-    }
-
-    async function persistStudioExecutionConfigDrafts(profileDrafts, toolDrafts) {
-      const profiles = Array.isArray(profileDrafts) ? profileDrafts : [];
-      const tools = Array.isArray(toolDrafts) ? toolDrafts : [];
-      if (!profiles.length && !tools.length) {
-        return;
-      }
-      const payload = await requestAction(API_PREFIX + "/ogs/workspace/execution-config", {
-        profiles,
-        tools
-      });
-      state.project = Object.assign({}, state.project || {}, {
-        config: Object.assign({}, state.project?.config || {}, {
-          profiles: payload.profiles || profiles,
-          tools: payload.tools || tools
-        })
       });
     }
 
@@ -8023,11 +7729,14 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             if (payload.runId) {
               if (preserveDesignShell) {
                 await selectRun(payload.runId, { preserveConsoleTab: true });
-                if (state.studioWorkbenchSideTab === preferredStudioSideTab) {
-                  renderWorkbench();
-                  forceStudioWorkbenchSideTab(preferredStudioSideTab);
-                  writeRouteToLocation();
-                }
+                // Run selection may restore a persisted side tab from the Run
+                // record. Keep the operator's requested Debug/Logs surface
+                // visible after the launch so the live trace remains attached
+                // to the same Studio context.
+                state.studioWorkbenchSideTab = preferredStudioSideTab;
+                renderWorkbench();
+                forceStudioWorkbenchSideTab(preferredStudioSideTab);
+                writeRouteToLocation();
               } else {
                 await selectRun(payload.runId);
               }

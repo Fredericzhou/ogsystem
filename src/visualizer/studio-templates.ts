@@ -22,7 +22,7 @@ function baseMetadata(systemId: string): string[] {
   return [
     "flowchart TD",
     `%% system.id=${systemId}`,
-    "%% system.version=1.0.0",
+    "%% system.version=2.0.0",
     "%% law.global=law.minimal.base"
   ];
 }
@@ -116,8 +116,6 @@ const templates: StudioAuthoringTemplate[] = [
     description: "An execution role routes runtime failures through typed ERROR* compensation edges.",
     systemSource: [
       ...baseMetadata("studio.template.compensation"),
-      "%% exec.bind.worker=profile.worker",
-      "%% exec.bind.error-handler-base=profile.error-handler",
       "start[开始] -->|START| a[Role:worker]",
       "a[Role:worker] -->|READY| c[Role:finalizer]",
       "a[Role:worker] -->|ERROR.TOOL_EXECUTION_TIMEOUT| b[Role:error-handler-base]",

@@ -6,7 +6,7 @@ import { basename, resolve } from "node:path";
 
 import { readJsonFile } from "../runtime/json-file.js";
 import { loadModelCatalog } from "../runtime/model-catalog.js";
-import { loadModelSelection, resolveModelSelectionForSystem } from "../runtime/model-selection.js";
+import { loadExecutionBindingsV2 } from "../runtime/contract-v2-loader.js";
 import { parseSystemFromMermaidSource } from "../runtime/parse-mermaid.js";
 import { buildRunPlanFingerprint } from "../runtime/plan-fingerprint.js";
 import { loadProjectRunPlan } from "../runtime/project-run.js";
@@ -293,14 +293,16 @@ export async function inspectProjectVisualization(workdir: string): Promise<Reco
       roleCount: context.system.roleIds.length,
       roleIds: context.system.roleIds,
       flowCount: context.system.flows.length,
-      modelBindings: Object.entries(context.system.modelBinding).map(([roleId, modelRef]) => ({
-        roleId,
-        modelRef
-      })),
-      execBindings: Object.entries(context.system.executionBinding).map(([roleId, profileId]) => ({
-        roleId,
-        profileId
-      })),
+      // Technical identity is resolved from the v2 Harness binding index. The
+      // Business Graph no longer carries a model binding source of truth.
+      harnessBindings: Array.from(context.resolvedModelsByRoleId.entries())
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([roleId, resolved]) => ({
+          roleId,
+          backend: resolved.backend,
+          modelId: resolved.modelId,
+          modelRef: resolved.modelRef
+        })),
       reviewedRoleIds: Object.keys(context.system.graph?.reviewByRoleId ?? {}).sort(),
       joinRoleIds: Object.keys(context.system.graph?.joinModeByRoleId ?? {}).sort(),
       loopRoleIds: Object.keys(context.system.graph?.loopMaxByRoleId ?? {}).sort(),
@@ -320,7 +322,7 @@ export async function inspectProjectVisualization(workdir: string): Promise<Reco
       artifactPaths: {
         systemPath: context.systemPath,
         runtimePath: ogsPaths.runtimePath,
-        modelSelectionPath: ogsPaths.modelSelectionPath,
+        executionBindingsPath: ogsPaths.executionBindingsPath,
         modelCatalogPath: ogsPaths.modelCatalogPath,
         lawsPath: ogsPaths.lawsPath,
         userProfilePath: ogsPaths.userProfilePath,
@@ -710,8 +712,6 @@ async function computeExpectedFingerprint(workdir: string, runDir: string): Prom
     contractPlan: context.contractPlan,
     compilerSnapshot: context.compilerSnapshot,
     runtimeConfig: context.runtimeConfig,
-    profiles: context.profiles,
-    tools: context.tools,
     userProfile: context.userProfile
   }) as unknown as JsonRecord;
 }
@@ -974,7 +974,7 @@ export async function inspectRunResumeDiagnostics(workdir: string, runId: string
       ? [
           {
             action: "inspect-project",
-            label: "Inspect system.mmd, laws, model-selection, and role packages for drift before resume."
+            label: "Inspect system.mmd, laws, Harness bindings, and role packages for drift before resume."
           }
         ]
       : []),
@@ -1154,40 +1154,18 @@ async function resolveBindingVisualizationForRole(args: {
   system: SystemDefinition;
   roleId: string;
 }): Promise<Record<string, unknown>> {
-  if (args.system.executionBinding[args.roleId]) {
-    const profileId = args.system.executionBinding[args.roleId];
-    return {
-      roleId: args.roleId,
-      bindingKind: "profile",
-      declaredBinding: profileId,
-      resolvedBinding: profileId,
-      source: "system.mmd:exec.bind"
-    };
-  }
-  const modelSelection = await loadModelSelection(resolve(args.workdir, ".ogs", "model-selection.json"));
-  const modelCatalog = await loadModelCatalog(resolve(args.workdir, ".ogs", "model-catalog.json"));
-  const resolvedModelSelection = resolveModelSelectionForSystem({
-    system: args.system,
-    selection: modelSelection,
-    catalog: modelCatalog
-  });
-  const resolvedModel = resolvedModelSelection.resolvedByRoleId.get(args.roleId);
-  if (!resolvedModel) {
-    return {
-      roleId: args.roleId,
-      bindingKind: "noop",
-      source: "none"
-    };
-  }
+  const bindings = await loadExecutionBindingsV2(resolve(args.workdir, ".ogs", "execution-bindings.json"));
+  const templateId = bindings.roles[args.roleId]?.harnessTemplate ?? bindings.defaults?.harnessTemplate;
+  const template = templateId ? bindings.harnessTemplates?.[templateId] : undefined;
+  if (!template) throw new Error(`V2_HARNESS_BINDING_REQUIRED: role "${args.roleId}" has no resolved Harness Template`);
   return {
     roleId: args.roleId,
-    bindingKind: "model",
-    declaredBinding: args.system.modelBinding[args.roleId],
-    resolvedBinding: `${resolvedModel.backend}/${resolvedModel.modelId}`,
-    variant: resolvedModel.variant,
-    timeoutMs: resolvedModel.timeoutMs,
-    maxOutputBytes: resolvedModel.maxOutputBytes,
-    source: ".ogs/model-selection.json"
+    bindingKind: "harness",
+    declaredBinding: templateId,
+    resolvedBinding: `${template.backend}/${template.model}`,
+    allowedTools: [...template.allowedTools],
+    environment: template.environment,
+    source: ".ogs/execution-bindings.json"
   };
 }
 

@@ -20,7 +20,7 @@ import type {
 } from "./types.js";
 
 /** Bump when resume semantics change, independently of physical source paths. */
-export const RUNTIME_SEMANTICS_VERSION = "semantic-ir-v1/2";
+export const RUNTIME_SEMANTICS_VERSION = "semantic-ir-v2/3";
 
 function sortedRecordEntries(record: Record<string, string>): Array<[string, string]> {
   return Object.entries(record).sort(([left], [right]) => left.localeCompare(right));
@@ -138,7 +138,7 @@ function buildRuntimePromptInputFingerprintComponent(): {
   };
 }
 
-function buildModelSelectionFingerprintComponent(
+function buildHarnessBindingFingerprintComponent(
   resolvedModelsByRoleId: Map<string, ResolvedModelRuntimeConfig>
 ): Array<{
   identity: Record<string, unknown>;
@@ -221,11 +221,12 @@ function buildRuntimeAssetsFingerprintComponent(args: {
   profiles?: ExecutionProfile[];
   tools?: CliTool[];
   userProfile?: UserProfile;
+  executionBindings?: unknown;
 }): {
   identity: Record<string, unknown>;
   sourceHints: Record<string, unknown>;
 } | undefined {
-  if (!args.runtimeConfig && !args.profiles && !args.tools && !args.userProfile) return undefined;
+  if (!args.runtimeConfig && !args.profiles && !args.tools && !args.userProfile && !args.executionBindings) return undefined;
   const runtimeConfig = args.runtimeConfig
     ? { ...args.runtimeConfig, roleRepo: "<project-role-repo>" }
     : undefined;
@@ -234,14 +235,12 @@ function buildRuntimeAssetsFingerprintComponent(args: {
       // roleRepo is a physical source path; the loaded role package component fingerprints
       // the executable contents, so equivalent repository locations must remain path-stable.
       runtimeConfig: normalizeFingerprintValue(runtimeConfig),
-      profiles: normalizeFingerprintValue([...(args.profiles ?? [])].sort((left, right) => left.profileId.localeCompare(right.profileId))),
-      tools: normalizeFingerprintValue([...(args.tools ?? [])].sort((left, right) => left.toolRef.localeCompare(right.toolRef))),
+      executionBindings: normalizeFingerprintValue(args.executionBindings),
       userProfile: normalizeFingerprintValue(args.userProfile)
     },
     sourceHints: {
       runtimeConfigPath: ".ogs/runtime.json",
-      profilesPath: "profiles.json",
-      toolsPath: "tools.json",
+      executionBindingsPath: ".ogs/execution-bindings.json",
       userProfilePath: ".ogs/user-profile.json"
     }
   };
@@ -260,9 +259,10 @@ export function buildRunPlanFingerprint(args: {
   profiles?: ExecutionProfile[];
   tools?: CliTool[];
   userProfile?: UserProfile;
+  executionBindings?: unknown;
 }): RunPlanFingerprint {
   const rolePackageComponents = buildRolePackageFingerprintComponent(args.rolePackagesByRoleId);
-  const modelSelectionComponents = buildModelSelectionFingerprintComponent(
+  const harnessBindingComponents = buildHarnessBindingFingerprintComponent(
     args.resolvedModelsByRoleId ?? new Map()
   );
   const runtimePromptInputComponent = buildRuntimePromptInputFingerprintComponent();
@@ -274,7 +274,7 @@ export function buildRunPlanFingerprint(args: {
     runtimeSemanticsVersion: RUNTIME_SEMANTICS_VERSION,
     system: buildSystemFingerprintComponent(args.system, args.contractPlan?.digest ?? null),
     rolePackages: rolePackageComponents.map((component) => component.identity),
-    modelSelection: modelSelectionComponents.map((component) => component.identity),
+    harnessBindings: harnessBindingComponents.map((component) => component.identity),
     runtimePromptInput: runtimePromptInputComponent.identity,
     effectiveLaw: normalizeFingerprintValue(args.effectiveLaw)
   };
@@ -311,10 +311,10 @@ export function buildRunPlanFingerprint(args: {
         value: componentValues.rolePackages,
         sourceHints: rolePackageComponents.map((component) => component.sourceHints)
       },
-      modelSelection: {
-        digest: componentDigests.modelSelection,
-        value: componentValues.modelSelection,
-        sourceHints: modelSelectionComponents.map((component) => component.sourceHints)
+      harnessBindings: {
+        digest: componentDigests.harnessBindings,
+        value: componentValues.harnessBindings,
+        sourceHints: harnessBindingComponents.map((component) => component.sourceHints)
       },
       runtimePromptInput: {
         digest: componentDigests.runtimePromptInput,
@@ -364,7 +364,7 @@ export function buildRunPlanFingerprint(args: {
 
   const digest = hashFingerprintValue(componentDigests);
   return {
-    version: 8,
+    version: 9,
     algorithm: "sha256",
     digest,
     payload

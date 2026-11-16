@@ -275,7 +275,7 @@ const HINT_RULES: HintRule[] = [
     hint: {
       kind: "model_lookup",
       label: "model selection",
-      detail: 'Detected model-selection intent. Configure backend and modelId in Studio or `.ogs/model-selection.json`; keep it out of Mermaid.'
+      detail: 'Detected technical binding intent. Configure a Harness Template in Studio or `.ogs/execution-bindings.json`; keep it out of Mermaid.'
     }
   },
   {
@@ -283,7 +283,7 @@ const HINT_RULES: HintRule[] = [
     hint: {
       kind: "binding_policy",
       label: "exec.bind",
-      detail: "Detected exec-binding intent. Use `exec.bind` for local shell or tool-backed roles."
+      detail: "Detected retired exec-binding intent. Configure a v2 Harness Template instead; `exec.bind` is rejected."
     }
   }
 ];

@@ -33,17 +33,16 @@ export function usage(): string {
     "  ogs nl2mmd [--message <text>] [--model <provider/model>]",
     "",
     "Base command:",
-    "  direct entrypoint for prompt generation and validation against local roles plus .ogs model-selection/model-catalog",
+    "  direct entrypoint for prompt generation and validation against local roles plus v2 Harness/Backend capability catalog",
     "",
     "Source repository equivalent:",
     "  pnpm run run:nl2mmd -- [--message <text>] [--model <provider/model>]",
     "",
     "Options:",
     "  --message <text>       One-shot NL2MMD request; omit for interactive mode",
-    "  --model <provider/model>  Direct default model ref (overrides .ogs/model-selection.json defaults)",
+    "  --model <provider/model>  Authoring model for NL2MMD generation (does not create Runtime bindings)",
     "  --runtime <file>       Runtime config JSON (optional)",
     "  --laws <file>          Laws JSON (optional)",
-    "  --profiles <file>      Profiles JSON for exec.bind validation (optional)",
     "  --user-profile <file>  User profile JSON for validation (optional)",
     "  --no-preflight         Skip startup preflight (default is preflight enabled)",
     "  --ogs-dir <path>       OGS control-plane root (default: cwd)",
@@ -51,7 +50,7 @@ export function usage(): string {
     "",
     "Defaults:",
     "  workdir defaults to the current directory",
-    "  model defaults to .ogs/model-selection.json, then .ogs/model-catalog.json",
+    "  Runtime Role bindings are configured in .ogs/execution-bindings.json; --model is authoring-only",
     "  preflight runs before the first turn unless disabled",
     "",
     "Interactive commands:",
@@ -174,6 +173,9 @@ export async function main(): Promise<void> {
     console.log(usage());
     return;
   }
+  if (values.profiles !== undefined) {
+    throw new Error("V2_LEGACY_EXECUTION_CONFIG: --profiles/exec.bind are not accepted; configure Harness Templates in .ogs/execution-bindings.json.");
+  }
 
   const workdir = values["ogs-dir"] ?? process.cwd();
   const context = await loadNl2MmdContext({
@@ -185,7 +187,7 @@ export async function main(): Promise<void> {
   const initialModelRef = values.model ?? context.defaultModelRef ?? context.modelCatalog[0]?.modelRef;
   if (!initialModelRef || !isDirectModelRef(initialModelRef)) {
     throw new Error(
-      "No usable NL2MMD model ref found. Set --model <provider/model> or configure .ogs/model-selection.json."
+      "No usable NL2MMD authoring model ref found. Set --model <provider/model>; Runtime bindings belong in .ogs/execution-bindings.json."
     );
   }
   let modelRef = initialModelRef;

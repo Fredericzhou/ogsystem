@@ -1,4 +1,5 @@
 import type { SemanticIR, SemanticIRConditionAst } from "./semantic-ir.js";
+import type { EffectiveEnvironmentPolicy, RunCapabilitySnapshot } from "./v2-execution-policy.js";
 
 /**
  * Core System & Graph Definitions
@@ -96,7 +97,9 @@ export type FlowContractPlan = {
 
 export type ContextMapByRoleId = Record<string, Record<string, string>>;
 
-export type HumanReviewDecision = "approve" | "rework" | "pause" | "terminate" | "continue" | "reject";
+/** Decisions accepted from the control plane. Runtime timeout pause is internal-only. */
+export type HumanReviewDecision = "approve" | "rework" | "terminate" | "continue" | "reject";
+export type RuntimeReviewTimeoutAction = "pause" | "terminate";
 
 export type HumanReviewSpec = {
   mode: "required";
@@ -195,13 +198,7 @@ export type RoleExecutionBinding =
       maxOutputBytes?: number;
       bindingSource: "selection";
     }
-  | {
-      kind: "profile";
-      profileId: string;
-    }
-  | {
-      kind: "noop";
-    };
+  ;
 
 /**
  * Represents a role within an execution plan, including outgoing/incoming flows and optional
@@ -223,6 +220,13 @@ export type ExecutionPlanNode = {
   loopMax?: number;
   review?: HumanReviewSpec;
   binding: RoleExecutionBinding;
+  /** v2 technical decision frozen before a Backend session starts. */
+  capabilitySnapshot?: RunCapabilitySnapshot;
+  effectiveTools?: string[];
+  effectiveEnvironmentPolicy?: EffectiveEnvironmentPolicy;
+  capabilityDigest?: string;
+  policyDigest?: string;
+  recoveryIdentity?: string;
   isTerminal: boolean;
 };
 
@@ -360,14 +364,16 @@ export type VerifiedArtifactManifest = {
 export type RolePackageManifest = {
   /** Stable responsibility identity; it is not a concrete person or runtime execution id. */
   roleId: string;
+  /** OGS Contract Set marker. v1 role roots are rejected after cutover. */
+  ogsContractVersion: 2;
   /** Version of this implementation contract, included in runtime fingerprints. */
   roleVersion: string;
   name: string;
   description: string;
   promptTemplate: string;
   outputSchema: string;
-  /** OGS responsibility contract. Roles are abstract responsibilities, never people or models. */
-  contractVersion: 1;
+  /** Concrete Role Contract schema revision. */
+  schemaVersion: 2;
   purpose: string;
   responsibility: {
     kind: "atomic" | "composite";
@@ -386,12 +392,12 @@ export type RolePackageManifest = {
   };
   inputs: { preconditions: SemanticIRConditionAst[] };
   outputs: {
-    events: string[];
     postconditions: SemanticIRConditionAst[];
-    decisionCriteria?: DecisionCriterionConfig[];
+    decisionCriteria: DecisionCriterionConfig[];
   };
-  authority: { controlActions: Array<"approve" | "rework" | "pause" | "terminate"> };
-  constraints: { writableStateFields: string[]; allowedTools: string[] };
+  authority: { controlActions: Array<"approve" | "rework" | "reject"> };
+  /** Business state ownership only. Native tool selection belongs to Harness Template. */
+  constraints: { writableStateFields: string[] };
   failure: { retryableErrorCodes: string[]; terminalErrorCodes: string[] };
   audit: { requiredFields: string[] };
   preferredModelTags?: string[];
@@ -848,7 +854,8 @@ export type HumanReviewDecisionRecord = {
   stateVersion: number;
   committedAt: string;
   decidedAt: string;
-  decision: HumanReviewDecision;
+  /** A timeout may persist the internal-only `pause` lifecycle action. */
+  decision: HumanReviewDecision | "pause";
   targetRoleId?: string;
   additionalBudget?: number;
   timedOut?: boolean;

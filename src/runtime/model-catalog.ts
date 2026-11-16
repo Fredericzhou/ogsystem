@@ -560,14 +560,25 @@ export function mergeModelCatalogWithLiveSnapshot(
 }
 
 export function chooseDefaultModelFromCatalog(catalog: ModelCatalog): ModelCatalogEntry | undefined {
-  return catalog.models.find(
-    (model) =>
-      model.runnable &&
-      model.status === "active" &&
-      model.capabilities.textInput &&
-      model.capabilities.textOutput &&
-      model.capabilities.toolcall
+  const candidates = catalog.models.filter((model) =>
+    model.runnable &&
+    // Backend discovery normalizes a verified native model to `discovered` in the
+    // persisted catalog; both active probe results and discovered runnable entries
+    // are valid defaults. Unverified/unavailable entries remain excluded.
+    (model.status === "active" || model.status === "discovered") &&
+    model.capabilities.textInput &&
+    model.capabilities.textOutput &&
+    model.capabilities.toolcall
   );
+  return candidates.sort((left, right) => {
+    const preference = (model: ModelCatalogEntry): number => {
+      if (model.backend === "codex" && model.modelId === "gpt-6-luna") return 0;
+      if (model.modelId === "gpt-6-luna" || model.modelId.endsWith("/gpt-6-luna")) return 1;
+      if (model.backend === "codex") return 2;
+      return 3;
+    };
+    return preference(left) - preference(right) || `${left.backend}/${left.modelId}`.localeCompare(`${right.backend}/${right.modelId}`);
+  })[0];
 }
 
 export function isModelCatalogStale(

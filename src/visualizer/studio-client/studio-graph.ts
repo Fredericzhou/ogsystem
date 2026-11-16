@@ -698,6 +698,30 @@ export class StudioGraphIsland {
   private updateGeneration = 0;
   private readonly delegatedCommandFormSubmitListener = (event: Event) => this.handleDelegatedCommandFormSubmit(event);
   private readonly rootKeydownListener = (event: KeyboardEvent) => this.handleRootKeydown(event);
+  private readonly edgeClickListener = (event: MouseEvent) => {
+    if (event.button !== 0) return;
+    const target = event.target as Element | null;
+    if (target?.closest?.(".x6-edge")) return;
+    const x = event.clientX;
+    const y = event.clientY;
+    let nearest: { edge: ReturnType<Graph["getEdges"]>[number]; distance: number } | null = null;
+    for (const edge of this.graph.getEdges()) {
+      const view = this.graph.findViewByCell(edge) as { container?: Element } | null;
+      const path = view?.container?.querySelector<SVGPathElement>("path[marker-end]");
+      const bounds = path?.getBoundingClientRect();
+      if (!bounds) continue;
+      const dx = x < bounds.left ? bounds.left - x : x > bounds.right ? x - bounds.right : 0;
+      const dy = y < bounds.top ? bounds.top - y : y > bounds.bottom ? y - bounds.bottom : 0;
+      const distance = Math.hypot(dx, dy);
+      if (distance <= 24 && (!nearest || distance < nearest.distance)) nearest = { edge, distance };
+    }
+    if (!nearest) return;
+    const data = this.edgeRecordFromCell(nearest.edge);
+    if (!data?.studioEdge) return;
+    event.preventDefault();
+    event.stopPropagation();
+    this.selectEdge(data.studioEdge, nearest.edge);
+  };
   private readonly relationshipPointerUpListener = () => {
     if (!this.relationshipSourceRoleId) return;
     this.clearRelationshipSource();
@@ -834,6 +858,7 @@ export class StudioGraphIsland {
     this.bindQuickOpen();
     this.bindResizeObserver();
     this.root.addEventListener("keydown", this.rootKeydownListener);
+    this.root.addEventListener("click", this.edgeClickListener, true);
     document.addEventListener("pointerup", this.relationshipPointerUpListener);
     document.addEventListener("ogs-visualizer-theme-change", this.themeChangeListener);
     // Command forms can be mounted in a sibling host outside `root`, so use a document-level
@@ -1034,6 +1059,7 @@ export class StudioGraphIsland {
     document.removeEventListener("submit", this.delegatedCommandFormSubmitListener, true);
     document.removeEventListener("ogs-visualizer-theme-change", this.themeChangeListener);
     this.root.removeEventListener("keydown", this.rootKeydownListener);
+    this.root.removeEventListener("click", this.edgeClickListener, true);
     document.removeEventListener("pointerup", this.relationshipPointerUpListener);
     this.root.removeEventListener("pointerdown", this.contextPointerDownListener);
     this.root.removeEventListener("pointerup", this.contextPointerUpListener);
@@ -1963,7 +1989,7 @@ export class StudioGraphIsland {
     const target = event?.target as HTMLElement | null;
     const targetName = target?.getAttribute("name") || "";
     const requiresStructureRefresh =
-      event?.type === "change" && ["mode", "repositoryRoleId", "bindingKind", "profileMode", "sourceRoleId", "targetRoleId"].includes(targetName);
+      event?.type === "change" && ["mode", "repositoryRoleId", "sourceRoleId", "targetRoleId"].includes(targetName);
     this.commandForm = readStudioCommandFormState({
       form,
       previous: this.commandForm,
@@ -1995,7 +2021,7 @@ export class StudioGraphIsland {
     if (diagnostics) {
       diagnostics.outerHTML = renderStudioCommandFormDiagnostics(this.commandForm);
     }
-    for (const fieldPath of ["repositoryRoleId", "roleId", "modelRef", "profileId", "newProfileId", "newProfileToolRef", "newProfileTimeoutMs", "newProfileMaxOutputBytes", "sourceRoleId", "targetRoleId", "eventType", "conditionJson", "priority"]) {
+    for (const fieldPath of ["repositoryRoleId", "roleId", "modelRef", "sourceRoleId", "targetRoleId", "eventType", "conditionJson", "priority"]) {
       const current = this.dialogEl.querySelector<HTMLElement>('[data-studio-command-error="' + this.cssEscape(fieldPath) + '"]');
       if (current) {
         current.outerHTML = renderStudioCommandFormFieldError(this.commandForm, fieldPath);

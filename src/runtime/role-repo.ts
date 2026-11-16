@@ -14,7 +14,6 @@ import { readJsonFile } from "./json-file.js";
 import { assertJsonSchema } from "./json-schema.js";
 import { listJsonSchemaIssues } from "./json-schema.js";
 import { validateConditionAst } from "./condition-ast.js";
-import { isBusinessEvent } from "./business-events.js";
 import { RUNTIME_ROLE_PROMPT_INPUT_SCHEMA } from "./role-prompt-input-schema.js";
 import type {
   DecisionCriterionConfig,
@@ -144,7 +143,7 @@ function expectDecisionCriteria(value: unknown, filePath: string): DecisionCrite
   return criteria;
 }
 
-function expectContract(value: unknown, filePath: string): Pick<RolePackageManifest, "contractVersion" | "purpose" | "responsibility" | "inputs" | "outputs" | "authority" | "constraints" | "failure" | "audit"> {
+function expectContract(value: unknown, filePath: string): Pick<RolePackageManifest, "ogsContractVersion" | "schemaVersion" | "purpose" | "responsibility" | "inputs" | "outputs" | "authority" | "constraints" | "failure" | "audit"> {
   const contract = expectRecord(value, filePath, "$");
   const responsibility = expectRecord(contract.responsibility, filePath, "$.responsibility");
   const inputs = expectRecord(contract.inputs, filePath, "$.inputs");
@@ -155,12 +154,13 @@ function expectContract(value: unknown, filePath: string): Pick<RolePackageManif
   const audit = expectRecord(contract.audit, filePath, "$.audit");
   expectNoExtraKeys(responsibility, ["kind", "owns", "contributes", "doesNotOwn", "composition"], filePath, "$.responsibility");
   expectNoExtraKeys(inputs, ["preconditions"], filePath, "$.inputs");
-  expectNoExtraKeys(outputs, ["events", "postconditions", "decisionCriteria"], filePath, "$.outputs");
+  expectNoExtraKeys(outputs, ["postconditions", "decisionCriteria"], filePath, "$.outputs");
   expectNoExtraKeys(authority, ["controlActions"], filePath, "$.authority");
-  expectNoExtraKeys(constraints, ["writableStateFields", "allowedTools"], filePath, "$.constraints");
+  expectNoExtraKeys(constraints, ["writableStateFields"], filePath, "$.constraints");
   expectNoExtraKeys(failure, ["retryableErrorCodes", "terminalErrorCodes"], filePath, "$.failure");
   expectNoExtraKeys(audit, ["requiredFields"], filePath, "$.audit");
-  if (contract.contractVersion !== 1) fail(filePath, "$.contractVersion", "must equal 1");
+  if (contract.ogsContractVersion !== 2) fail(filePath, "$.ogsContractVersion", "must equal 2");
+  if (contract.schemaVersion !== 2) fail(filePath, "$.schemaVersion", "must equal 2");
   const purpose = expectPurpose(contract.purpose, filePath);
   const kind = contract.responsibility && typeof contract.responsibility === "object" && !Array.isArray(contract.responsibility)
     ? contract.responsibility.kind
@@ -197,14 +197,13 @@ function expectContract(value: unknown, filePath: string): Pick<RolePackageManif
     conditions.forEach((condition, index) => { const diagnostics = validateConditionAst(condition); if (diagnostics.length) fail(filePath, `${path}[${index}]`, diagnostics.join(", ")); });
   }
   const controlActions = expectSortedUniqueStrings(authority.controlActions, filePath, "$.authority.controlActions") as RolePackageManifest["authority"]["controlActions"];
-  if (!controlActions.every((action) => ["approve", "rework", "pause", "terminate"].includes(action))) fail(filePath, "$.authority.controlActions", "contains unsupported action");
+  if (!controlActions.every((action) => ["approve", "rework", "reject"].includes(action))) fail(filePath, "$.authority.controlActions", "contains unsupported business review action; Runtime exception actions are not Role authority");
   const retryableErrorCodes = expectSortedUniqueStrings(failure.retryableErrorCodes, filePath, "$.failure.retryableErrorCodes");
   const terminalErrorCodes = expectSortedUniqueStrings(failure.terminalErrorCodes, filePath, "$.failure.terminalErrorCodes");
   if (![...retryableErrorCodes, ...terminalErrorCodes].every((code) => /^[A-Z][A-Z0-9_]*$/.test(code))) fail(filePath, "$.failure", "error codes must be stable uppercase identifiers");
   if (retryableErrorCodes.some((code) => terminalErrorCodes.includes(code))) fail(filePath, "$.failure", "an error code cannot be both retryable and terminal");
-  const outputEvents = expectSortedUniqueStrings(outputs.events, filePath, "$.outputs.events");
-  const decisionCriteria = expectDecisionCriteria(outputs.decisionCriteria, filePath);
-  return { contractVersion: 1, purpose, responsibility: { kind, owns, contributes, doesNotOwn, ...(composition ? { composition } : {}) }, inputs: { preconditions: preconditions as any[] }, outputs: { events: outputEvents, postconditions: postconditions as any[], ...(decisionCriteria ? { decisionCriteria } : {}) }, authority: { controlActions }, constraints: { writableStateFields: expectSortedUniqueStrings(constraints.writableStateFields, filePath, "$.constraints.writableStateFields"), allowedTools: expectSortedUniqueStrings(constraints.allowedTools, filePath, "$.constraints.allowedTools") }, failure: { retryableErrorCodes, terminalErrorCodes }, audit: { requiredFields: expectSortedUniqueStrings(audit.requiredFields, filePath, "$.audit.requiredFields") } };
+  const decisionCriteria = expectDecisionCriteria(outputs.decisionCriteria, filePath) ?? [];
+  return { ogsContractVersion: 2, schemaVersion: 2, purpose, responsibility: { kind, owns, contributes, doesNotOwn, ...(composition ? { composition } : {}) }, inputs: { preconditions: preconditions as any[] }, outputs: { postconditions: postconditions as any[], decisionCriteria }, authority: { controlActions }, constraints: { writableStateFields: expectSortedUniqueStrings(constraints.writableStateFields, filePath, "$.constraints.writableStateFields") }, failure: { retryableErrorCodes, terminalErrorCodes }, audit: { requiredFields: expectSortedUniqueStrings(audit.requiredFields, filePath, "$.audit.requiredFields") } };
 }
 
 function validateAuditFields(manifest: RolePackageManifest, outputSchema: unknown, filePath: string): void {
@@ -250,13 +249,13 @@ export function validateRolePackageManifest(
   expectNoExtraKeys(
     record,
     [
-      "roleId",
+      "roleId", "ogsContractVersion",
       "roleVersion",
       "name",
       "description",
       "promptTemplate",
       "outputSchema",
-      "contractVersion", "purpose", "responsibility", "inputs", "outputs", "authority", "constraints", "failure", "audit",
+      "schemaVersion", "purpose", "responsibility", "inputs", "outputs", "authority", "constraints", "failure", "audit",
       "preferredModelTags",
       "tags"
     ],
@@ -401,13 +400,8 @@ export async function loadRolePackage(args: {
   const resolvedPath = resolve(args.roleRootDir, args.roleId);
   const manifestPath = resolve(resolvedPath, "role.json");
   const manifest = validateRolePackageManifest(await readJsonFile(manifestPath), manifestPath);
-  if (args.strictEvents) {
-    for (const eventType of manifest.outputs.events) {
-      if (!isBusinessEvent(eventType)) {
-        fail(manifestPath, "$.outputs.events", `Role output event "${eventType}" is not registered; system events are runtime-owned`);
-      }
-    }
-  }
+  // Routable events belong to the Business Graph. Role Contracts contain only
+  // postconditions and decision criteria.
 
   if (manifest.roleId !== args.roleId) {
     throw new Error(

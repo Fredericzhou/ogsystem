@@ -99,7 +99,7 @@ export function buildNl2MmdSystemPrompt(context: Nl2MmdContext): string {
     "- loop.max must be a positive integer",
     "- Do not emit engine metadata unless the user explicitly asks for it",
     "- Define every entry role with a start[开始] -->|START| flow; all start flows use START and there is no separate entry list",
-    '- Keep model selection out of Mermaid metadata. Every role is a role/agent; configure its backend and model in Studio or .ogs/model-selection.json',
+    '- Keep technical binding out of Mermaid metadata. Every role is a role/agent; configure its Harness Template in Studio or .ogs/execution-bindings.json',
     "- Event names must be uppercase snake case and must match outgoing role schema enums when using known roles",
     "- Runtime-native human review uses review.* metadata on the reviewed role: review.mode.<roleId>=required, optional review.timeout, review.timeout.action, review.rework.target, review.rework.max, and review.terminate.scope",
     "- When the user asks for human approval, audit, sign-off, review, rework, or an approval gate, prefer review.* metadata; do not add a synthetic reviewer role solely to represent the human decision",

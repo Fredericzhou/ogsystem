@@ -7,7 +7,7 @@
  * Boundaries:
  * - Delegates runtime execution and persistence to lower-level modules.
  */
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
@@ -48,8 +48,10 @@ import { startVisualizationServer } from "../visualizer/server.js";
 import { runNl2MmdCli, usage as nl2mmdUsage } from "../nl2mmd/cli.js";
 import { ensureSystemHome } from "./system-home.js";
 import { discoverLocalModelCatalog } from "./model-catalog.js";
+import { defaultBackendRegistry, projectBackendCapabilityDirectory } from "./model-backend-registry.js";
 import { writeJsonFileAtomic } from "./json-file.js";
 import { resolveProjectTargetDirectory } from "./project-target.js";
+import { loadExecutionBindingsV2 } from "./contract-v2-loader.js";
 import type { AdapterRunResult } from "./types.js";
 import { formatHumanRunSummary, shouldEmitFullRunJson } from "./cli-run-output.js";
 import { promoteSealedArtifact } from "./artifact-promotion.js";
@@ -108,18 +110,69 @@ function usageRoot(): string {
 
 async function runModelsCommand(argv: string[]): Promise<void> {
   const subcommand = argv[0];
-  if (subcommand !== "discover" && subcommand !== "sync") {
-    throw createCliInputError("CLI_MODELS_SUBCOMMAND", "Usage: ogs models <discover|sync> [--ogs-dir <path>]");
+  if (subcommand !== "discover" && subcommand !== "sync" && subcommand !== "capabilities") {
+    throw createCliInputError("CLI_MODELS_SUBCOMMAND", "Usage: ogs models <discover|sync|capabilities> [--ogs-dir <path>]");
   }
   const { values } = parseLifecycleArgs(argv.slice(1), {
     workdir: { type: "string" },
-    help: { type: "boolean", short: "h" }
+    help: { type: "boolean", short: "h" },
+    refresh: { type: "boolean" }
   });
   if (asBool(values.help)) {
-    console.log(`Usage:\n  ogs models ${subcommand} [--ogs-dir <path>]\n\n  discover  Inspect installed CLI model services and refresh .ogs/model-catalog.json\n  sync      Refresh discovery and create the project model-selection file when missing`);
+    console.log(`Usage:\n  ogs models ${subcommand} [--ogs-dir <path>] [--refresh]\n\n  discover      Inspect installed CLI model services and refresh .ogs/model-catalog.json\n  sync          Refresh the model catalog; Harness bindings remain the only execution source\n  capabilities  Print the read-only v2 Backend capability directory\n  --refresh     Run native tool probes and return verified capability evidence`);
     return;
   }
   const workdir = resolve(asString(values.workdir) ?? process.cwd());
+  if (subcommand === "capabilities") {
+    const refresh = asBool(values.refresh);
+    if (refresh) {
+      const refreshed = [];
+      const bindingTargets = new Map<string, { backendId: string; modelId: string }>();
+      const bindingPath = resolve(workdir, ".ogs", "execution-bindings.json");
+      const bindings = await loadExecutionBindingsV2(bindingPath).catch(() => undefined);
+      for (const template of Object.values(bindings?.harnessTemplates ?? {})) {
+        if (template.backend && template.model) bindingTargets.set(`${template.backend}/${template.model}`, { backendId: template.backend, modelId: template.model });
+      }
+      if (bindingTargets.size === 0) {
+        for (const backendId of defaultBackendRegistry.listBackendIds()) {
+          bindingTargets.set(`${backendId}/gpt-6-luna`, { backendId, modelId: "gpt-6-luna" });
+        }
+      }
+      for (const { backendId, modelId } of bindingTargets.values()) {
+        const descriptor = defaultBackendRegistry.getDescriptor(backendId);
+        const adapter = defaultBackendRegistry.getAdapter(backendId);
+        if (!descriptor || !adapter) continue;
+        const entry = projectBackendCapabilityDirectory(defaultBackendRegistry).find((candidate) => candidate.backendId === backendId);
+        if (!entry) continue;
+        if (!adapter.discoverNativeTools) {
+          refreshed.push({ ...entry, modelId });
+          continue;
+        }
+        try {
+          const probe = await adapter.discoverNativeTools({ modelId, workdir, timeoutMs: 60_000 });
+          refreshed.push({ ...entry, modelId, readiness: "ready", nativeTools: { ...entry.nativeTools, status: "ready", verifiedTools: probe.verifiedTools } });
+        } catch (error) {
+          refreshed.push({ ...entry, modelId, readiness: "degraded", nativeTools: { ...entry.nativeTools, status: "refresh_required", verifiedTools: [] } });
+        }
+      }
+      const refreshedAt = new Date().toISOString();
+      const previewPath = resolve(workdir, ".ogs", "capability-previews.json");
+      await mkdir(resolve(workdir, ".ogs"), { recursive: true });
+      await writeJsonFileAtomic(previewPath, { ogsContractVersion: 2, schemaVersion: 1, refreshedAt, backends: refreshed });
+      console.log(JSON.stringify({ status: "ok", command: "models capabilities", workdir, contractVersion: 2, refreshedAt, previewPath, backends: refreshed }, null, 2));
+      return;
+    }
+    console.log(JSON.stringify({
+      status: "ok",
+      command: "models capabilities",
+      workdir,
+      contractVersion: 2,
+      userConfigurable: ["backend", "model", "allowedTools", "environment"],
+      readOnlyDiagnostics: ["capabilities", "resources", "permission", "modes", "adapterVersion", "nativeTools"],
+      backends: projectBackendCapabilityDirectory(defaultBackendRegistry, await loadCapabilityPreviewMap(workdir))
+    }, null, 2));
+    return;
+  }
   if (subcommand === "sync") {
     const result = await syncProjectModels({ workdir });
     console.log(JSON.stringify({ status: "ok", command: "models sync", workdir, ...result }, null, 2));
@@ -131,6 +184,30 @@ async function runModelsCommand(argv: string[]): Promise<void> {
   console.log(JSON.stringify({ status: "ok", command: "models discover", workdir, catalogPath: paths.modelCatalogPath, sources: catalog.sources, modelCount: catalog.models.length }, null, 2));
 }
 
+async function loadCapabilityPreviewMap(workdir: string): Promise<Map<string, { readiness: "ready" | "degraded" | "unavailable"; verifiedTools: string[] }>> {
+  const raw = await readFile(resolve(workdir, ".ogs", "capability-previews.json"), "utf8").catch(() => undefined);
+  if (!raw) return new Map();
+  try {
+    const parsed = JSON.parse(raw) as { backends?: unknown };
+    const result = new Map<string, { readiness: "ready" | "degraded" | "unavailable"; verifiedTools: string[] }>();
+    for (const item of Array.isArray(parsed.backends) ? parsed.backends : []) {
+      if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+      const value = item as Record<string, unknown>;
+      const backendId = typeof value.backendId === "string" ? value.backendId : undefined;
+      const modelId = typeof value.modelId === "string" ? value.modelId : undefined;
+      const readiness = value.readiness;
+      const nativeTools = value.nativeTools && typeof value.nativeTools === "object" && !Array.isArray(value.nativeTools)
+        ? (value.nativeTools as Record<string, unknown>).verifiedTools
+        : undefined;
+      if (!backendId || !modelId || (readiness !== "ready" && readiness !== "degraded" && readiness !== "unavailable") || !Array.isArray(nativeTools) || !nativeTools.every((tool) => typeof tool === "string")) continue;
+      result.set(`${backendId}/${modelId}`, { readiness, verifiedTools: [...nativeTools] as string[] });
+    }
+    return result;
+  } catch {
+    return new Map();
+  }
+}
+
 function usageCompatibility(): string {
   return [
     "OGSystem current CLI input boundary",
@@ -140,7 +217,7 @@ function usageCompatibility(): string {
     "Unsupported inputs: future/unknown config or schema versions, malformed inputs, and resume artifacts",
     "whose plan fingerprint, semantic digest, or recovery authority does not match the current setup.",
     "",
-    "Policy: docs/development/release-compatibility-policy.md",
+    "Historical policy: docs/development/archive/v1/release-compatibility-policy.md",
     "Commands: ogs --version | ogs help compatibility"
   ].join("\n");
 }
@@ -209,7 +286,7 @@ function usageProject(subcommand?: ProjectSubcommand): string {
       "  --help           Show help",
       "",
       "Behavior:",
-      "  Refreshes .ogs/model-catalog.json and seeds .ogs/model-selection.json when missing.",
+      "  Refreshes .ogs/model-catalog.json; Runtime bindings remain in .ogs/execution-bindings.json.",
       "",
       "Example:",
       "  ogs project sync-models"
@@ -241,7 +318,7 @@ function usageProject(subcommand?: ProjectSubcommand): string {
     "  init   scaffold the current directory as a runnable project",
     "  create scaffold a new project directory from a template",
     "  sync   import roles referenced by a Mermaid system into the local project role repo",
-    "  sync-models   refresh .ogs/model-catalog.json and seed .ogs/model-selection.json when missing",
+    "  sync-models   refresh .ogs/model-catalog.json without changing Harness Templates",
     "  manifest      write a redacted deployment/version manifest",
     "",
     "Drill down:",
@@ -409,14 +486,14 @@ function usageRun(subcommand?: RunSubcommand): string {
       "Usage:",
       "  ogs run review list <run-id> [--ogs-dir <path>]",
       "  ogs run review inspect <run-id> <review-id> [--ogs-dir <path>]",
-      "  ogs run review decide <run-id> <review-id> --decision <approve|rework|continue|reject|pause|terminate> --comment <reason> [--target-role <role>] [--additional-budget <n>] [--resume] [resume options] [--scope <branch|run>] [--ogs-dir <path>]",
+      "  ogs run review decide <run-id> <review-id> --decision <approve|rework|continue|reject|terminate> --comment <reason> [--target-role <role>] [--additional-budget <n>] [--resume] [resume options] [--scope <branch|run>] [--ogs-dir <path>]",
       "",
       "Examples:",
       "  ogs run review list <run-id>",
       "  ogs run review inspect <run-id> <review-id>",
       "  ogs run review decide <run-id> <review-id> --decision approve --comment 'Evidence supports this bounded experiment; keep the default unchanged.'",
       "  ogs run review decide <run-id> <review-id> --decision approve --comment 'Evidence supports the proposed limits.' --resume",
-      "  --resume continues the run after approve or rework; it is invalid with pause or terminate."
+      "  --resume continues the run after approve, rework, continue, or reject; it is invalid with terminate."
     ].join("\n");
   }
 
@@ -1058,8 +1135,7 @@ async function runProjectCommand(argv: string[]): Promise<void> {
           workdir,
           runCount: index.runs.length,
           modelCatalogPath: modelSyncResult.catalogPath,
-          modelSelectionPath: modelSyncResult.selectionPath,
-          selectedModel: modelSyncResult.selectedModel,
+          executionBindingsPath: modelSyncResult.executionBindingsPath,
           importedRoleIds: syncResult.importedRoleIds,
           importedModelIds: syncResult.importedModelIds
         },
@@ -1174,9 +1250,7 @@ async function runProjectCommand(argv: string[]): Promise<void> {
           command: "project sync-models",
           workdir,
           catalogPath: syncResult.catalogPath,
-          selectionPath: syncResult.selectionPath,
-          generatedSelection: syncResult.generatedSelection,
-          selectedModel: syncResult.selectedModel
+          executionBindingsPath: syncResult.executionBindingsPath
         },
         null,
         2
@@ -1717,10 +1791,10 @@ async function runRunCommand(argv: string[]): Promise<void> {
       if (!runId || !reviewId || !decision) {
         throw createCliInputError(
           "CLI_RUN_REVIEW_DECIDE_MISSING_ARGS",
-          "run review decide requires <run-id> <review-id> --decision <approve|rework|continue|reject|pause|terminate>"
+          "run review decide requires <run-id> <review-id> --decision <approve|rework|continue|reject|terminate>"
         );
       }
-      if (!["approve", "rework", "continue", "reject", "pause", "terminate"].includes(decision)) {
+      if (!["approve", "rework", "continue", "reject", "terminate"].includes(decision)) {
         throw createCliInputError(
           "CLI_RUN_REVIEW_DECIDE_INVALID_DECISION",
           `invalid --decision value: ${decision}`
@@ -1749,7 +1823,7 @@ async function runRunCommand(argv: string[]): Promise<void> {
         workdir,
         runId,
         reviewId,
-        decision: decision as "approve" | "rework" | "continue" | "reject" | "pause" | "terminate",
+        decision: decision as "approve" | "rework" | "continue" | "reject" | "terminate",
         comment: asString(values.comment),
         principal: createLocalControlPlanePrincipal(),
         scope: scope as "branch" | "run" | undefined,

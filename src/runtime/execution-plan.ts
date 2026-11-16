@@ -47,13 +47,11 @@ function resolveBinding(args: {
   roleId: string;
   resolvedModelsByRoleId?: Map<string, ResolvedModelRuntimeConfig>;
 }): ExecutionPlanNode["binding"] {
-  // Bindings prefer explicit model or profile contracts; absence results in a noop binding so the runtime can still reason about flow counts.
+  // Contract Set v2 requires every executable role to resolve a Harness-backed model binding.
+  // An absent binding is a readiness error; it must never become a silent noop node.
   const profileId = args.system.executionBinding[args.roleId];
   if (profileId) {
-    return {
-      kind: "profile",
-      profileId
-    };
+    throw new Error(`V2_LEGACY_EXECUTION_BINDING: role "${args.roleId}" references Profile "${profileId}"; use a Harness model binding`);
   }
 
   const resolvedModel = args.resolvedModelsByRoleId?.get(args.roleId);
@@ -67,16 +65,17 @@ function resolveBinding(args: {
       ...(resolvedModel.reasoningEffort ? { reasoningEffort: resolvedModel.reasoningEffort } : {}),
       ...(resolvedModel.effectiveReasoningEffort ? { effectiveReasoningEffort: resolvedModel.effectiveReasoningEffort } : {}),
       ...(resolvedModel.frozenReasoningEffort ? { frozenReasoningEffort: resolvedModel.frozenReasoningEffort } : {}),
-      ...(resolvedModel.fallback ? { fallback: resolvedModel.fallback } : {}),
       ...(resolvedModel.timeoutMs !== undefined ? { timeoutMs: resolvedModel.timeoutMs } : {}),
       ...(resolvedModel.maxOutputBytes !== undefined ? { maxOutputBytes: resolvedModel.maxOutputBytes } : {}),
       bindingSource: resolvedModel.bindingSource
     };
   }
 
-  return {
-    kind: "noop"
-  };
+  if (args.system.modelBinding[args.roleId]) {
+    throw new Error(`V2_LEGACY_MODEL_BINDING: role "${args.roleId}" declares model.bind metadata; bind it through .ogs/execution-bindings.json`);
+  }
+
+  throw new Error(`V2_BINDING_REQUIRED: role "${args.roleId}" has no resolved Harness model binding`);
 }
 
 /**

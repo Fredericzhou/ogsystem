@@ -12,7 +12,8 @@ import { readJsonFile, writeJsonFileAtomic } from "../runtime/json-file.js";
 import { parseSystemFromMermaidSource } from "../runtime/parse-mermaid.js";
 import { loadRuntimeConfig } from "../runtime/runtime-loader.js";
 import { loadModelCatalog } from "../runtime/model-catalog.js";
-import { loadModelSelection, validateModelSelection } from "../runtime/model-selection.js";
+import { loadExecutionBindingsV2 } from "../runtime/contract-v2-loader.js";
+import type { ExecutionBindingsV2, HarnessTemplateV2 } from "../runtime/contract-v2.js";
 import { SYSTEM_END_ROLE_ID, SYSTEM_START_ROLE_ID } from "../runtime/types.js";
 import type { Flow, ModelCatalog, ModelCatalogEntry, ModelSelectionConfig, SystemDefinition } from "../runtime/types.js";
 import {
@@ -76,15 +77,18 @@ export function authoringToDesign(
     }
   };
   for (const [roleId, role] of Object.entries(authoring.roles)) {
-    const binding = role.bindingKind === "exec" && role.profileId
-      ? { kind: "exec" as const, profileId: role.profileId }
-      : role.bindingKind === "model" && (role.modelRef || (role.backend && role.modelId))
-        ? {
-            kind: "model" as const,
-            modelRef: role.modelRef ?? `${role.backend}/${role.modelId}`,
-            ...(role.fallback ? { fallback: role.fallback } : {})
-          }
-        : { kind: "noop" as const };
+    if (role.bindingKind !== "model") throw new Error(`V2_STUDIO_LEGACY_BINDING: role "${roleId}" must use a Harness/model binding.`);
+    // The authoring projection may expose Backend/model selectors for the
+    // Technical Binding editor, but the canonical Business Design stores only
+    // the logical Harness Template reference. Backend/model data is persisted
+    // in execution-bindings.json by buildStudioHarnessBindings().
+    const harnessTemplate = existing?.seats[roleId]?.binding.kind === "harness"
+      ? existing.seats[roleId].binding.harnessTemplate
+      : `studio-${roleId}`;
+    const binding = {
+      kind: "harness" as const,
+      harnessTemplate
+    };
     const seat = {
       seatId: roleId,
       ...(role.title ? { title: role.title } : {}),
@@ -152,6 +156,7 @@ type ValidateStudioSystemSource = (args: {
   systemSource: string;
   modelCatalogModels?: ModelCatalogEntry[];
   modelCatalogGeneratedAt?: string;
+  executionBindings?: ExecutionBindingsV2;
 }) => Promise<StudioSystemValidation>;
 
 export type StudioBridgeDraft = {
@@ -310,9 +315,10 @@ export function importSystemToAuthoring(args: {
   const layoutNodes: StudioAuthoringDocument["layout"]["nodes"] = {};
   args.system.roleIds.forEach((roleId, index) => {
     const selected = args.modelSelection?.roles?.[roleId] ?? args.modelSelection?.defaults;
-    const bindingKind = args.system.executionBinding[roleId]
-      ? "exec"
-      : selected?.backend && selected.modelId ? "model" : "noop";
+    if (args.system.executionBinding[roleId]) {
+      throw new Error(`V2_STUDIO_LEGACY_BINDING: role "${roleId}" references a legacy execution profile; bind a v2 Harness Template.`);
+    }
+    const bindingKind = "model" as const;
     roles[roleId] = {
       roleId,
       ...(args.roleDisplayNames?.get(roleId) ? { title: args.roleDisplayNames.get(roleId) } : {}),
@@ -321,8 +327,6 @@ export function importSystemToAuthoring(args: {
       modelId: selected?.modelId,
       modelSelectionSource: args.modelSelection?.roles?.[roleId] ? "role" : selected?.backend ? "default" : undefined,
       modelRef: selected?.backend && selected.modelId ? `${selected.backend}/${selected.modelId}` : undefined,
-      fallback: args.modelSelection?.roles?.[roleId]?.fallback,
-      profileId: args.system.executionBinding[roleId],
       routingMode: args.system.graph?.routingModeByRoleId[roleId],
       routeOrder: args.system.graph?.routeOrderByRoleId?.[roleId],
       joinMode: args.system.graph?.joinModeByRoleId[roleId],
@@ -352,7 +356,8 @@ export function importSystemToAuthoring(args: {
   });
 
   return {
-    version: 1,
+    ogsContractVersion: 2,
+    version: 2,
     project: {
       workdir: args.workdir,
       systemPath: args.systemPath
@@ -485,8 +490,8 @@ export async function inspectStudioBridgeDraft(args: {
     systemSource
   });
   let authoring: StudioAuthoringDocument | null = null;
-  const [modelSelection, modelCatalog] = await Promise.all([
-    loadModelSelection(resolve(args.workdir, ".ogs", "model-selection.json")),
+  const [executionBindings, modelCatalog] = await Promise.all([
+    loadExecutionBindingsV2(resolve(args.workdir, ".ogs", "execution-bindings.json")),
     loadModelCatalog(resolve(args.workdir, ".ogs", "model-catalog.json"))
   ]);
   let bridgeValidation = validation;
@@ -500,7 +505,7 @@ export async function inspectStudioBridgeDraft(args: {
       system,
       systemSource,
       roleDisplayNames,
-      modelSelection,
+      modelSelection: harnessBindingsAsModelSelection(executionBindings, system),
       semanticRoutes: semanticConfig.routes,
       semanticLoops: semanticConfig.loops
     });
@@ -531,7 +536,8 @@ export async function inspectStudioBridgeDraft(args: {
         if (
           typeof savedDraft.authoring !== "object" ||
           Array.isArray(savedDraft.authoring) ||
-          (savedDraft.authoring as { version?: unknown }).version !== 1
+          (savedDraft.authoring as { ogsContractVersion?: unknown }).ogsContractVersion !== 2 ||
+          (savedDraft.authoring as { version?: unknown }).version !== 2
         ) {
           authoringDraftStatus = "invalid";
         } else {
@@ -598,6 +604,9 @@ function escapeMermaidRoleId(roleId: string): string {
 }
 
 export function serializeAuthoringToMermaid(authoring: StudioAuthoringDocument): string {
+  if (authoring.ogsContractVersion !== 2 || authoring.version !== 2) {
+    throw new Error("V2_STUDIO_CONTRACT_REQUIRED: Studio authoring must declare ogsContractVersion=2 and version=2.");
+  }
   const roleIds = Object.keys(authoring.roles).sort(sortStrings);
   const metadata: string[] = [
     "flowchart TD",
@@ -614,13 +623,7 @@ export function serializeAuthoringToMermaid(authoring: StudioAuthoringDocument):
 
   for (const roleId of roleIds) {
     const role = authoring.roles[roleId];
-    if (role.bindingKind === "exec") {
-      const line = serializeMetadataLine(`exec.bind.${roleId}`, role.profileId);
-      if (line) metadata.push(line);
-    }
-  }
-  for (const roleId of roleIds) {
-    const role = authoring.roles[roleId];
+    if (role.bindingKind !== "model") throw new Error(`V2_STUDIO_LEGACY_BINDING: role "${roleId}" must use a Harness/model binding.`);
     const lines = [
       serializeMetadataLine(`role.mode.${roleId}`, role.routingMode),
       serializeMetadataLine(`route.order.${roleId}`, role.routeOrder?.join(",")),
@@ -693,6 +696,61 @@ function authoringDraftPath(workdir: string): string {
   return resolve(workdir, ".ogs", "studio", "system.authoring.json");
 }
 
+export function harnessBindingsAsModelSelection(bindings: ExecutionBindingsV2, system: SystemDefinition): ModelSelectionConfig {
+  const defaultTemplateId = bindings.defaults?.harnessTemplate;
+  const roles: NonNullable<ModelSelectionConfig["roles"]> = {};
+  for (const roleId of system.roleIds) {
+    const templateId = bindings.roles[roleId]?.harnessTemplate ?? defaultTemplateId;
+    const template = templateId ? bindings.harnessTemplates?.[templateId] : undefined;
+    if (!template) throw new Error(`V2_HARNESS_BINDING_REQUIRED: role "${roleId}" has no resolved Harness Template`);
+    roles[roleId] = { backend: template.backend, modelId: template.model };
+  }
+  return { configVersion: "3", roles };
+}
+
+function buildStudioHarnessBindings(args: {
+  current: ExecutionBindingsV2;
+  authoring: StudioAuthoringDocument;
+  allowUnboundBindings?: boolean;
+}): ExecutionBindingsV2 {
+  const templates: Record<string, HarnessTemplateV2> = { ...(args.current.harnessTemplates ?? {}) };
+  const roles: ExecutionBindingsV2["roles"] = { ...args.current.roles };
+  for (const [roleId, role] of Object.entries(args.authoring.roles)) {
+    if (role.bindingKind !== "model") {
+      if (args.allowUnboundBindings) continue;
+      throw new Error(`V2_STUDIO_LEGACY_BINDING: role "${roleId}" must use a Harness Template binding.`);
+    }
+    if (!role.backend || !role.modelId) {
+      if (args.allowUnboundBindings) continue;
+      throw new Error(`V2_HARNESS_BINDING_REQUIRED: role "${roleId}" has no resolved Harness Template.`);
+    }
+    const templateId = roles[roleId]?.harnessTemplate ?? `studio-${roleId}`;
+    const defaultTemplate = args.current.defaults?.harnessTemplate
+      ? templates[args.current.defaults.harnessTemplate]
+      : undefined;
+    const existing = templates[templateId] ?? defaultTemplate;
+    templates[templateId] = {
+      ogsContractVersion: 2,
+      schemaVersion: 1,
+      kind: "harness",
+      templateId,
+      backend: role.backend,
+      model: role.modelId,
+      allowedTools: existing?.allowedTools ?? [],
+      environment: existing?.environment ?? { filesystem: "staged", process: "allow", network: "deny", limits: { timeoutMs: 600000, maxOutputBytes: 131072 } },
+      ...(existing?.preset ? { preset: existing.preset } : {})
+    };
+    roles[roleId] = { kind: "harness", harnessTemplate: templateId };
+  }
+  return {
+    ogsContractVersion: 2,
+    schemaVersion: 1,
+    harnessTemplates: templates,
+    ...(args.current.defaults ? { defaults: args.current.defaults } : {}),
+    roles
+  };
+}
+
 export async function loadStudioAuthoringDraft(workdir: string): Promise<{
   workdir: string;
   draftPath: string;
@@ -709,6 +767,14 @@ export async function loadStudioAuthoringDraft(workdir: string): Promise<{
       throw error;
     }
   }
+  if (authoring !== null) {
+    const record = authoring && typeof authoring === "object" && !Array.isArray(authoring)
+      ? authoring as Record<string, unknown>
+      : undefined;
+    if (record?.ogsContractVersion !== 2 || record.version !== 2) {
+      throw new Error("V2_STUDIO_CONTRACT_REQUIRED: saved Studio authoring must declare ogsContractVersion=2 and version=2.");
+    }
+  }
   return {
     workdir,
     draftPath,
@@ -721,6 +787,8 @@ export async function saveStudioAuthoringDraft(args: {
   authoring: unknown;
   validateSystemSource?: ValidateStudioSystemSource;
   persistCanonicalDesign?: boolean;
+  /** Initial project drafts may be intentionally unbound until a Harness is selected in Studio. */
+  allowUnboundBindings?: boolean;
 }): Promise<{
   workdir: string;
   draftPath: string;
@@ -732,17 +800,25 @@ export async function saveStudioAuthoringDraft(args: {
   const draftPath = authoringDraftPath(args.workdir);
   let generatedMermaid: string | undefined;
   let validation: StudioSystemValidation | undefined;
-  let nextSelection: ModelSelectionConfig | undefined;
+  let nextBindings: ExecutionBindingsV2 | undefined;
   let semanticCandidate: { path: string; source: string; stateSchemaPath?: string; stateSchemaSource?: string } | undefined;
   let design: SystemDesignDocument | undefined;
   if (
     typeof args.authoring === "object" &&
     args.authoring !== null &&
     !Array.isArray(args.authoring) &&
-    (args.authoring as { version?: unknown }).version === 1
+    (args.authoring as { ogsContractVersion?: unknown }).ogsContractVersion === 2 &&
+    (args.authoring as { version?: unknown }).version === 2
   ) {
     generatedMermaid = serializeAuthoringToMermaid(args.authoring as StudioAuthoringDocument);
     const authoring = args.authoring as StudioAuthoringDocument;
+    const bindingsPath = resolve(args.workdir, ".ogs", "execution-bindings.json");
+    const currentBindings = await loadExecutionBindingsV2(bindingsPath);
+    nextBindings = buildStudioHarnessBindings({
+      current: currentBindings,
+      authoring,
+      allowUnboundBindings: args.allowUnboundBindings
+    });
     const conditionedFlows = Object.values(authoring.flows).filter((flow) => flow.condition !== undefined);
     for (const flow of Object.values(authoring.flows)) {
       if (flow.priority !== undefined && (!Number.isInteger(flow.priority) || flow.priority < 0)) {
@@ -777,7 +853,8 @@ export async function saveStudioAuthoringDraft(args: {
           creatingSemanticSpec = true;
           semanticsPath = resolve(args.workdir, ".ogs", "semantics.yaml");
           semanticsValue = {
-            version: 1,
+            ogsContractVersion: 2,
+            version: 2,
             system: { systemId: system.systemId, systemVersion: system.systemVersion },
             state: { schema: ".ogs/contracts/state.json" }
           };
@@ -812,7 +889,7 @@ export async function saveStudioAuthoringDraft(args: {
         ? `${JSON.stringify(semanticsValue, null, 2)}\n`
         : stringifyYaml(semanticsValue);
       const snapshot: Awaited<ReturnType<typeof loadOgsSpecification>> = creatingSemanticSpec
-        ? { specVersion: "1", systemId: system.systemId, systemVersion: system.systemVersion, sources: {}, digest: "studio-candidate" }
+        ? { specVersion: "2", systemId: system.systemId, systemVersion: system.systemVersion, sources: {}, digest: "studio-candidate" }
         : await loadOgsSpecification(args.workdir);
       const semanticSourceEntry = Object.entries(snapshot.sources).find(([path]) => path.endsWith("/" + semanticsPath!.split(/[\\/]/).at(-1)));
       if (!semanticSourceEntry) {
@@ -837,40 +914,31 @@ export async function saveStudioAuthoringDraft(args: {
         stateSchemaSource = `${JSON.stringify({ version: "1", type: "object", properties: {} }, null, 2)}\n`;
         snapshot.sources[stateSchemaPath.replaceAll("\\", "/")] = { digest: "studio-candidate", value: JSON.parse(stateSchemaSource) };
       }
-      compileSemanticIR({ system, specification: snapshot, maxTransitionsPerRun: 100 });
+      // Semantic IR stores the binding identity, while backend/model details remain in
+      // execution-bindings.json. Resolve that identity from the candidate binding map
+      // in memory so validation observes the same transaction as the eventual write.
+      const defaultTemplateId = nextBindings?.defaults?.harnessTemplate;
+      const harnessTemplateByRoleId = new Map(Object.keys(authoring.roles).map((roleId) => {
+        const templateId = nextBindings?.roles[roleId]?.harnessTemplate ?? defaultTemplateId;
+        return [roleId, templateId ?? ""] as const;
+      }));
+      compileSemanticIR({ system, specification: snapshot, maxTransitionsPerRun: 100, harnessTemplateByRoleId });
       semanticCandidate = { path: semanticsPath, source: nextSemanticSource, ...(stateSchemaSource ? { stateSchemaPath, stateSchemaSource } : {}) };
       }
     }
-    const selectionPath = resolve(args.workdir, ".ogs", "model-selection.json");
-    const currentSelection = await loadModelSelection(selectionPath);
-    const roles: NonNullable<ModelSelectionConfig["roles"]> = {};
-    for (const [roleId, role] of Object.entries((args.authoring as StudioAuthoringDocument).roles)) {
-      if (role.bindingKind !== "model") continue;
-      if (!role.backend || !role.modelId) {
-        throw new Error(`Role "${roleId}" needs both backend and modelId before it can run as an Agent.`);
-      }
-      if (role.modelSelectionSource === "default") continue;
-      roles[roleId] = {
-        backend: role.backend,
-        modelId: role.modelId,
-        ...(role.fallback ? { fallback: role.fallback } : {})
-      };
-    }
-    nextSelection = validateModelSelection({
-      configVersion: "3",
-      defaults: currentSelection?.defaults,
-      roles
-    }, selectionPath);
     if (args.validateSystemSource) {
       validation = await args.validateSystemSource({
         workdir: args.workdir,
         systemPath: resolve(args.workdir, "system.mmd"),
-        systemSource: generatedMermaid
+        systemSource: generatedMermaid,
+        executionBindings: nextBindings
       });
     }
     if (args.persistCanonicalDesign === true) {
       design = authoringToDesign(authoring, await loadSystemDesign(args.workdir));
     }
+  } else {
+    throw new Error("V2_STUDIO_CONTRACT_REQUIRED: Studio authoring must declare ogsContractVersion=2 and version=2.");
   }
   await mkdir(dirname(draftPath), { recursive: true });
   if (semanticCandidate) {
@@ -882,9 +950,7 @@ export async function saveStudioAuthoringDraft(args: {
     await writeFile(tempPath, semanticCandidate.source, "utf8");
     await rename(tempPath, semanticCandidate.path);
   }
-  if (nextSelection) {
-    await writeJsonFileAtomic(resolve(args.workdir, ".ogs", "model-selection.json"), nextSelection);
-  }
+  if (nextBindings) await writeJsonFileAtomic(resolve(args.workdir, ".ogs", "execution-bindings.json"), nextBindings);
   if (design) {
     await saveSystemDesign(args.workdir, design);
   }

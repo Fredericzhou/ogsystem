@@ -7,6 +7,7 @@
  * Boundaries:
  * - Generic validation only; no runtime stage/error envelope decisions.
  */
+import { Ajv2020 } from "ajv/dist/2020.js";
 import { Ajv, type AnySchema, type DefinedError, type ErrorObject, type ValidateFunction } from "ajv";
 
 import type { JsonSchemaValidationIssue } from "./types.js";
@@ -15,6 +16,16 @@ const ajv = new Ajv({
   allErrors: true,
   strict: false,
   allowUnionTypes: true
+});
+
+const ajv2020 = new Ajv2020({
+  allErrors: true,
+  strict: false,
+  allowUnionTypes: true
+});
+ajv2020.addFormat("date-time", {
+  type: "string",
+  validate: (value: string) => value.includes("T") && !Number.isNaN(Date.parse(value))
 });
 
 const validatorCache = new Map<string, ValidateFunction>();
@@ -26,7 +37,12 @@ function getValidator(schema: unknown): ValidateFunction {
     return existing;
   }
 
-  const compiled = ajv.compile(schema as AnySchema);
+  const schemaRecord = schema && typeof schema === "object" && !Array.isArray(schema)
+    ? schema as Record<string, unknown>
+    : {};
+  const compiled = schemaRecord.$schema === "https://json-schema.org/draft/2020-12/schema"
+    ? ajv2020.compile(schema as AnySchema)
+    : ajv.compile(schema as AnySchema);
   validatorCache.set(cacheKey, compiled);
   return compiled;
 }

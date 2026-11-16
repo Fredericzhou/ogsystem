@@ -64,9 +64,7 @@ export type StudioBindingSummary = {
   bindingKind?: string;
   kind?: string;
   modelRef?: string;
-  profileId?: string;
   resolvedModel?: string;
-  resolvedProfile?: string;
 };
 
 export type StudioCommandValidationContext = {
@@ -85,12 +83,6 @@ export type StudioAddRoleDraft = {
   title?: string;
   bindingKind: StudioAuthoringRole["bindingKind"];
   modelRef?: string;
-  profileId?: string;
-  profileMode?: "existing" | "create";
-  newProfileId?: string;
-  newProfileToolRef?: string;
-  newProfileTimeoutMs?: string;
-  newProfileMaxOutputBytes?: string;
 };
 
 export type StudioAddEdgeDraft = {
@@ -234,9 +226,7 @@ export function extractStudioBindings(value: unknown): StudioBindingSummary[] {
       bindingKind: asTrimmedStringOrEmpty(entry.bindingKind ?? entry.kind),
       kind: asTrimmedStringOrEmpty(entry.kind),
       modelRef: asTrimmedStringOrEmpty(entry.modelRef ?? entry.resolvedModel),
-      profileId: asTrimmedStringOrEmpty(entry.profileId ?? entry.resolvedProfile),
       resolvedModel: asTrimmedStringOrEmpty(entry.resolvedModel),
-      resolvedProfile: asTrimmedStringOrEmpty(entry.resolvedProfile)
     }))
     .filter((entry) => Boolean(entry.roleId));
 }
@@ -331,55 +321,6 @@ export function validateStudioAddRoleDraft(
       messageKey: "studio.validation.modelRefRequired",
       message: "Model binding requires a model reference."
     }));
-  }
-  if (draft.bindingKind === "exec" && !asTrimmedStringOrEmpty(draft.profileId)) {
-    diagnostics.push(issue({
-      severity: "error",
-      fieldPath: "profileId",
-      roleId,
-      code: "ROLE_BINDING_UNRESOLVED",
-      messageKey: "studio.validation.profileIdRequired",
-      message: "Execution binding requires a profile id."
-    }));
-  }
-  if (draft.bindingKind === "exec" && draft.profileMode === "create") {
-    const profileId = asTrimmedStringOrEmpty(draft.newProfileId || draft.profileId);
-    if (!profileId) {
-      diagnostics.push(issue({
-        severity: "error",
-        fieldPath: "newProfileId",
-        roleId,
-        code: "ROLE_BINDING_UNRESOLVED",
-        messageKey: "studio.validation.profileIdRequired",
-        message: "New execution profile requires a generated profile id."
-      }));
-    }
-    if (!asTrimmedStringOrEmpty(draft.newProfileToolRef)) {
-      diagnostics.push(issue({
-        severity: "error",
-        fieldPath: "newProfileToolRef",
-        roleId,
-        code: "ROLE_BINDING_UNRESOLVED",
-        messageKey: "studio.validation.profileToolRequired",
-        message: "New execution profile requires a tool reference."
-      }));
-    }
-    for (const [fieldPath, rawValue] of [
-      ["newProfileTimeoutMs", draft.newProfileTimeoutMs],
-      ["newProfileMaxOutputBytes", draft.newProfileMaxOutputBytes]
-    ] as const) {
-      const value = asTrimmedStringOrEmpty(rawValue);
-      if (value && (!/^[0-9]+$/.test(value) || Number(value) <= 0)) {
-        diagnostics.push(issue({
-          severity: "error",
-          fieldPath,
-          roleId,
-          code: "ROLE_BINDING_UNRESOLVED",
-          messageKey: "studio.validation.profileNumberInvalid",
-          message: "Profile numeric limits must be positive integers."
-        }));
-      }
-    }
   }
 
   return {

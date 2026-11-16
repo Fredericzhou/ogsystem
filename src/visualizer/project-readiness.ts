@@ -4,7 +4,7 @@
  * - Does not execute runtime setup or mutate project files.
  * - Reports dry-run blockers using the same project inputs the runtime would inspect.
  */
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import { resolveProjectRoleRepoRoot, resolveProjectRoleRootDir } from "../runtime/bundled-repos.js";
@@ -16,19 +16,18 @@ import {
 import { readJsonFile } from "../runtime/json-file.js";
 import { isModelCatalogStale, loadModelCatalog, mergeModelCatalogWithLiveSnapshot } from "../runtime/model-catalog.js";
 import {
-  inspectResolvedModelCatalogEntry,
-  loadModelSelection,
-  resolveModelSelectionForSystem
+  inspectResolvedModelCatalogEntry
 } from "../runtime/model-selection.js";
+import { assertNoLegacyV1ExecutionAssets, loadExecutionBindingsV2 } from "../runtime/contract-v2-loader.js";
+import { defaultBackendRegistry } from "../runtime/model-backend-registry.js";
+import { resolveEffectiveEnvironmentPolicy } from "../runtime/v2-execution-policy.js";
 import { parseSystemFromMermaidSource } from "../runtime/parse-mermaid.js";
 import { resolveOgsPaths } from "../runtime/project-lifecycle.js";
-import { loadLaws, loadProfiles, loadRuntimeConfig, loadTools } from "../runtime/runtime-loader.js";
+import { loadRuntimeConfig } from "../runtime/runtime-loader.js";
 import { validateRoleOutputSchemaDefinition, validateRolePackageManifest, validateRolePromptTemplate, validateRoleSourceRecord } from "../runtime/role-repo.js";
 import { pathExists } from "../runtime/run-store.js";
-import { resolveEffectiveLaw } from "../runtime/runtime-setup.js";
 import { SYSTEM_END_ROLE_ID } from "../runtime/types.js";
 import { isRuntimeOnlyErrorEvent } from "../runtime/error-flow-utils.js";
-import { checkExecutable } from "../runtime/executable-resolver.js";
 import {
   asNonEmptyString,
   asRecord
@@ -102,18 +101,6 @@ type ModelCapabilityCheck = {
   catalogPresent: boolean;
 };
 
-type ModelSelectionReadinessIssue = {
-  roleId: string;
-  code: "MODEL_SELECTION_NOT_FOUND" | "MODEL_BINDING_UNRESOLVED";
-  message: string;
-};
-
-type ModelSelectionReadinessResult = {
-  resolvedByRoleId: Map<string, { backend: string; modelId: string }>;
-  warnings: string[];
-  issues: ModelSelectionReadinessIssue[];
-};
-
 export type ProjectReadinessProjection = {
   workdir: string;
   systemId: string | null;
@@ -145,60 +132,6 @@ export type ProjectReadinessProjection = {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-function getModelSelectionErrorCode(error: unknown): ModelSelectionReadinessIssue["code"] | undefined {
-  const errorRecord = asRecord(error);
-  const envelope = asRecord(errorRecord?.envelope);
-  const errorCode = envelope?.errorCode;
-  return errorCode === "MODEL_SELECTION_NOT_FOUND" || errorCode === "MODEL_BINDING_UNRESOLVED"
-    ? errorCode
-    : undefined;
-}
-
-function resolveModelSelectionForReadiness(args: {
-  system: SystemDefinition;
-  selection: Awaited<ReturnType<typeof loadModelSelection>>;
-  catalog: ModelCatalog | undefined;
-}): ModelSelectionReadinessResult {
-  const resolvedByRoleId = new Map<string, { backend: string; modelId: string }>();
-  const warnings = new Set<string>();
-  const issues: ModelSelectionReadinessIssue[] = [];
-
-  // Resolve roles independently so one unresolved selector does not hide other pinned models.
-  for (const roleId of [...args.system.roleIds].sort((left, right) => left.localeCompare(right))) {
-    try {
-      const result = resolveModelSelectionForSystem({
-        system: { ...args.system, roleIds: [roleId] },
-        selection: args.selection,
-        catalog: args.catalog,
-        validateCatalog: false
-      });
-      const resolved = result.resolvedByRoleId.get(roleId);
-      if (resolved) {
-        resolvedByRoleId.set(roleId, resolved);
-      }
-      for (const warning of result.warnings) {
-        warnings.add(warning);
-      }
-    } catch (error) {
-      const code = getModelSelectionErrorCode(error);
-      if (!code) {
-        throw error;
-      }
-      issues.push({
-        roleId,
-        code,
-        message: errorMessage(error)
-      });
-    }
-  }
-
-  return {
-    resolvedByRoleId,
-    warnings: [...warnings],
-    issues
-  };
 }
 
 function buildProviderHealth(
@@ -434,9 +367,6 @@ function buildModelCapabilityChecks(args: {
 }): ModelCapabilityCheck[] {
   const checks: ModelCapabilityCheck[] = [];
   for (const roleId of [...args.system.roleIds].sort((left, right) => left.localeCompare(right))) {
-    if (args.system.executionBinding[roleId]) {
-      continue;
-    }
     const resolved = args.resolvedModelsByRoleId.get(roleId);
     if (!resolved?.modelId) {
       continue;
@@ -605,7 +535,6 @@ async function inspectRoleHealth(args: {
   if (files.roleJson) {
     try {
       const manifest = validateRolePackageManifest(await readJsonFile(manifestPath), manifestPath);
-      declaredEvents = manifest.outputs.events;
       decisionCriteria = manifest.outputs.decisionCriteria;
       const promptTemplate = asNonEmptyString(manifest.promptTemplate);
       const outputSchema = asNonEmptyString(manifest.outputSchema);
@@ -843,9 +772,56 @@ export async function inspectProjectReadiness(
 
   const ogsPaths = resolveOgsPaths(workdir);
   const runtimeConfig = await loadRuntimeConfig(undefined, workdir);
+  const hasV2Bindings = await stat(resolve(workdir, ".ogs", "execution-bindings.json"))
+    .then((value) => value.isFile())
+    .catch(() => false);
+  let executionBindings: Awaited<ReturnType<typeof loadExecutionBindingsV2>> | undefined;
+  if (!hasV2Bindings) {
+    blockers.push(createIssue({
+      code: "READINESS_V2_EXECUTION_BINDINGS_REQUIRED",
+      message: "Project must declare .ogs/execution-bindings.json before it can run.",
+      severity: "blocker",
+      path: resolve(workdir, ".ogs/execution-bindings.json")
+    }));
+  } else {
+    try {
+      await assertNoLegacyV1ExecutionAssets(workdir);
+      executionBindings = await loadExecutionBindingsV2(resolve(workdir, ".ogs", "execution-bindings.json"));
+    } catch (error) {
+      blockers.push(createIssue({
+        code: "READINESS_V2_EXECUTION_BINDINGS_INVALID",
+        message: errorMessage(error),
+        severity: "blocker",
+        path: resolve(workdir, ".ogs", "execution-bindings.json")
+      }));
+    }
+  }
   const roleRepoRoot = resolveProjectRoleRepoRoot(workdir, runtimeConfig.roleRepo);
   const roleRootDir = resolveProjectRoleRootDir(workdir, runtimeConfig.roleRepo);
-  const modelSelection = await loadModelSelection(ogsPaths.modelSelectionPath);
+  const defaultTemplateId = executionBindings?.defaults?.harnessTemplate;
+  const resolvedHarnessesByRoleId = new Map<string, { backend: string; modelId: string; templateId: string; allowedTools: string[]; environment: Record<string, unknown> }>();
+  for (const roleId of [...system.roleIds].sort((left, right) => left.localeCompare(right))) {
+    const templateId = executionBindings?.roles[roleId]?.harnessTemplate ?? defaultTemplateId;
+    const template = templateId ? executionBindings?.harnessTemplates?.[templateId] : undefined;
+    if (!template) {
+      missingBindings.push({ roleId, reason: "role has no resolved Harness Template" });
+      blockers.push(createIssue({
+        code: "READINESS_HARNESS_BINDING_REQUIRED",
+        message: `Role "${roleId}" must resolve to a Harness Template; v1 model-selection and exec bindings are not accepted.`,
+        severity: "blocker",
+        roleId,
+        detail: { templateId }
+      }));
+      continue;
+    }
+    resolvedHarnessesByRoleId.set(roleId, {
+      backend: template.backend,
+      modelId: template.model,
+      templateId: template.templateId,
+      allowedTools: [...template.allowedTools],
+      environment: template.environment as Record<string, unknown>
+    });
+  }
   const hasLiveModelCatalog = Array.isArray(options.modelCatalogModels) && options.modelCatalogModels.length > 0;
   let storedModelCatalog: ModelCatalog | undefined;
   try {
@@ -867,127 +843,6 @@ export async function inspectProjectReadiness(
     options.modelCatalogModels,
     options.modelCatalogGeneratedAt
   );
-  const resolvedModelSelection = resolveModelSelectionForReadiness({
-    system,
-    selection: modelSelection,
-    catalog: modelCatalog
-  });
-  const laws = await loadLaws(undefined, workdir);
-  let profiles: Awaited<ReturnType<typeof loadProfiles>> = [];
-  let tools: Awaited<ReturnType<typeof loadTools>> = [];
-  try {
-    profiles = await loadProfiles(undefined, workdir);
-  } catch (error) {
-    blockers.push(createIssue({
-      code: "READINESS_EXECUTION_CONFIG_INVALID",
-      message: `Execution profiles cannot be loaded: ${errorMessage(error)}`,
-      severity: "blocker",
-      path: resolve(workdir, "profiles.json")
-    }));
-  }
-  try {
-    tools = await loadTools(undefined, workdir);
-  } catch (error) {
-    blockers.push(createIssue({
-      code: "READINESS_EXECUTION_CONFIG_INVALID",
-      message: `Execution tools cannot be loaded: ${errorMessage(error)}`,
-      severity: "blocker",
-      path: resolve(workdir, "tools.json")
-    }));
-  }
-  const effectiveLaw = resolveEffectiveLaw(system, laws);
-
-  for (const warning of resolvedModelSelection.warnings) {
-    warnings.push(
-      createIssue({
-        code: "READINESS_MODEL_SELECTION_WARNING",
-        message: warning,
-        severity: "warning"
-      })
-    );
-  }
-
-  const modelSelectionIssuesByRoleId = new Map(
-    resolvedModelSelection.issues.map((issue) => [issue.roleId, issue])
-  );
-  const profilesById = new Map(profiles.map((profile) => [profile.profileId, profile]));
-  const toolsByRef = new Map(tools.map((tool) => [tool.toolRef, tool]));
-
-  for (const roleId of [...system.roleIds].sort((left, right) => left.localeCompare(right))) {
-    const bindingRef = system.executionBinding[roleId];
-    if (bindingRef) {
-      // executionBinding stores the complete profile ID (for example profile.review),
-      // matching profiles.json and the runtime binding resolver.
-      const profileId = bindingRef;
-      const profile = profilesById.get(profileId);
-      if (!profile) {
-        blockers.push(createIssue({ code: "READINESS_PROFILE_MISSING", message: `Role "${roleId}" references missing execution profile "${profileId}".`, severity: "blocker", roleId, detail: { profileId } }));
-        continue;
-      }
-      const tool = toolsByRef.get(profile.toolRef);
-      if (!tool) {
-        blockers.push(createIssue({ code: "READINESS_TOOL_MISSING", message: `Execution profile "${profileId}" references missing tool "${profile.toolRef}".`, severity: "blocker", roleId, detail: { profileId, toolRef: profile.toolRef } }));
-        continue;
-      }
-      if (effectiveLaw.forbiddenToolRefs.includes(tool.toolRef)) {
-        blockers.push(createIssue({ code: "READINESS_TOOL_FORBIDDEN", message: `Tool "${tool.toolRef}" for role "${roleId}" is forbidden by the effective law.`, severity: "blocker", roleId, detail: { profileId, toolRef: tool.toolRef } }));
-      }
-      const requiredCommands = [...new Set([tool.command, ...(tool.requires || [])])];
-      const missingCommands = requiredCommands.filter((command) => !checkExecutable(command).found);
-      if (missingCommands.length) warnings.push(createIssue({ code: "READINESS_TOOL_COMMAND_MISSING", message: `Role "${roleId}" requires unavailable tool command${missingCommands.length === 1 ? "" : "s"}: ${missingCommands.join(", ")}. Dry-run remains available; install the command before a real run.`, severity: "warning", roleId, detail: { profileId, toolRef: tool.toolRef, requiredCommands, missingCommands } }));
-      if (tool?.stdinMode === "none") {
-        warnings.push(
-          createIssue({
-            code: "READINESS_TOOL_INPUT_NOT_FORWARDED",
-            message: `Role "${roleId}" is bound to tool "${tool.toolRef}" with stdinMode "none"; the rendered role prompt and projected input are not sent on stdin. Set stdinMode to "text" if the tool expects prompt input there.`,
-            severity: "warning",
-            roleId,
-            detail: {
-              profileId: profile?.profileId,
-              toolRef: tool.toolRef,
-              stdinMode: tool.stdinMode
-            }
-          })
-        );
-      }
-    }
-    if (!system.executionBinding[roleId] && !resolvedModelSelection.resolvedByRoleId.has(roleId)) {
-      const selectionIssue = modelSelectionIssuesByRoleId.get(roleId);
-      if (selectionIssue) {
-        missingBindings.push({
-          roleId,
-          reason: "model binding did not resolve to a backend/model selection"
-        });
-        blockers.push(
-          createIssue({
-            code: "READINESS_MODEL_SELECTION_UNRESOLVED",
-            message: selectionIssue.message,
-            severity: "blocker",
-            roleId,
-            detail: {
-              runtimeCode: selectionIssue.code
-            }
-          })
-        );
-        continue;
-      }
-      missingBindings.push({
-        roleId,
-        reason: "no execution binding or model-selection entry resolved"
-      });
-      const issue = createIssue({
-        code: "READINESS_BINDING_MISSING",
-        message: `Role "${roleId}" has no execution binding`,
-        severity: effectiveLaw.allowNoopWithoutExecutionBinding ? "warning" : "blocker",
-        roleId
-      });
-      if (issue.severity === "blocker") {
-        blockers.push(issue);
-      } else {
-        warnings.push(issue);
-      }
-    }
-  }
 
   const roleInspections = await Promise.all(
     [...system.roleIds]
@@ -1019,16 +874,89 @@ export async function inspectProjectReadiness(
   const modelCapabilityChecks = buildModelCapabilityChecks({
     system,
     modelCatalog,
-    resolvedModelsByRoleId: resolvedModelSelection.resolvedByRoleId,
+    resolvedModelsByRoleId: resolvedHarnessesByRoleId,
     blockers,
     warnings
   });
+
+  const previewDocument = await readJsonFile(resolve(workdir, ".ogs", "capability-previews.json")).catch(() => undefined);
+  const previewEntries = previewDocument && typeof previewDocument === "object" && !Array.isArray(previewDocument)
+    ? (previewDocument as { backends?: unknown }).backends
+    : [];
+  for (const [roleId, binding] of resolvedHarnessesByRoleId) {
+    if (binding.allowedTools.length === 0) continue;
+    const preview = Array.isArray(previewEntries)
+      ? previewEntries.find((entry) => entry && typeof entry === "object" && !Array.isArray(entry)
+        && (entry as Record<string, unknown>).backendId === binding.backend
+        && (entry as Record<string, unknown>).modelId === binding.modelId) as Record<string, unknown> | undefined
+      : undefined;
+    const nativeTools = preview?.nativeTools && typeof preview.nativeTools === "object" && !Array.isArray(preview.nativeTools)
+      ? (preview.nativeTools as Record<string, unknown>).verifiedTools
+      : undefined;
+    const verifiedTools = Array.isArray(nativeTools) ? nativeTools.filter((tool): tool is string => typeof tool === "string") : [];
+    if (!preview || preview.readiness !== "ready") {
+      blockers.push(createIssue({
+        code: "READINESS_CAPABILITY_PREVIEW_REQUIRED",
+        message: `Role "${roleId}" requests native tools for ${binding.backend}/${binding.modelId}, but no ready Capability Preview is available.`,
+        severity: "blocker",
+        roleId,
+        detail: { backend: binding.backend, modelId: binding.modelId, allowedTools: binding.allowedTools }
+      }));
+    } else {
+      const missingTools = binding.allowedTools.filter((tool) => !verifiedTools.includes(tool));
+      if (missingTools.length > 0) blockers.push(createIssue({
+        code: "READINESS_CAPABILITY_TOOL_MISSING",
+        message: `Role "${roleId}" requests tools not verified for ${binding.backend}/${binding.modelId}: ${missingTools.join(", ")}`,
+        severity: "blocker",
+        roleId,
+        detail: { missingTools, verifiedTools }
+      }));
+      const adapter = defaultBackendRegistry.getAdapter(binding.backend);
+      const resources = adapter?.getResourceCapabilities?.() ?? { filesystem: false, process: false, network: false };
+      try {
+        const environment = resolveEffectiveEnvironmentPolicy({
+          root: resolve(workdir, ".ogs", "readiness-staging", roleId),
+          resources,
+          intent: {
+            filesystem: binding.environment.filesystem as never,
+            process: binding.environment.process as never,
+            network: binding.environment.network as never,
+            limits: binding.environment.limits as never
+          },
+          limits: {
+            timeoutMs: 600_000,
+            maxOutputBytes: 2 * 1024 * 1024,
+            maxStorageBytes: 200 * 1024 * 1024
+          }
+        });
+        const unenforceableTools = binding.allowedTools.flatMap((tool) => {
+          const result = adapter?.validateToolResources?.(tool, environment);
+          return result && !result.allowed ? [`${tool}: ${result.reason ?? "resource boundary cannot be enforced"}`] : [];
+        });
+        if (unenforceableTools.length > 0) blockers.push(createIssue({
+          code: "READINESS_TOOL_RESOURCE_UNENFORCEABLE",
+          message: `Role "${roleId}" requests tools whose resource boundaries cannot be enforced: ${unenforceableTools.join("; ")}`,
+          severity: "blocker",
+          roleId,
+          detail: { backend: binding.backend, modelId: binding.modelId, unenforceableTools }
+        }));
+      } catch (error) {
+        blockers.push(createIssue({
+          code: "READINESS_ENVIRONMENT_UNENFORCEABLE",
+          message: `Role "${roleId}" requests an environment that ${binding.backend}/${binding.modelId} cannot enforce: ${errorMessage(error)}`,
+          severity: "blocker",
+          roleId,
+          detail: { backend: binding.backend, modelId: binding.modelId }
+        }));
+      }
+    }
+  }
 
   validateRoleEventContracts({ system, roles: roleInspections, blockers });
   validateDecisionCriteriaSchemas({ roles: roleInspections, blockers });
   validateCodexOutputSchemas({
     roles: roleInspections,
-    resolvedModelsByRoleId: resolvedModelSelection.resolvedByRoleId,
+    resolvedModelsByRoleId: resolvedHarnessesByRoleId,
     blockers
   });
 
@@ -1051,6 +979,6 @@ export async function inspectProjectReadiness(
       roles: roleInspections.map(({ declaredEvents: _declaredEvents, decisionCriteria: _decisionCriteria, outputSchemaValue: _outputSchemaValue, ...role }) => role)
     },
     modelCapabilityChecks,
-    providerHealth: buildProviderHealth(resolvedModelSelection.resolvedByRoleId)
+    providerHealth: buildProviderHealth(resolvedHarnessesByRoleId)
   };
 }

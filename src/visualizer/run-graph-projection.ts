@@ -194,7 +194,7 @@ export async function inspectRunGraphVisualization(args: {
       summary: {
         simulatedNodeCount: simulation.isSimulation ? (system?.roleIds.length ?? 0) : 0,
         simulatedExternalCallCount: simulation.isSimulation
-          ? nodes.filter((node) => node?.bindingKind === "model" || node?.bindingKind === "profile").length
+          ? nodes.filter((node) => node?.bindingKind === "model").length
           : 0,
         expectedPathRoleIds: expectedPathRoleIds.length > 0 ? expectedPathRoleIds : (system?.roleIds ?? []),
         mermaidLiveUrl: buildMermaidLiveUrl(systemSource)

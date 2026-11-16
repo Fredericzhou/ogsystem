@@ -4,15 +4,17 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import { compileExecutionSnapshot } from "../runtime/compiler.js";
 import { resolveProjectRoleRepoRoot, resolveProjectRoleRootDir } from "../runtime/bundled-repos.js";
 import { loadFlowContractPlan } from "../runtime/flow-contract.js";
+import { assertNoLegacyV1ExecutionAssets, loadExecutionBindingsV2 } from "../runtime/contract-v2-loader.js";
 import { readJsonFile } from "../runtime/json-file.js";
 import { loadModelCatalog, mergeModelCatalogWithLiveSnapshot } from "../runtime/model-catalog.js";
-import { loadModelSelection, resolveModelSelectionForSystem } from "../runtime/model-selection.js";
+import { resolveModelSelectionForSystem } from "../runtime/model-selection.js";
 import { parseSystemFromMermaidSource } from "../runtime/parse-mermaid.js";
 import { resolveOgsPaths } from "../runtime/project-lifecycle.js";
-import { loadLaws, loadProfiles, loadRolePackages, loadRuntimeConfig, loadTools, loadUserProfile } from "../runtime/runtime-loader.js";
+import { loadLaws, loadRolePackages, loadRuntimeConfig, loadUserProfile } from "../runtime/runtime-loader.js";
 import { resolveEffectiveLaw } from "../runtime/runtime-setup.js";
 import type { CompilerDiagnostic } from "../runtime/compiler.js";
 import type { ResolvedModelRuntimeConfig } from "../runtime/model-selection.js";
+import type { ExecutionBindingsV2 } from "../runtime/contract-v2.js";
 import type {
   CliTool,
   ExecutionProfile,
@@ -29,6 +31,7 @@ export type ProjectContext = {
   system: SystemDefinition;
   runtimeConfig: RuntimeConfig;
   modelSelection: unknown;
+  executionBindings: ExecutionBindingsV2;
   modelCatalog: unknown;
   laws: unknown;
   effectiveLaw: ReturnType<typeof resolveEffectiveLaw>;
@@ -177,12 +180,11 @@ async function contextToken(workdir: string, systemSource: string): Promise<stri
   const baseToken = (await Promise.all([
     fileToken(resolve(workdir, "system.mmd")),
     fileToken(paths.runtimePath),
-    fileToken(paths.modelSelectionPath),
+    fileToken(paths.executionBindingsPath),
     fileToken(paths.modelCatalogPath),
     fileToken(paths.lawsPath),
     fileToken(paths.userProfilePath),
-    fileToken(resolve(workdir, "profiles.json")),
-    fileToken(resolve(workdir, "tools.json")),
+    fileToken(resolve(workdir, ".ogs", "execution-bindings.json")),
     fileToken(paths.projectPath),
     fileToken(roleRootDir),
     ...roleTokens
@@ -196,23 +198,44 @@ export async function assembleProjectContextFromSource(args: {
   systemSource: string;
   modelCatalogModels?: ModelCatalogEntry[];
   modelCatalogGeneratedAt?: string;
+  executionBindings?: ExecutionBindingsV2;
 }): Promise<ProjectContext> {
   const paths = resolveOgsPaths(args.workdir);
   const systemPath = args.systemPath ?? resolve(args.workdir, "system.mmd");
   const system = parseSystemFromMermaidSource(args.systemSource);
   const runtimeConfig = await loadRuntimeConfig(undefined, args.workdir);
-  const modelSelection = await loadModelSelection(paths.modelSelectionPath);
+  const executionBindingsPath = resolve(args.workdir, ".ogs", "execution-bindings.json");
+  if (!(await stat(executionBindingsPath).then((value) => value.isFile()).catch(() => false))) {
+    throw new Error("V2_EXECUTION_BINDINGS_REQUIRED: project context requires .ogs/execution-bindings.json");
+  }
+  await assertNoLegacyV1ExecutionAssets(args.workdir);
+  const executionBindings = args.executionBindings ?? await loadExecutionBindingsV2(executionBindingsPath);
   const storedModelCatalog = await loadModelCatalog(paths.modelCatalogPath);
   const modelCatalog = mergeModelCatalogWithLiveSnapshot(
     storedModelCatalog,
     args.modelCatalogModels,
     args.modelCatalogGeneratedAt
   );
-  const resolvedModelSelection = resolveModelSelectionForSystem({ system, selection: modelSelection, catalog: modelCatalog });
+  const defaultTemplateId = executionBindings.defaults?.harnessTemplate;
+  const harnessModelSelection = {
+    configVersion: "3" as const,
+    roles: Object.fromEntries(system.roleIds.map((roleId) => {
+      const templateId = executionBindings.roles[roleId]?.harnessTemplate ?? defaultTemplateId;
+      const template = templateId ? executionBindings.harnessTemplates?.[templateId] : undefined;
+      if (!template) throw new Error(`V2_HARNESS_BINDING_REQUIRED: role "${roleId}" has no resolved Harness Template`);
+      return [roleId, { backend: template.backend, modelId: template.model }];
+    }))
+  };
+  const resolvedModelSelection = resolveModelSelectionForSystem({
+    system: { ...system, modelBinding: {} },
+    selection: harnessModelSelection,
+    catalog: modelCatalog,
+    sourceLabel: "Harness Template"
+  });
   const laws = await loadLaws(undefined, args.workdir);
   const userProfile = await loadUserProfile(undefined, args.workdir);
-  const profiles = await loadProfiles(undefined, args.workdir);
-  const tools = await loadTools(undefined, args.workdir);
+  const profiles: ExecutionProfile[] = [];
+  const tools: CliTool[] = [];
   const effectiveLaw = resolveEffectiveLaw(system, laws);
   const roleRepoRoot = resolveProjectRoleRepoRoot(args.workdir, runtimeConfig.roleRepo);
   const roleRootDir = resolveProjectRoleRootDir(args.workdir, runtimeConfig.roleRepo);
@@ -239,7 +262,8 @@ export async function assembleProjectContextFromSource(args: {
     systemSource: args.systemSource,
     system,
     runtimeConfig,
-    modelSelection,
+    modelSelection: harnessModelSelection,
+    executionBindings,
     modelCatalog,
     laws,
     effectiveLaw,

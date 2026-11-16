@@ -21,7 +21,8 @@ import {
 } from "../runtime/config.js";
 import { readJsonFile } from "../runtime/json-file.js";
 import { chooseDefaultModelFromCatalog, loadModelCatalog } from "../runtime/model-catalog.js";
-import { isDirectModelRef, loadModelSelection } from "../runtime/model-selection.js";
+import { isDirectModelRef } from "../runtime/model-selection.js";
+import { loadExecutionBindingsV2 } from "../runtime/contract-v2-loader.js";
 import { loadRolePackage } from "../runtime/role-repo.js";
 import { designDigest, loadSystemDesign } from "../design/index.js";
 import { logNl2MmdDebug } from "./logger.js";
@@ -205,9 +206,21 @@ export async function loadNl2MmdContext(args: {
   const roleRootDir = resolveProjectRoleRootDir(args.workdir, runtimeConfig.roleRepo);
   const templateRoleRootDir = resolveTemplateRoleRootDir();
   const modelCatalogPath = resolve(args.workdir, ".ogs", "model-catalog.json");
-  const modelSelectionPath = resolve(args.workdir, ".ogs", "model-selection.json");
   const rawModelCatalog = await loadModelCatalog(modelCatalogPath);
-  const modelSelection = await loadModelSelection(modelSelectionPath);
+  // NL2MMD may display available provider models, but Runtime bindings are
+  // sourced only from the v2 Harness document. Keep this projection in memory
+  // so generation never creates or reads the retired model-selection asset.
+  const executionBindings = await loadExecutionBindingsV2(resolve(args.workdir, ".ogs", "execution-bindings.json")).catch(() => undefined);
+  const modelSelection = executionBindings ? {
+    configVersion: "3" as const,
+    defaults: executionBindings.defaults?.harnessTemplate && executionBindings.harnessTemplates?.[executionBindings.defaults.harnessTemplate]
+      ? { backend: executionBindings.harnessTemplates[executionBindings.defaults.harnessTemplate].backend, modelId: executionBindings.harnessTemplates[executionBindings.defaults.harnessTemplate].model, variant: undefined, timeoutMs: executionBindings.harnessTemplates[executionBindings.defaults.harnessTemplate].environment.limits?.timeoutMs, maxOutputBytes: executionBindings.harnessTemplates[executionBindings.defaults.harnessTemplate].environment.limits?.maxOutputBytes }
+      : undefined,
+    roles: Object.fromEntries(Object.entries(executionBindings.roles).flatMap(([roleId, binding]) => {
+      const template = executionBindings.harnessTemplates?.[binding.harnessTemplate];
+      return template ? [[roleId, { backend: template.backend, modelId: template.model, variant: undefined, timeoutMs: template.environment.limits?.timeoutMs, maxOutputBytes: template.environment.limits?.maxOutputBytes }]] : [];
+    }))
+  } : undefined;
 
   const roleEntries = dedupeByKey(
     [
@@ -349,8 +362,7 @@ export async function loadNl2MmdContext(args: {
     runtimeConfigSource: runtimeConfigSource !== undefined ? "file" : "default",
     modelCatalogPath,
     modelCatalogLoaded: rawModelCatalog !== undefined,
-    modelSelectionPath,
-    modelSelectionLoaded: modelSelection !== undefined,
+    executionBindingsLoaded: executionBindings !== undefined,
     defaultModelRef: defaultModelRef ?? "(none)",
     lawsPath,
     lawsLoaded: lawsSource !== undefined,

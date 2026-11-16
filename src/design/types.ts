@@ -14,15 +14,9 @@ export type DesignDiagnostic = {
 
 export type DesignBinding =
   | {
-      kind: "model";
-      modelRef?: string;
-    }
-  | {
-      kind: "exec";
-      profileId?: string;
-    }
-  | {
-      kind: "noop";
+      /** Reference to a project or TeamVersion-owned Harness Template. */
+      kind: "harness";
+      harnessTemplate: string;
     };
 
 export type DesignSeat = {
@@ -73,6 +67,7 @@ export type StateDefinition = {
 export type RuntimePolicy = {
   maxTransitionsPerRun?: number;
   forbiddenToolRefs?: string[];
+  /** @deprecated v2 never executes noop; retained only while legacy diagnostics are removed. */
   allowNoopWithoutExecutionBinding?: boolean;
   errorFlowsEnabled?: boolean;
 };
@@ -85,7 +80,7 @@ export type DesignLayoutNode = {
 };
 
 export type SystemDesignDocument = {
-  schemaVersion: 1;
+  schemaVersion: 2;
   revision: number;
   intent: {
     objective: string;
@@ -126,8 +121,7 @@ export type DesignOperation =
   | { type: "setLoopPolicy"; seatId: string; loop?: DesignSeat["loop"] }
   | { type: "setReviewPolicy"; seatId: string; review?: DesignSeat["review"] }
   | { type: "setContextMapping"; seatId: string; contextMap: Record<string, string> }
-  | { type: "bindModel"; seatId: string; modelRef: string }
-  | { type: "bindTool"; seatId: string; profileId: string }
+  | { type: "bindHarness"; seatId: string; harnessTemplate: string }
   | { type: "setStateSchema"; state: StateDefinition }
   | { type: "setContracts"; contracts: unknown[] }
   | { type: "setPolicies"; policies: RuntimePolicy }

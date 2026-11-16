@@ -166,7 +166,8 @@ export function renderStudioGraphViewModel(
       if (existing?.isEdge()) {
         updateStudioEdge(existing, edge, routingByEdgeId.get(edge.id), undefined, showTechnicalDetails);
       } else {
-        graph.addEdge(studioEdgeMetadata(edge, routingByEdgeId.get(edge.id), showTechnicalDetails));
+        const added = graph.addEdge(studioEdgeMetadata(edge, routingByEdgeId.get(edge.id), showTechnicalDetails));
+        studioEdgeLabelSignatureByCell.set(added, studioEdgeLabelSignature(edge, showTechnicalDetails));
       }
     }
 
@@ -685,6 +686,8 @@ function studioEdgeMetadata(
     id: edge.id,
     source: routing?.source ?? { cell: edge.source },
     target: routing?.target ?? { cell: edge.target },
+    // Keep visible business routes below role content. The graph click bridge
+    // resolves edge geometry when a node captures the browser hit target.
     zIndex: 1,
     data: { studioEdge: edge },
     labels: studioEdgeLabels(edge, undefined, showTechnicalDetails),
@@ -700,6 +703,18 @@ type StudioEdgeLabelPositions = { summary: StudioEdgeLabelPosition; topology?: S
 type StudioLabelRect = { left: number; right: number; top: number; bottom: number };
 type StudioEdgeLabelKind = "summary" | "topology";
 const studioLabelPassByGraph = new WeakMap<Graph, number>();
+const studioEdgeLabelSignatureByCell = new WeakMap<Edge, string>();
+
+function studioEdgeLabelSignature(
+  edge: GraphViewModelEdge,
+  showTechnicalDetails: boolean
+): string {
+  return JSON.stringify(studioEdgeLabels(edge, undefined, showTechnicalDetails).map((label) => {
+    const withoutPosition = { ...label } as Record<string, unknown>;
+    delete withoutPosition.position;
+    return withoutPosition;
+  }));
+}
 
 function scheduleStudioEdgeLabelPosition(
   graph: Graph,
@@ -840,13 +855,11 @@ function findStudioEdgeLabelPosition(
     top: obstacle.top - nodeClearance,
     bottom: obstacle.bottom + nodeClearance
   }));
-  const summaryText = formatStudioEdgeDisplayLabel(edge, showTechnicalDetails);
-  const inlineTopology = estimateStudioEdgeSummaryLabelWidth(summaryText) > STUDIO_EDGE_SUMMARY_LABEL_MAX_WIDTH
-    ? formatStudioEdgeTopologyLabel(edge)
-    : "";
-  const summaryWidth = estimateStudioEdgeSummaryLabelWidth(inlineTopology ? `${inlineTopology} ${summaryText}` : summaryText);
-  const summaryHeight = Math.ceil(summaryWidth / STUDIO_EDGE_SUMMARY_LABEL_MAX_WIDTH) * 20 + 12;
-  const height = Math.max(labelSize.height, summaryHeight) + 8;
+  // The rendered SVG text is the authoritative geometry. The estimate is only
+  // useful before X6 has laid out a label; once labelsReady is true, using the
+  // estimate can reserve several phantom lines and reject the clear positions
+  // below a role node. Keep a conservative padding around the measured box.
+  const height = labelSize.height + 8;
   const preferredFraction = Number.isFinite(currentPosition?.distance) ? currentPosition.distance : 0.5;
   const fractions = [0.5, 0.4, 0.6, 0.3, 0.7, 0.2, 0.8, 0.1, 0.9, 0.05, 0.95, 0.02, 0.98];
   // Keep labels attached to their route. Long-range offsets avoid collisions
@@ -915,21 +928,17 @@ function findStudioEdgeLabelPosition(
     (candidate.bounds.left < viewport.left || candidate.bounds.right > viewport.right ||
       candidate.bounds.top < viewport.top || candidate.bounds.bottom > viewport.bottom ? 10000 : 0) +
        Math.abs(candidate.fraction - preferredFraction) * 10 + Math.abs(candidate.offset - preferredOffset) * 0.01;
-  const currentTopology = currentLabels[0]?.position as StudioEdgeLabelPosition | undefined;
-  const currentSummary = currentLabels[formatStudioEdgeTopologyLabel(edge) ? 1 : 0]?.position as StudioEdgeLabelPosition | undefined;
   const setPosition = (position: StudioEdgeLabelPosition): void => {
-    const nextLabels = studioEdgeLabels(edge, {
-      summary: labelKind === "summary" ? position : currentSummary ?? { distance: 0.5, offset: 0 },
-      ...(formatStudioEdgeTopologyLabel(edge)
-        ? { topology: labelKind === "topology" ? position : currentTopology ?? { distance: 0.5, offset: -15 } }
-        : {})
-    }, showTechnicalDetails);
     const liveLabels = cell.getLabels();
     const livePosition = liveLabels[labelIndex]?.position as StudioEdgeLabelPosition | undefined;
     if (livePosition?.distance === position.distance && livePosition.offset === position.offset) return;
-    cell.setLabels(nextLabels);
+    // Update only the position field. setLabels() rebuilds every SVG label and
+    // leaves locators observing a detached node during the positioning pass.
+    // X6 treats a nested prop update as a transform-only label update, so the
+    // label DOM remains stable while collision candidates are evaluated.
+    cell.prop(["labels", String(labelIndex), "position"], position, { silent: true });
     const updatedView = graph.findViewByCell(cell) as unknown as StudioEdgeViewGeometry | null;
-    (updatedView as unknown as { updateLabelPositions?: () => void } | null)?.updateLabelPositions?.();
+    updatedView?.updateLabelPositions?.();
   };
   const currentLabel = (): SVGGElement | null => {
     const currentView = graph.findViewByCell(cell) as unknown as StudioEdgeViewGeometry | null;
@@ -953,9 +962,6 @@ function findStudioEdgeLabelPosition(
   if (!rankedCandidates.length) return undefined;
   const firstCandidate = rankedCandidates[0];
   setPosition(firstCandidate.position);
-  if (width > 80) {
-    return { position: firstCandidate.position, bounds: firstCandidate.bounds };
-  }
   const firstBounds = actualBounds();
   const firstScore = actualScore(firstBounds);
   if (firstScore === 0) return { position: firstCandidate.position, bounds: firstBounds };
@@ -1111,11 +1117,24 @@ function updateStudioEdge(
   showTechnicalDetails = true
 ): void {
   cell.setData({ studioEdge: edge });
-  cell.setSource(routing?.source ?? { cell: edge.source });
-  cell.setTarget(routing?.target ?? { cell: edge.target });
-  cell.setLabels(studioEdgeLabels(edge, labelPosition, showTechnicalDetails));
+  const nextSource = routing?.source ?? { cell: edge.source };
+  const nextTarget = routing?.target ?? { cell: edge.target };
+  if (JSON.stringify(cell.getSource()) !== JSON.stringify(nextSource)) cell.setSource(nextSource);
+  if (JSON.stringify(cell.getTarget()) !== JSON.stringify(nextTarget)) cell.setTarget(nextTarget);
+  const nextLabels = studioEdgeLabels(edge, labelPosition, showTechnicalDetails);
+  const labelSignature = studioEdgeLabelSignature(edge, showTechnicalDetails);
+  // Projection refreshes are frequent (resize, theme, runtime overlay). Keep
+  // existing label nodes and their collision-calculated positions when the
+  // label content is unchanged; setLabels() otherwise rebuilds every SVG node.
+  if (studioEdgeLabelSignatureByCell.get(cell) !== labelSignature) {
+    cell.setLabels(nextLabels);
+    studioEdgeLabelSignatureByCell.set(cell, labelSignature);
+  }
   cell.attr(studioEdgeAttrs(edge));
-  cell.setRouter(routing?.router ?? STUDIO_EDGE_ORTH_ROUTER);
-  cell.setVertices(routing?.vertices ?? []);
-  cell.setConnector(routing?.connector ?? STUDIO_EDGE_CONNECTOR);
+  const nextRouter = routing?.router ?? STUDIO_EDGE_ORTH_ROUTER;
+  const nextVertices = routing?.vertices ?? [];
+  const nextConnector = routing?.connector ?? STUDIO_EDGE_CONNECTOR;
+  if (JSON.stringify(cell.getRouter()) !== JSON.stringify(nextRouter)) cell.setRouter(nextRouter);
+  if (JSON.stringify(cell.getVertices()) !== JSON.stringify(nextVertices)) cell.setVertices(nextVertices);
+  if (JSON.stringify(cell.getConnector()) !== JSON.stringify(nextConnector)) cell.setConnector(nextConnector);
 }

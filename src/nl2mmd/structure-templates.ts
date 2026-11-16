@@ -267,18 +267,18 @@ const TEMPLATES: readonly Nl2MmdStructureTemplate[] = [
     semanticHintLabels: ["binding_policy"],
     requiredMetadataKeys: ["system.id", "system.version", "law.global"],
     requiredSlots: [
-      slot("exec-binding", "Declare a different local-shell exec-bound role.", ["exec.bind.publisher=publish-profile"]),
+      slot("harness-binding", "Record that technical binding is configured separately in a Harness Template.", ["Harness Template: publisher"]),
       slot("role-note", "Keep each graph node as a role and configure Agent backend/model choices outside Mermaid.", ["review is an Agent role; publisher uses an execution profile"])
     ],
     optionalSlots: [
-      slot("binding-policy", "Capture any explicit binding policy or rationale.", ["keep exec.bind only for local shell roles"], false)
+      slot("binding-policy", "Capture any explicit binding policy or rationale.", ["keep Backend and tools in execution-bindings.json"], false)
     ],
     skeleton: [
       "flowchart TD",
       "%% system.id=<system.id>",
       "%% system.version=1.0.0",
       "%% law.global=<law.ref>",
-      "%% exec.bind.<exec-role>=<profile-id>",
+      "Technical Backend and tool bindings belong in .ogs/execution-bindings.json, not Mermaid metadata.",
       "start[开始] -->|START| <model>[Role:<model-role>]",
       "<model>[Role:<model-role>] -->|NEXT| <exec>[Role:<exec-role>]",
       "<exec>[Role:<exec-role>] -->|READY| end[结束]"

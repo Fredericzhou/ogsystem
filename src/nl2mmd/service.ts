@@ -94,7 +94,7 @@ function resolveConversationModel(args: {
   const modelRef = args.modelRef ?? args.context.defaultModelRef;
   if (!isDirectModelRef(modelRef)) {
     throw new Error(
-      "NL2MMD requires a direct model ref in provider/model format. Set --model or .ogs/model-selection.json defaults."
+      "NL2MMD requires a direct authoring model ref in provider/model format. Set --model; Runtime Harness bindings belong in .ogs/execution-bindings.json."
     );
   }
   return {

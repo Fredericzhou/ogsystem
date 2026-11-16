@@ -70,7 +70,9 @@ export const kimiBackendDescriptor: BackendDescriptor = {
 };
 
 export const kimiBackendAdapter: BackendAdapter = {
-  backendId: "kimi", verifiedRunnable: true,
+  // ACP model discovery is not native tool discovery. Stay unavailable until
+  // the adapter can prove and constrain its tool registry.
+  backendId: "kimi", verifiedRunnable: false,
   async discover({ workdir }) {
     const configuredModels = await discoverConfiguredKimiModels();
     const command = await resolveExecutable("kimi", [join(process.env.KIMI_HOME || join(homedir(), ".kimi-code"), "bin", "kimi")]);

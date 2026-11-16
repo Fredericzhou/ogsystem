@@ -722,9 +722,12 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
 
     if (key.startsWith("model.bind.")) {
       const roleId = key.slice("model.bind.".length);
-      if (roleId) {
-        modelBinding[roleId] = value;
-      }
+      failMermaid({
+        stage: "validate",
+        errorCode: "MERMAID_LEGACY_MODEL_BINDING",
+        message: `model.bind.${roleId} is a v1 execution binding; configure the role in .ogs/execution-bindings.json`,
+        lineNumber: metadataLine(key)
+      });
       continue;
     }
 
@@ -942,11 +945,12 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
         lineNumber: metadataLine(key)
       });
     }
-
-    const roleId = key.slice("exec.bind.".length);
-    if (roleId) {
-      executionBinding[roleId] = value;
-    }
+    failMermaid({
+      stage: "validate",
+      errorCode: "MERMAID_LEGACY_EXEC_BINDING",
+      message: `exec.bind.${key.slice("exec.bind.".length)} is a v1 binding; configure the role in .ogs/execution-bindings.json`,
+      lineNumber: metadataLine(key)
+    });
   }
 
   if (handoffContracts && !handoffMode) {
@@ -987,44 +991,6 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
       stage: "validate",
       errorCode: "MERMAID_MISSING_TERMINAL",
       message: "Connect at least one business role to end[结束]."
-    });
-  }
-
-  for (const roleId of Object.keys(executionBinding)) {
-    if (!roleIds.includes(roleId)) {
-      failMermaid({
-        stage: "validate",
-        errorCode: "MERMAID_UNDEFINED_ROLE_REF",
-        message: `exec.bind.${roleId} references undefined role`,
-        lineNumber: metadataLine(`exec.bind.${roleId}`)
-      });
-    }
-  }
-
-  for (const roleId of Object.keys(modelBinding)) {
-    if (!roleIds.includes(roleId)) {
-      failMermaid({
-        stage: "validate",
-        errorCode: "MERMAID_UNDEFINED_ROLE_REF",
-        message: `model.bind.${roleId} references undefined role`,
-        lineNumber: metadataLine(`model.bind.${roleId}`)
-      });
-    }
-  }
-
-  for (const roleId of roleIds) {
-    const modelRef = modelBinding[roleId];
-    const executionRef = executionBinding[roleId];
-    if (!modelRef || !executionRef) {
-      continue;
-    }
-    failMermaid({
-      stage: "validate",
-      errorCode: "MERMAID_ROLE_BINDING_CONFLICT",
-      message:
-        `Role "${roleId}" defines both model.bind.${roleId}=${modelRef} and ` +
-        `exec.bind.${roleId}=${executionRef}. A role must use exactly one binding type.`,
-      lineNumber: metadataLine(`model.bind.${roleId}`) ?? metadataLine(`exec.bind.${roleId}`)
     });
   }
 

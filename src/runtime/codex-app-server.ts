@@ -5,13 +5,40 @@ import { hasExited, terminateChildProcessTree, waitForChildExit } from "./child-
 
 type JsonRecord = Record<string, unknown>;
 type PendingRequest = { resolve(value: unknown): void; reject(error: Error): void; timer: NodeJS.Timeout };
+type CompletionFailure = (error: Error) => void;
 
 export type CodexModelInfo = { id: string; displayName: string; isDefault?: boolean };
+
+/**
+ * Codex's structured-output endpoint requires every object schema to declare
+ * `additionalProperties: false`. Role schemas remain the Runtime source of
+ * truth; this immutable request projection only satisfies the Backend wire
+ * contract and is validated against the original schema after execution.
+ */
+export function projectCodexStrictSchema(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(projectCodexStrictSchema);
+  if (!value || typeof value !== "object") return value;
+  const source = value as JsonRecord;
+  const result: JsonRecord = {};
+  for (const [key, child] of Object.entries(source)) result[key] = projectCodexStrictSchema(child);
+  if (result.type === "object") {
+    // Codex requires every object to carry an explicit property map and a
+    // required entry for every declared property, including empty objects.
+    const properties = result.properties && typeof result.properties === "object" && !Array.isArray(result.properties)
+      ? result.properties as JsonRecord
+      : {};
+    result.properties = properties;
+    result.required = Object.keys(properties);
+    result.additionalProperties = false;
+  }
+  return result;
+}
 
 export class CodexAppServerClient {
   private readonly child: ChildProcessWithoutNullStreams;
   private readonly pending = new Map<string, PendingRequest>();
   private readonly waiters = new Set<(message: JsonRecord) => void>();
+  private readonly completionFailures = new Set<CompletionFailure>();
   private nextId = 0;
   private stderr = "";
   private closed = false;
@@ -106,6 +133,8 @@ export class CodexAppServerClient {
       pending.reject(error);
       this.pending.delete(id);
     }
+    for (const reject of this.completionFailures) reject(error);
+    this.completionFailures.clear();
   }
 
   async listModels(): Promise<CodexModelInfo[]> {
@@ -138,6 +167,7 @@ export class CodexAppServerClient {
     sessionId?: string;
     signal?: AbortSignal;
     workspaceCapabilityPolicy?: { root: string; read?: boolean; write?: boolean; command?: boolean };
+    onEvent?: (message: JsonRecord) => void;
   }): Promise<{ sessionId: string; stdout: string; messageId?: string }> {
     const threadId = args.sessionId || undefined;
     const canWrite = args.workspaceCapabilityPolicy?.write === true;
@@ -164,8 +194,16 @@ export class CodexAppServerClient {
     const sessionId = String(threadRecord.id ?? threadId ?? "");
     if (!sessionId) throw new Error("Codex app-server did not return a thread id");
 
+    let finishCompleted: ((error?: Error, value?: JsonRecord) => void) | undefined;
     const completed = new Promise<JsonRecord>((resolve, reject) => {
-      const timeout = setTimeout(() => finish(new Error(`Codex role ${args.roleId} timed out after ${args.timeoutMs}ms`)), args.timeoutMs);
+      let rejectCompletion: CompletionFailure | undefined;
+      const timeout = setTimeout(() => {
+        // Stop the server-side turn before releasing the Runtime Role. Without
+        // this interrupt a timed-out model can keep consuming the shared
+        // app-server and make retries or close hang behind stale work.
+        void this.request("turn/interrupt", { threadId: sessionId }).catch(() => undefined);
+        finish(new Error(`Codex role ${args.roleId} timed out after ${args.timeoutMs}ms`));
+      }, args.timeoutMs);
       const abort = () => {
         void this.request("turn/interrupt", { threadId: sessionId }).catch(() => undefined);
         finish(new Error(`Codex role ${args.roleId} was cancelled`));
@@ -174,10 +212,14 @@ export class CodexAppServerClient {
         clearTimeout(timeout);
         args.signal?.removeEventListener("abort", abort);
         this.waiters.delete(onMessage);
+        if (rejectCompletion) this.completionFailures.delete(rejectCompletion);
         if (error) reject(error);
         else resolve(value ?? {});
       };
+      rejectCompletion = (error) => finish(error);
+      finishCompleted = finish;
       const onMessage = (message: JsonRecord) => {
+        args.onEvent?.(message);
         if (message.method !== "turn/completed") return;
         const params = message.params as JsonRecord | undefined;
         if (params?.threadId !== sessionId) return;
@@ -185,21 +227,31 @@ export class CodexAppServerClient {
         finish(undefined, turn ?? {});
       };
       this.waiters.add(onMessage);
+      this.completionFailures.add(rejectCompletion);
       args.signal?.addEventListener("abort", abort, { once: true });
       if (args.signal?.aborted) abort();
     });
 
-    await this.request("turn/start", {
-      threadId: sessionId,
-      cwd: args.cwd,
-      model: args.modelId,
-      approvalPolicy,
-      sandboxPolicy: canWrite || canCommand
-        ? { type: "workspaceWrite", writableRoots: canWrite ? [args.workspaceCapabilityPolicy?.root ?? args.cwd] : [] }
-        : { type: "readOnly" },
-      outputSchema: args.schema,
-      input: [{ type: "text", text: args.prompt, text_elements: [] }]
-    });
+    try {
+      await this.request("turn/start", {
+        threadId: sessionId,
+        cwd: args.cwd,
+        model: args.modelId,
+        approvalPolicy,
+        sandboxPolicy: canWrite || canCommand
+          ? { type: "workspaceWrite", writableRoots: canWrite ? [args.workspaceCapabilityPolicy?.root ?? args.cwd] : [] }
+          : { type: "readOnly" },
+        outputSchema: projectCodexStrictSchema(args.schema),
+        input: [{ type: "text", text: args.prompt, text_elements: [] }]
+      });
+    } catch (error) {
+      const failure = error instanceof Error ? error : new Error(String(error));
+      finishCompleted?.(failure);
+      // Consume the waiter rejection because this path does not reach the
+      // normal `await completed` below.
+      await completed.catch(() => undefined);
+      throw failure;
+    }
     const turn = await completed;
     if (turn.status !== "completed") {
       throw new Error(`Codex turn ended with status ${String(turn.status ?? "unknown")}${turn.error ? `: ${JSON.stringify(turn.error)}` : ""}`);

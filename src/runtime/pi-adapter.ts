@@ -1,8 +1,9 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { homedir } from "node:os";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { boundedText, modelFromEnv, resolveExecutable, schemaInstruction } from "./cli-adapter-support.js";
 import { createAgentEventEmitter } from "./agent-client-types.js";
@@ -31,11 +32,17 @@ class PiRpcSession {
     });
   }
 
-  static async start(command: string, cwd: string, modelId?: string, sessionId?: string): Promise<PiRpcSession> {
+  static async start(command: string, cwd: string, modelId?: string, sessionId?: string, tools?: string[]): Promise<PiRpcSession> {
     const args = ["--mode", "rpc"];
     if (!sessionId) args.push("--no-session");
     if (modelId && modelId !== "default") args.push("--model", modelId);
     if (sessionId) args.push("--session-id", sessionId);
+    if (tools !== undefined) {
+      // Pi owns the native tool names. `--no-tools` makes the binding an
+      // explicit allowlist instead of inheriting the CLI default tool set.
+      args.push("--no-tools");
+      if (tools.length > 0) args.push("--tools", tools.join(","));
+    }
     const child = spawn(command, args, { cwd, stdio: ["pipe", "pipe", "pipe"], shell: process.platform === "win32" });
     const session = new PiRpcSession(child);
     try {
@@ -100,6 +107,31 @@ class PiRpcSession {
     if (this.child.exitCode !== null || this.child.signalCode !== null) return;
     this.child.stdin.end();
     if (!await waitForChildExit(this.child, 2000)) await terminateChildProcessTree(this.child);
+  }
+}
+
+const piNativeToolAliases: Record<string, string> = {
+  "workspace.read": "read",
+  "workspace.list": "ls",
+  "workspace.glob": "find",
+  "workspace.search": "grep",
+  "workspace.patch_text": "edit",
+  "workspace.write": "write",
+  "workspace.run": "bash",
+  list: "ls",
+  glob: "find"
+};
+
+/** Map the frozen v2 tool set to Pi's native CLI tool identifiers. */
+export function mapPiEffectiveTools(effectiveTools: string[] | undefined): string[] | undefined {
+  if (effectiveTools === undefined) return undefined;
+  return [...new Set(effectiveTools.map((tool) => piNativeToolAliases[tool] ?? tool))].sort();
+}
+
+/** Pi must fail closed when the backend returns more bytes than the frozen quota. */
+export function assertPiOutputWithinLimit(value: string, maxOutputBytes: number): void {
+  if (Buffer.byteLength(value, "utf8") > maxOutputBytes) {
+    throw new Error(`V2_OUTPUT_QUOTA_EXCEEDED: Pi output exceeded maxOutputBytes (${maxOutputBytes})`);
   }
 }
 
@@ -173,6 +205,29 @@ export const piBackendDescriptor: BackendDescriptor = {
 export const piBackendAdapter: BackendAdapter = {
   backendId: "pi",
   verifiedRunnable: true,
+  adapterVersion: "pi-rpc-v2-native-tools-1",
+  getResourceCapabilities() {
+    // Pi's RPC cwd is not a security boundary for absolute paths or symlinks.
+    // Text-only Roles remain usable; explicit filesystem/process tools fail
+    // closed until a real sandbox/path guard is available.
+    return { filesystem: false, process: false, network: false };
+  },
+  mapEnvironmentPolicy(policy) {
+    return { root: policy.root, read: policy.filesystem.read, write: policy.filesystem.write, command: policy.process, network: policy.network };
+  },
+  validateToolResources(toolId, policy) {
+    const native = piNativeToolAliases[toolId] ?? toolId;
+    if (["read", "ls", "find", "grep"].includes(native) && !policy.filesystem.read) {
+      return { allowed: false, reason: "filesystem reads are disabled by the effective environment policy" };
+    }
+    if (["write", "edit"].includes(native) && !policy.filesystem.write) {
+      return { allowed: false, reason: "filesystem writes are disabled by the effective environment policy" };
+    }
+    if (native === "bash" && !policy.process) {
+      return { allowed: false, reason: "process execution is disabled by the effective environment policy" };
+    }
+    return { allowed: true };
+  },
   async discover({ workdir }) {
     const command = await resolveExecutable("pi", [join(homedir(), ".local", "bin", "pi")]);
     const configuredModels = await discoverConfiguredPiModels();
@@ -191,21 +246,79 @@ export const piBackendAdapter: BackendAdapter = {
       return { status: "installed_but_broken", detail: error instanceof Error ? error.message : String(error), models: [] };
     }
   },
+  async discoverNativeTools({ modelId, workdir, timeoutMs }) {
+    const command = await resolveExecutable("pi", [join(homedir(), ".local", "bin", "pi")]);
+    if (!command) throw new Error("Pi CLI is not installed.");
+    const root = await mkdtemp(join(tmpdir(), "ogs-pi-capability-"));
+    const writePath = join(root, "probe-write.txt");
+    const bashPath = join(root, "probe-bash.txt");
+    const observed = new Set<string>();
+    let client: PiRpcSession | undefined;
+    let unsubscribe: (() => void) | undefined;
+    try {
+      client = await PiRpcSession.start(command, root, modelId);
+      unsubscribe = client.onMessage((message) => {
+        if ((message.type === "tool_execution_start" || message.type === "tool_execution_end") && typeof message.toolName === "string") {
+          observed.add(message.toolName);
+        }
+      });
+      const settled = new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error(`Pi capability probe timed out after ${timeoutMs}ms`)), timeoutMs);
+        let stop: (() => void) | undefined;
+        stop = client?.onMessage((message) => {
+          if (message.type !== "agent_settled") return;
+          clearTimeout(timer);
+          stop?.();
+          resolve();
+        });
+      });
+      await client.request("prompt", {
+        message: [
+          "This is a native Pi tool capability probe in a disposable workspace.",
+          `Use the native write tool to create ${writePath} containing exactly PI_WRITE_OK.`,
+          `Use the native bash tool to create ${bashPath} containing exactly PI_BASH_OK.`,
+          "Complete both tool calls, then finish."
+        ].join("\n")
+      }, timeoutMs);
+      await settled;
+      const [writeContents, bashContents] = await Promise.all([
+        readFile(writePath, "utf8"),
+        readFile(bashPath, "utf8")
+      ]);
+      if (writeContents.trim() !== "PI_WRITE_OK" || bashContents.trim() !== "PI_BASH_OK") {
+        throw new Error("Pi capability probe wrote unexpected sentinel contents");
+      }
+      if (!observed.has("write") || !observed.has("bash")) {
+        throw new Error(`Pi capability probe did not observe both native tool events: ${[...observed].sort().join(", ") || "none"}`);
+      }
+      return {
+        verifiedTools: [...observed].sort(),
+        detail: "Pi native tool probe verified observed RPC tool events and sentinel files.",
+        resources: this.getResourceCapabilities?.()
+      };
+    } finally {
+      unsubscribe?.();
+      await client?.close();
+      await rm(root, { recursive: true, force: true });
+    }
+  },
   async startRun({ targetDir, runContext }): Promise<BackendRunSession> {
     const command = await resolveExecutable("pi", [join(homedir(), ".local", "bin", "pi")]);
     if (!command) throw new Error("Pi CLI is not installed.");
     const clients = new Map<string, PiRpcSession>();
-    const getClient = async (modelId: string, sessionKey: string, sessionId?: string) => {
-      const key = `${modelId || modelFromEnv("OGS_PI_MODEL")}:${sessionKey}`;
+    const getClient = async (modelId: string, sessionKey: string, executionDirectory: string, sessionId?: string, effectiveTools?: string[]) => {
+      const nativeTools = mapPiEffectiveTools(effectiveTools);
+      const key = `${modelId || modelFromEnv("OGS_PI_MODEL")}:${sessionKey}:${executionDirectory}:${nativeTools?.join(",") ?? "default"}`;
       let client = clients.get(key);
-      if (!client) { client = await PiRpcSession.start(command, targetDir, modelId, sessionId); clients.set(key, client); }
+      if (!client) { client = await PiRpcSession.start(command, executionDirectory, modelId, sessionId, nativeTools); clients.set(key, client); }
       return client;
     };
     return {
       async execute(request) {
         const phase = request.promptCallPhase ?? "primary";
         await request.onPromptCall?.({ phase, ordinal: 1, stage: "before", prompt: request.prompt });
-        const client = await getClient(request.modelId, request.sessionKey ?? request.roleId, request.sessionId);
+        const executionDirectory = request.executionDirectory ?? request.directory;
+        const client = await getClient(request.modelId, request.sessionKey ?? request.roleId, executionDirectory, request.sessionId, request.effectiveTools);
         const requestedReasoning = (request as BackendExecuteRequestWithReasoning).reasoningEffort;
         const frozenReasoning = request.effectiveReasoningEffort;
         let reasoningCapability: ReasoningCapability | undefined;
@@ -234,7 +347,7 @@ export const piBackendAdapter: BackendAdapter = {
         }
         const state = await client.request("get_state");
         const sessionId = typeof (state.data as Record<string, unknown> | undefined)?.sessionId === "string" ? String((state.data as Record<string, unknown>).sessionId) : randomUUID();
-        const emitter = createAgentEventEmitter({ runId: request.runId ?? runContext.runId, roleId: request.roleId, executionId: request.executionId ?? "unknown", attempt: request.attempt ?? 1, backend: "pi", sessionId, onEvent: request.onEvent });
+        const emitter = createAgentEventEmitter({ runId: request.runId ?? runContext.runId, roleId: request.roleId, executionId: request.executionId ?? "unknown", attempt: request.attempt ?? 1, backend: "pi", model: request.modelId, sessionId, policyDigest: request.policyDigest, onEvent: request.onEvent });
         let output = "";
         const unsubscribe = client.onMessage((message) => {
           if (message.type === "message_update") {
@@ -259,6 +372,7 @@ export const piBackendAdapter: BackendAdapter = {
           await client.request("prompt", { message: `${request.prompt}${schemaInstruction(request.schema)}` }, request.timeoutMs);
           await settled;
           if (!output) { const last = await client.request("get_last_assistant_text"); output = String((last.data as Record<string, unknown> | undefined)?.text ?? ""); }
+          assertPiOutputWithinLimit(output, request.maxOutputBytes);
           output = boundedText(output, request.maxOutputBytes);
           await emitter.emit({ type: "turn_completed", output });
           return {

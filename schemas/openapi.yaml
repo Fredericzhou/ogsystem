@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: OGSystem Control Plane API
-  version: 1.0.0
+  version: 2.0.0
   description: >-
     Local-first control-plane API. Loopback mode records the server's OS account. Non-loopback
     listeners use HTTPS and the configured Basic Auth operator identity. Audit principals are
@@ -15,29 +15,29 @@ servers:
 security:
   - basicAuth: []
 x-ogs-control-plane:
-  version: v1
+  version: v2
   identityProvider: Loopback uses the local OS identity; non-loopback uses HTTPS Basic Auth from OGS_VIS_USERNAME and OGS_VIS_PASSWORD.
   anonymousPaths: [/healthz, /readyz]
   audit: Mutating run operations persist the authenticated principal with the action.
 paths:
-  /api/v1/ogs/workspace:
+  /api/v2/ogs/workspace:
     get:
       operationId: getWorkspace
       responses:
         "200": { description: Current project workspace and readiness summary. }
         "401": { $ref: "#/components/responses/ApiError" }
-  /api/v1/ogs/workspace/design:
+  /api/v2/ogs/workspace/design:
     get:
       operationId: getProjectDesign
       responses:
         "200": { description: Current System Design Document and revision state. }
-  /api/v1/ogs/workspace/design/context:
+  /api/v2/ogs/workspace/design/context:
     get:
       operationId: getProjectDesignContext
       responses:
         "200": { description: Canonical design, runtime observations, and context-tuning capabilities. }
         "409": { $ref: "#/components/responses/ApiError" }
-  /api/v1/ogs/workspace/design/validate:
+  /api/v2/ogs/workspace/design/validate:
     post:
       operationId: validateProjectDesign
       requestBody:
@@ -51,7 +51,7 @@ paths:
                 design: { $ref: "#/components/schemas/SystemDesignDocument" }
       responses:
         "200": { description: Design diagnostics. }
-  /api/v1/ogs/workspace/design/apply:
+  /api/v2/ogs/workspace/design/apply:
     post:
       operationId: applyProjectDesignChangeSet
       requestBody:
@@ -66,7 +66,7 @@ paths:
       responses:
         "200": { description: Applied design and incremented revision. }
         "409": { $ref: "#/components/responses/ApiError" }
-  /api/v1/ogs/workspace/design/import/mermaid:
+  /api/v2/ogs/workspace/design/import/mermaid:
     post:
       operationId: importMermaidDesign
       requestBody:
@@ -80,7 +80,7 @@ paths:
                 systemSource: { type: string, minLength: 1 }
       responses:
         "200": { description: Validated design preview. }
-  /api/v1/ogs/workspace/design/export/mermaid:
+  /api/v2/ogs/workspace/design/export/mermaid:
     post:
       operationId: exportDesignMermaid
       requestBody:
@@ -94,24 +94,24 @@ paths:
                 design: { $ref: "#/components/schemas/SystemDesignDocument" }
       responses:
         "200": { description: Deterministic Mermaid export. }
-  /api/v1/ogs/workspace/system:
+  /api/v2/ogs/workspace/system:
     get:
       operationId: getProjectSystem
       responses:
         "200": { description: Current system source and metadata. }
-  /api/v1/ogs/workspace/system/validate:
+  /api/v2/ogs/workspace/system/validate:
     post:
       operationId: validateProjectSystem
       responses:
         "200": { description: Validation diagnostics. }
         "403": { $ref: "#/components/responses/ApiError" }
-  /api/v1/ogs/workspace/system/save:
+  /api/v2/ogs/workspace/system/save:
     post:
       operationId: saveProjectSystem
       responses:
         "200": { description: Saved system source and validation state. }
         "403": { $ref: "#/components/responses/ApiError" }
-  /api/v1/ogs/runs:
+  /api/v2/ogs/runs:
     get:
       operationId: listRuns
       responses:
@@ -119,7 +119,7 @@ paths:
           description: Indexed runs and generation time.
         "401":
           $ref: "#/components/responses/ApiError"
-  /api/v1/sessions:
+  /api/v2/sessions:
     get:
       operationId: listSessions
       responses:
@@ -129,7 +129,7 @@ paths:
       responses:
         "201": { description: New Session pinned to the current System and execution configuration. }
         "403": { $ref: "#/components/responses/ApiError" }
-  /api/v1/sessions/{sessionId}:
+  /api/v2/sessions/{sessionId}:
     get:
       operationId: getSession
       parameters:
@@ -140,7 +140,7 @@ paths:
       responses:
         "200": { description: Session metadata and its Turn/Run status list. }
         "404": { $ref: "#/components/responses/ApiError" }
-  /api/v1/sessions/{sessionId}/turns:
+  /api/v2/sessions/{sessionId}/turns:
     post:
       operationId: submitSessionTurn
       parameters:
@@ -166,7 +166,7 @@ paths:
         "202": { description: Turn accepted with a preallocated turnId and runId. }
         "400": { $ref: "#/components/responses/ApiError" }
         "409": { description: Session is stale or idempotency key was reused with different input. }
-  /api/v1/sessions/{sessionId}/events:
+  /api/v2/sessions/{sessionId}/events:
     get:
       operationId: streamSessionEvents
       parameters:
@@ -182,7 +182,7 @@ paths:
           description: Resumable server-sent Session and Turn events.
           content:
             text/event-stream: {}
-  /api/v1/ogs/runs/{runId}:
+  /api/v2/ogs/runs/{runId}:
     get:
       operationId: getRun
       parameters:
@@ -192,7 +192,7 @@ paths:
           description: Run summary, current state, and projections.
         "404":
           $ref: "#/components/responses/ApiError"
-  /api/v1/ogs/runs/{runId}/events:
+  /api/v2/ogs/runs/{runId}/events:
     get:
       operationId: getRunEvents
       parameters:
@@ -203,7 +203,7 @@ paths:
       responses:
         "200":
           description: Cursor-addressed event page.
-  /api/v1/ogs/runs/{runId}/plan:
+  /api/v2/ogs/runs/{runId}/plan:
     get:
       operationId: getRunPlan
       parameters:
@@ -213,7 +213,7 @@ paths:
           description: Immutable run plan, material snapshot references, and side-effect ledger.
         "404":
           $ref: "#/components/responses/ApiError"
-  /api/v1/ogs/runs/{runId}/conversation:
+  /api/v2/ogs/runs/{runId}/conversation:
     get:
       operationId: getRunConversation
       parameters:
@@ -227,7 +227,7 @@ paths:
       responses:
         "200":
           description: Redacted step content, handoffs, joins, and optional initial user input.
-  /api/v1/ogs/runs/{runId}/stream:
+  /api/v2/ogs/runs/{runId}/stream:
     get:
       operationId: streamRunEvents
       parameters:
@@ -240,7 +240,7 @@ paths:
           description: Server-sent event stream with resumable event IDs.
           content:
             text/event-stream: {}
-  /api/v1/ogs/runs/start:
+  /api/v2/ogs/runs/start:
     post:
       operationId: startRun
       requestBody:
@@ -274,7 +274,7 @@ paths:
           $ref: "#/components/responses/ApiError"
         "403":
           $ref: "#/components/responses/ApiError"
-  /api/v1/ogs/runs/{runId}/resume:
+  /api/v2/ogs/runs/{runId}/resume:
     post:
       operationId: resumeRun
       parameters:
@@ -286,7 +286,7 @@ paths:
           $ref: "#/components/responses/ApiError"
         "403":
           $ref: "#/components/responses/ApiError"
-  /api/v1/ogs/runs/{runId}/stop:
+  /api/v2/ogs/runs/{runId}/stop:
     post:
       operationId: stopRun
       parameters:
@@ -303,7 +303,7 @@ paths:
           description: Durable stop request projection.
         "403":
           $ref: "#/components/responses/ApiError"
-  /api/v1/ogs/runs/{runId}/reviews/{reviewId}/decide:
+  /api/v2/ogs/runs/{runId}/reviews/{reviewId}/decide:
     post:
       operationId: decideHumanReview
       parameters:
@@ -320,7 +320,7 @@ paths:
               type: object
               required: [decision]
               properties:
-                decision: { enum: [approve, rework, pause, terminate] }
+                decision: { enum: [approve, rework, reject, continue, retry, terminate] }
                 comment: { type: string, maxLength: 2000 }
                 scope: { enum: [branch, run] }
       responses:
@@ -383,11 +383,10 @@ components:
   schemas:
     DesignBinding:
       type: object
-      required: [kind]
+      required: [kind, harnessTemplate]
       properties:
-        kind: { enum: [model, exec, noop] }
-        modelRef: { type: string }
-        profileId: { type: string }
+        kind: { const: harness }
+        harnessTemplate: { type: string, minLength: 1 }
       additionalProperties: false
     DesignSeat:
       type: object
@@ -409,7 +408,7 @@ components:
       type: object
       required: [schemaVersion, revision, intent, system, seats, transitions, state, contracts, policies, bindings, presentation]
       properties:
-        schemaVersion: { const: 1 }
+        schemaVersion: { const: 2 }
         revision: { type: integer, minimum: 0 }
         intent: { type: object }
         system: { type: object }

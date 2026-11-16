@@ -39,7 +39,7 @@ export type ValidationDiagnosticView = {
 
 export type WorkbenchStructureRoleView = {
   roleId: string;
-  bindingKind: "model" | "profile" | "noop";
+  bindingKind: "model";
   routingMode?: string;
   joinMode?: string;
   reviewMode?: string;
@@ -89,17 +89,16 @@ export type WorkbenchSaveView = {
 
 export type ProjectTransferView = {
   mode: "team-v2";
+  ogsContractVersion: 2;
   releaseManifest?: unknown;
   team: {
     systemPath: string;
     systemSource: string;
     runtime: unknown | null;
-    modelSelection: unknown | null;
+    executionBindings: unknown | null;
     modelCatalog: unknown | null;
     laws: unknown | null;
     userProfile: unknown | null;
-    profiles: unknown | null;
-    tools: unknown | null;
     project: unknown | null;
   };
 };
@@ -107,6 +106,7 @@ export type ProjectTransferView = {
 export type ProjectLoadView = {
   workdir: string;
   mode: "team-v2";
+  ogsContractVersion: 2;
   loadedFiles: string[];
   validation: WorkbenchValidationView;
   followUpActions: FollowUpActionView[];
@@ -242,7 +242,7 @@ export type ResumeDiagnosticsView = {
 
 export type BindingResolutionView = {
   roleId: string;
-  bindingKind: "model" | "profile" | "noop";
+  bindingKind: "model";
   declaredBinding?: string;
   resolvedBinding?: string;
   variant?: string;
@@ -515,7 +515,7 @@ export function mapBindingResolutionView(value: unknown): BindingResolutionView 
   if (
     !roleId ||
     !source ||
-    (bindingKind !== "model" && bindingKind !== "profile" && bindingKind !== "noop")
+    bindingKind !== "model"
   ) {
     return undefined;
   }
@@ -736,7 +736,7 @@ export function mapWorkbenchValidationView(value: unknown): WorkbenchValidationV
             const role = asRecord(item);
             const roleId = asString(role?.roleId);
             const bindingKind = asString(role?.bindingKind);
-            if (!roleId || (bindingKind !== "model" && bindingKind !== "profile" && bindingKind !== "noop")) {
+            if (!roleId || bindingKind !== "model") {
               return [];
             }
             return [{
@@ -803,17 +803,16 @@ export function mapProjectTransferView(value: unknown): ProjectTransferView {
   const project = asRecord(record.team) ?? {};
   return {
     mode: TEAM_PACKAGE_MODE,
+    ogsContractVersion: 2,
     releaseManifest: record.releaseManifest,
     team: {
       systemPath: asString(project.systemPath) ?? "system.mmd",
       systemSource: asString(project.systemSource) ?? "",
       runtime: project.runtime ?? null,
-      modelSelection: project.modelSelection ?? null,
+      executionBindings: project.executionBindings ?? null,
       modelCatalog: project.modelCatalog ?? null,
       laws: project.laws ?? null,
       userProfile: project.userProfile ?? null,
-      profiles: project.profiles ?? null,
-      tools: project.tools ?? null,
       project: project.project ?? null
     }
   };
@@ -827,6 +826,7 @@ export function mapProjectLoadView(value: unknown): ProjectLoadView {
   return {
     workdir: asString(record.workdir) ?? "",
     mode: TEAM_PACKAGE_MODE,
+    ogsContractVersion: 2,
     loadedFiles,
     validation: mapWorkbenchValidationView(record.validation),
     followUpActions: mapFollowUpActions(record.followUpActions)

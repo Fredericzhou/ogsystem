@@ -48,8 +48,9 @@ import {
   type ControlPlaneIdentityProvider
 } from "../runtime/identity.js";
 import { readJsonFile, writeJsonFileAtomic, writeTextFileAtomic } from "../runtime/json-file.js";
-import { isModelCatalogStale, loadModelCatalog } from "../runtime/model-catalog.js";
-import { loadModelSelection, resolveModelSelectionForSystem, validateModelSelection } from "../runtime/model-selection.js";
+import { loadModelCatalog } from "../runtime/model-catalog.js";
+import { defaultBackendRegistry, projectBackendCapabilityDirectory } from "../runtime/model-backend-registry.js";
+import { loadExecutionBindingsV2 } from "../runtime/contract-v2-loader.js";
 import { loadConversationRunProjection, normalizeConversationItemStatus } from "../runtime/conversation-projector.js";
 import {
   inspectRun,
@@ -112,8 +113,6 @@ import {
   saveProjectRolePackageFilesVisualization,
   saveProjectContractFileVisualization,
   saveProjectSystemSource,
-  upsertProjectExecutionConfigVisualization,
-  upsertProjectProfilesVisualization,
   validateProjectSystemSource
 } from "./project-projection.js";
 import { inspectRunGraphVisualization } from "./run-graph-projection.js";
@@ -124,6 +123,7 @@ import {
   loadStudioAuthoringDraft,
   saveStudioAuthoringDraft,
   serializeAuthoringToMermaid,
+  harnessBindingsAsModelSelection,
   type StudioAuthoringDocument
 } from "./studio-authoring.js";
 import {
@@ -240,7 +240,7 @@ class HttpError extends Error {
   }
 }
 
-const API_PREFIX = "/api/v1";
+const API_PREFIX = "/api/v2";
 const DEFAULT_PROJECT_CREATE_REQUEST_CACHE_TTL_MS = 15 * 60 * 1000;
 const DEFAULT_PROJECT_CREATE_REQUEST_CACHE_MAX_SIZE = 128;
 const MAX_JSON_REQUEST_BYTES = 1024 * 1024;
@@ -616,39 +616,14 @@ async function handleApiProjectConfig(workdir: string, response: ServerResponse)
   jsonResponse(response, 200, await inspectProjectConfigVisualization(workdir));
 }
 
-async function handleApiProjectProfilesUpsert(
-  workdir: string,
-  request: IncomingMessage,
-  response: ServerResponse
-): Promise<void> {
-  const body = await readJsonRequest(request);
-  const result = await withProjectWriteLock(workdir, "visualizer-profiles-upsert", async () => {
-    const result = await upsertProjectProfilesVisualization({
-      workdir,
-      profiles: Array.isArray(body.profiles) ? body.profiles : []
-    });
-    await invalidateAttachedProjectConfirmation(workdir, "visualizer-profiles-upsert");
-    return result;
-  });
-  jsonResponse(response, 200, result);
-}
-
-async function handleApiProjectExecutionConfigUpsert(
-  workdir: string,
-  request: IncomingMessage,
-  response: ServerResponse
-): Promise<void> {
-  const body = await readJsonRequest(request);
-  const result = await withProjectWriteLock(workdir, "visualizer-execution-config-upsert", async () => {
-    const result = await upsertProjectExecutionConfigVisualization({
-      workdir,
-      profiles: Array.isArray(body.profiles) ? body.profiles : [],
-      tools: Array.isArray(body.tools) ? body.tools : []
-    });
-    await invalidateAttachedProjectConfirmation(workdir, "visualizer-execution-config-upsert");
-    return result;
-  });
-  jsonResponse(response, 200, result);
+/** Contract Set v2 removed the profile/tool execution registry. Keep the old
+ * route as an explicit migration error so clients cannot silently recreate it. */
+async function handleApiLegacyExecutionConfigRejected(): Promise<never> {
+  throw new HttpError(
+    410,
+    "V2_LEGACY_EXECUTION_CONFIG",
+    "profiles.json/tools.json are not accepted by Contract Set v2; configure a Harness Template through execution-bindings.json."
+  );
 }
 
 async function handleApiProjectRoles(workdir: string, response: ServerResponse): Promise<void> {
@@ -661,6 +636,35 @@ async function handleApiProjectOpsSummary(workdir: string, response: ServerRespo
 
 async function handleApiProjectBindings(workdir: string, response: ServerResponse): Promise<void> {
   jsonResponse(response, 200, await inspectProjectBindingVisualization(workdir));
+}
+
+async function handleApiBackendCapabilities(workdir: string, response: ServerResponse): Promise<void> {
+  const previewDocument = await readJsonFile(resolve(workdir, ".ogs", "capability-previews.json")).catch(() => undefined);
+  const previewEntries = previewDocument && typeof previewDocument === "object" && !Array.isArray(previewDocument)
+    ? (previewDocument as { backends?: unknown }).backends
+    : undefined;
+  const previews = new Map<string, { readiness: "ready" | "degraded" | "unavailable"; verifiedTools: string[] }>();
+  if (Array.isArray(previewEntries)) {
+    for (const entry of previewEntries) {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+      const record = entry as Record<string, unknown>;
+      const backendId = typeof record.backendId === "string" ? record.backendId : undefined;
+      const modelId = typeof record.modelId === "string" ? record.modelId : undefined;
+      const readiness = record.readiness;
+      const nativeTools = record.nativeTools;
+      const verifiedTools = nativeTools && typeof nativeTools === "object" && !Array.isArray(nativeTools)
+        ? (nativeTools as Record<string, unknown>).verifiedTools
+        : undefined;
+      if (!backendId || !modelId || (readiness !== "ready" && readiness !== "degraded" && readiness !== "unavailable") || !Array.isArray(verifiedTools) || !verifiedTools.every((tool) => typeof tool === "string")) continue;
+      previews.set(`${backendId}/${modelId}`, { readiness, verifiedTools: [...verifiedTools] as string[] });
+    }
+  }
+  jsonResponse(response, 200, {
+    contractVersion: 2,
+    userConfigurable: ["backend", "model", "allowedTools", "environment"],
+    readOnlyDiagnostics: ["capabilities", "resources", "permission", "modes", "adapterVersion", "nativeTools"],
+    backends: projectBackendCapabilityDirectory(defaultBackendRegistry, previews)
+  });
 }
 
 async function handleApiProjectContracts(workdir: string, response: ServerResponse): Promise<void> {
@@ -855,117 +859,20 @@ async function handleApiModelsSync(workdir: string, response: ServerResponse): P
   jsonResponse(response, 200, { status: "ok", ...result });
 }
 
-function modelSelectionDigest(value: unknown): string {
-  return `sha256:${createHash("sha256").update(JSON.stringify(value)).digest("hex")}`;
-}
-
-async function resolveProjectModelSelection(workdir: string, selectionValue: unknown): Promise<{
-  selection: ReturnType<typeof validateModelSelection>;
-  resolvedByRoleId: Record<string, unknown>;
-  warnings: string[];
-}> {
-  const selectionPath = resolve(workdir, ".ogs", "model-selection.json");
-  const selection = validateModelSelection(selectionValue, selectionPath);
-  const system = await loadSystemFromMermaid(resolve(workdir, "system.mmd"));
-  const catalog = await loadModelCatalog(resolve(workdir, ".ogs", "model-catalog.json")).catch(() => undefined);
-  const resolved = resolveModelSelectionForSystem({ system, selection, catalog });
-  const catalogIsStale = !catalog || isModelCatalogStale(catalog);
-  if (catalogIsStale) {
-    for (const roleId of system.roleIds) {
-      const requested = selection.roles?.[roleId]?.reasoningEffort ?? selection.defaults?.reasoningEffort;
-      if (requested && requested !== "auto") {
-        throw new Error(`REASONING_CAPABILITY_UNKNOWN: Reasoning capability is not confirmed for role "${roleId}"; refresh the model catalog before saving an explicit level.`);
-      }
-    }
-  }
-  return {
-    selection,
-    resolvedByRoleId: Object.fromEntries(resolved.resolvedByRoleId.entries()),
-    warnings: resolved.warnings
-  };
-}
-
 async function handleApiModelSelectionValidate(
-  workdir: string,
-  request: IncomingMessage,
-  response: ServerResponse
+  _workdir: string,
+  _request: IncomingMessage,
+  _response: ServerResponse
 ): Promise<void> {
-  const body = await readJsonRequest(request);
-  const selectionValue = body.selection;
-  if (!selectionValue || typeof selectionValue !== "object" || Array.isArray(selectionValue)) {
-    throw new HttpError(400, "MODEL_SELECTION_REQUIRED", "selection is required.");
-  }
-  try {
-    const resolved = await resolveProjectModelSelection(workdir, selectionValue);
-    jsonResponse(response, 200, {
-      valid: true,
-      selection: resolved.selection,
-      resolvedByRoleId: resolved.resolvedByRoleId,
-      issues: [],
-      warnings: resolved.warnings
-    });
-  } catch (error) {
-    if (error instanceof HttpError) throw error;
-    const envelope = error && typeof error === "object" && "envelope" in error
-      ? (error as { envelope?: unknown }).envelope
-      : undefined;
-    const envelopeRecord = envelope && typeof envelope === "object" && !Array.isArray(envelope)
-      ? envelope as Record<string, unknown>
-      : undefined;
-    const stableReasoningCode = /^(REASONING_(?:UNSUPPORTED|CONFIG_FAILED|CAPABILITY_UNKNOWN))\b/.exec(error instanceof Error ? error.message : String(error))?.[1];
-    jsonResponse(response, 200, {
-      valid: false,
-      issues: [{
-        code: stableReasoningCode ?? (typeof envelopeRecord?.errorCode === "string" ? envelopeRecord.errorCode : "MODEL_SELECTION_INVALID"),
-        roleId: typeof envelopeRecord?.roleId === "string" ? envelopeRecord.roleId : undefined,
-        requested: typeof envelopeRecord?.requestedReasoningEffort === "string" ? envelopeRecord.requestedReasoningEffort : undefined,
-        message: typeof envelopeRecord?.message === "string" ? envelopeRecord.message : error instanceof Error ? error.message : String(error)
-      }],
-      warnings: []
-    });
-  }
+  throw new HttpError(410, "V2_HARNESS_BINDING_REQUIRED", "Model selection API is removed in Contract Set v2; edit .ogs/execution-bindings.json Harness Templates.");
 }
 
 async function handleApiModelSelectionSave(
-  workdir: string,
-  request: IncomingMessage,
-  response: ServerResponse
+  _workdir: string,
+  _request: IncomingMessage,
+  _response: ServerResponse
 ): Promise<void> {
-  const body = await readJsonRequest(request);
-  const selectionValue = body.selection;
-  if (!selectionValue || typeof selectionValue !== "object" || Array.isArray(selectionValue)) {
-    throw new HttpError(400, "MODEL_SELECTION_REQUIRED", "selection is required.");
-  }
-  const expectedDigest = asString(body.expectedSelectionDigest);
-  if (!expectedDigest) throw new HttpError(400, "MODEL_SELECTION_DIGEST_REQUIRED", "expectedSelectionDigest is required.");
-  const selectionPath = resolve(workdir, ".ogs", "model-selection.json");
-  await withProjectWriteLock(workdir, "model-selection-save", async () => {
-    const current = await readJsonFile(selectionPath).catch(() => undefined);
-    const currentDigest = modelSelectionDigest(current ?? { configVersion: "3" });
-    if (expectedDigest && expectedDigest !== currentDigest) {
-      throw new HttpError(409, "MODEL_SELECTION_CONFLICT", "The model selection changed since it was loaded.", {
-        expectedSelectionDigest: expectedDigest,
-        currentSelectionDigest: currentDigest
-      });
-    }
-    let resolved: Awaited<ReturnType<typeof resolveProjectModelSelection>>;
-    try {
-      resolved = await resolveProjectModelSelection(workdir, selectionValue);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      const stableCode = /^(REASONING_(?:UNSUPPORTED|CONFIG_FAILED|CAPABILITY_UNKNOWN))\b/.exec(message)?.[1];
-      throw new HttpError(422, stableCode ?? "MODEL_SELECTION_INVALID", message);
-    }
-    await writeJsonFileAtomic(selectionPath, resolved.selection);
-    invalidateAllProjectCaches(workdir);
-    jsonResponse(response, 200, {
-      status: "saved",
-      selectionDigest: modelSelectionDigest(resolved.selection),
-      selection: resolved.selection,
-      resolvedByRoleId: resolved.resolvedByRoleId,
-      warnings: resolved.warnings
-    });
-  });
+  throw new HttpError(410, "V2_HARNESS_BINDING_REQUIRED", "Model selection API is removed in Contract Set v2; edit .ogs/execution-bindings.json Harness Templates.");
 }
 
 async function handleApiDesignGet(workdir: string, response: ServerResponse): Promise<void> {
@@ -1017,29 +924,22 @@ async function handleApiDesignContext(workdir: string, response: ServerResponse)
   });
 }
 
-async function syncDesignModelSelection(workdir: string, design: SystemDesignDocument): Promise<void> {
-  const selectionPath = resolve(workdir, ".ogs", "model-selection.json");
-  const currentSelection = await loadModelSelection(selectionPath);
-  const roles: Record<string, { backend?: string; modelId?: string; variant?: string; timeoutMs?: number; maxOutputBytes?: number }> = {
-    ...(currentSelection?.roles ?? {})
-  };
+async function syncDesignHarnessBindings(workdir: string, design: SystemDesignDocument): Promise<void> {
+  const bindingsPath = resolve(workdir, ".ogs", "execution-bindings.json");
+  const current = await loadExecutionBindingsV2(bindingsPath);
+  const templates = { ...(current.harnessTemplates ?? {}) };
+  const roles = { ...current.roles };
   for (const [seatId, seat] of Object.entries(design.seats)) {
-    if (seat.binding.kind !== "model" || !seat.binding.modelRef) continue;
-    const separator = seat.binding.modelRef.indexOf("/");
-    if (separator <= 0 || separator === seat.binding.modelRef.length - 1) {
-      throw new HttpError(409, "DESIGN_MODEL_BINDING_INVALID", `Model binding for ${seatId} must use provider/model format.`);
+    if (seat.binding.kind !== "harness" || !seat.binding.harnessTemplate?.trim()) {
+      throw new HttpError(409, "V2_HARNESS_BINDING_REQUIRED", `Role "${seatId}" must reference a Harness Template.`);
     }
-    roles[seatId] = {
-      ...roles[seatId],
-      backend: seat.binding.modelRef.slice(0, separator),
-      modelId: seat.binding.modelRef.slice(separator + 1)
-    };
+    const templateId = seat.binding.harnessTemplate;
+    if (!templates[templateId]) {
+      throw new HttpError(409, "V2_HARNESS_TEMPLATE_MISSING", `Harness Template "${templateId}" is missing for ${seatId}.`);
+    }
+    roles[seatId] = { kind: "harness", harnessTemplate: templateId };
   }
-  await writeJsonFileAtomic(selectionPath, validateModelSelection({
-    configVersion: "3",
-    defaults: currentSelection?.defaults,
-    roles
-  }, selectionPath));
+  await writeJsonFileAtomic(bindingsPath, { ...current, harnessTemplates: templates, roles });
 }
 
 async function handleApiDesignValidate(
@@ -1075,7 +975,7 @@ async function handleApiDesignApply(
     throw new HttpError(409, "CHANGE_SET_REJECTED", "The design change could not be applied.", result);
   }
   const payload = await withProjectWriteLock(workdir, "visualizer-design-apply", async () => {
-    await syncDesignModelSelection(workdir, result.design!);
+    await syncDesignHarnessBindings(workdir, result.design!);
     const saved = await saveSystemDesign(workdir, result.design!);
     await writeTextFileAtomic(resolve(workdir, "system.mmd"), exportDesignToMermaid(result.design!));
     await invalidateAttachedProjectConfirmation(workdir, "visualizer-design-apply");
@@ -1099,14 +999,24 @@ async function handleApiDesignImportMermaid(
   const body = await readJsonRequest(request);
   const source = asString(body.systemSource);
   if (!source?.trim()) throw new HttpError(400, "MERMAID_SOURCE_REQUIRED", "systemSource is required.");
-  const design = systemDefinitionToDesign(parseSystemFromMermaidSource(source));
+  const parsedSystem = parseSystemFromMermaidSource(source);
+  const executionBindings = await loadExecutionBindingsV2(resolve(workdir, ".ogs", "execution-bindings.json"));
+  const defaultHarnessTemplate = executionBindings.defaults?.harnessTemplate;
+  const harnessTemplateByRoleId = Object.fromEntries(parsedSystem.roleIds.flatMap((roleId) => {
+    const templateId = executionBindings.roles[roleId]?.harnessTemplate ?? defaultHarnessTemplate;
+    return templateId ? [[roleId, templateId]] : [];
+  }));
+  const design = systemDefinitionToDesign(parsedSystem, {
+    harnessTemplateByRoleId,
+    defaultHarnessTemplate
+  });
   const validation = validateSystemDesign(design);
   const apply = body.apply === true;
   if (apply && validation.ok) {
     const payload = await withProjectWriteLock(workdir, "visualizer-mermaid-apply", async () => {
       const current = await loadSystemDesign(workdir);
       const appliedDesign = current ? { ...design, revision: current.revision + 1 } : design;
-      await syncDesignModelSelection(workdir, appliedDesign);
+      await syncDesignHarnessBindings(workdir, appliedDesign);
       const saved = await saveSystemDesign(workdir, appliedDesign);
       await writeTextFileAtomic(resolve(workdir, "system.mmd"), exportDesignToMermaid(appliedDesign));
       await invalidateAttachedProjectConfirmation(workdir, "visualizer-mermaid-apply");
@@ -1179,7 +1089,9 @@ async function handleApiStudioAuthoringImportMmd(
     throw new HttpError(400, "SYSTEM_SOURCE_REQUIRED", "systemSource is required.");
   }
   const systemPath = asString(body.systemPath) ?? resolve(workdir, "system.mmd");
-  const modelSelection = await loadModelSelection(resolve(workdir, ".ogs", "model-selection.json"));
+  const bindings = await loadExecutionBindingsV2(resolve(workdir, ".ogs", "execution-bindings.json"));
+  const system = parseSystemFromMermaidSource(systemSource);
+  const modelSelection = harnessBindingsAsModelSelection(bindings, system);
   const authoring = importMermaidToAuthoring({ workdir, systemPath, systemSource, modelSelection });
   jsonResponse(response, 200, {
     workdir,
@@ -2133,11 +2045,11 @@ async function handleApiRunReviewDecision(
 ): Promise<void> {
   const body = await readJsonRequest(request);
   const decision = asString(body.decision);
-  if (decision !== "approve" && decision !== "rework" && decision !== "pause" && decision !== "terminate" && decision !== "continue" && decision !== "reject") {
+  if (decision !== "approve" && decision !== "rework" && decision !== "terminate" && decision !== "continue" && decision !== "reject") {
     throw new HttpError(
       400,
       "INVALID_REVIEW_DECISION",
-      "decision must be one of: approve, rework, pause, terminate, continue, reject."
+      "decision must be one of: approve, rework, terminate, continue, reject."
     );
   }
   const scopeValue = asString(body.scope);
@@ -2159,9 +2071,7 @@ async function handleApiRunReviewDecision(
     additionalBudget: typeof body.additionalBudget === "number" ? body.additionalBudget : undefined
   });
   const semanticStatus =
-    decision === "pause"
-      ? "human-review-paused"
-      : decision === "terminate"
+    decision === "terminate"
         ? `human-review-terminated:${scopeValue ?? "branch"}`
         : decision === "continue"
           ? "loop-budget-continued"
@@ -2179,9 +2089,7 @@ async function handleApiRunReviewDecision(
       detail: {
         reviewId,
         note:
-          decision === "pause"
-            ? "This pause only affects the human review node, not the whole run."
-            : decision === "terminate"
+          decision === "terminate"
               ? `Terminate scope=${scopeValue ?? "branch"} applies to the review target, not a generic run pause.`
               : "Decision recorded in the control plane; runtime reconcile may still be pending.",
         lifecycle: detail
@@ -2337,13 +2245,14 @@ const EXACT_API_ROUTE_HANDLERS = new Map<string, ExactApiRouteHandler>([
   ["POST project/studio/chat", async ({ state, request, response }) => handleApiStudioChatToMmd(state, request, response)],
   ["GET project/studio/templates", async ({ response }) => handleApiStudioTemplates(response)],
   ["GET project/config", async ({ state, response }) => handleApiProjectConfig(state.workdir, response)],
-  ["POST project/profiles", async ({ state, request, response }) => handleApiProjectProfilesUpsert(state.workdir, request, response)],
-  ["POST project/execution-config", async ({ state, request, response }) => handleApiProjectExecutionConfigUpsert(state.workdir, request, response)],
+  ["POST project/profiles", async () => handleApiLegacyExecutionConfigRejected()],
+  ["POST project/execution-config", async () => handleApiLegacyExecutionConfigRejected()],
   ["GET project/roles", async ({ state, response }) => handleApiProjectRoles(state.workdir, response)],
   ["GET project/role-catalog", async ({ state, response }) => handleApiRoleCatalog(state.workdir, response)],
   ["POST project/roles/import", async ({ state, request, response }) => handleApiRoleImport(state.workdir, request, response)],
   ["GET project/ops-summary", async ({ state, response }) => handleApiProjectOpsSummary(state.workdir, response)],
   ["GET project/bindings", async ({ state, response }) => handleApiProjectBindings(state.workdir, response)],
+  ["GET project/backend-capabilities", async ({ state, response }) => handleApiBackendCapabilities(state.workdir, response)],
   ["GET project/contracts", async ({ state, response }) => handleApiProjectContracts(state.workdir, response)],
   ["POST project/contracts", async ({ state, request, response }) => handleApiProjectContractSave(state.workdir, request, response)],
   ["GET project/role-packages", async ({ state, response }) => handleApiProjectRolePackages(state.workdir, response)],
@@ -2707,7 +2616,7 @@ async function handleVisualizationRequest(
     return;
   }
 
-  if (segments[0] !== "api" || segments[1] !== "v1") {
+  if (segments[0] !== "api" || segments[1] !== "v2") {
     throw new HttpError(404, "NOT_FOUND", "Not found");
   }
 
@@ -2718,10 +2627,10 @@ async function handleVisualizationRequest(
     if (segments[3] === "workspace") {
       const workspaceSuffix = segments.slice(4);
       segments = workspaceSuffix.length
-        ? ["api", "v1", "project", ...workspaceSuffix]
-        : ["api", "v1", "workspace"];
+        ? ["api", "v2", "project", ...workspaceSuffix]
+        : ["api", "v2", "workspace"];
     } else if (segments[3] === "runs") {
-      segments = ["api", "v1", "runs", ...segments.slice(4)];
+      segments = ["api", "v2", "runs", ...segments.slice(4)];
     } else {
       throw new HttpError(404, "NOT_FOUND", "Not found");
     }
@@ -2891,11 +2800,11 @@ async function handleVisualizationRequest(
     return;
   }
   if (segments.length === 4 && segments[2] === "project" && segments[3] === "profiles" && method === "POST") {
-    await handleApiProjectProfilesUpsert(state.workdir, request, response);
+    await handleApiLegacyExecutionConfigRejected();
     return;
   }
   if (segments.length === 4 && segments[2] === "project" && segments[3] === "execution-config" && method === "POST") {
-    await handleApiProjectExecutionConfigUpsert(state.workdir, request, response);
+    await handleApiLegacyExecutionConfigRejected();
     return;
   }
   if (segments.length === 4 && segments[2] === "project" && segments[3] === "roles" && method === "GET") {

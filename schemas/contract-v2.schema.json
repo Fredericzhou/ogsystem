@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ogsystem.dev/schemas/contract-v2.schema.json",
+  "title": "OGSystem Contract Set v2",
+  "anyOf": [
+    { "$ref": "#/$defs/roleContract" },
+    { "$ref": "#/$defs/businessGraph" },
+    { "$ref": "#/$defs/handoffProjection" },
+    { "$ref": "#/$defs/harnessTemplate" },
+    { "$ref": "#/$defs/executionBindings" },
+    { "$ref": "#/$defs/capabilityPreview" },
+    { "$ref": "#/$defs/runCapabilitySnapshot" },
+    { "$ref": "#/$defs/resolvedExecutionPlan" },
+    { "$ref": "#/$defs/reviewRequest" },
+    { "$ref": "#/$defs/evidenceEvent" }
+  ],
+  "$defs": {
+    "root": {
+      "type": "object",
+      "required": ["ogsContractVersion", "schemaVersion"],
+      "properties": {
+        "ogsContractVersion": { "const": 2 },
+        "schemaVersion": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "roleContract": {
+      "allOf": [
+        { "$ref": "#/$defs/root" },
+        { "type": "object", "required": ["roleId", "purpose", "responsibility", "inputs", "outputs", "authority", "failure", "audit"], "properties": {
+          "roleId": { "type": "string", "minLength": 1 },
+          "schemaVersion": { "const": 2 },
+          "purpose": { "type": "string", "minLength": 1 },
+          "responsibility": { "$ref": "#/$defs/responsibility" },
+          "inputs": { "type": "object", "required": ["preconditions"], "properties": { "preconditions": { "type": "array", "items": { "type": "string" } } }, "additionalProperties": false },
+          "outputs": { "type": "object", "required": ["postconditions", "decisionCriteria"], "properties": { "postconditions": { "type": "array", "items": { "type": "string" } }, "decisionCriteria": { "type": "array", "items": { "type": "string" } } }, "additionalProperties": false },
+          "authority": { "type": "object", "required": ["controlActions"], "properties": { "controlActions": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/businessReviewAction" } } }, "additionalProperties": false },
+          "failure": { "type": "object", "required": ["retryableErrorCodes", "terminalErrorCodes"], "properties": { "retryableErrorCodes": { "type": "array", "items": { "type": "string" } }, "terminalErrorCodes": { "type": "array", "items": { "type": "string" } } }, "additionalProperties": false },
+          "audit": { "type": "object", "required": ["requiredFields"], "properties": { "requiredFields": { "type": "array", "items": { "type": "string" } } }, "additionalProperties": false }
+        }, "additionalProperties": false }
+      ]
+    },
+    "responsibility": { "type": "object", "required": ["kind", "owns", "contributes", "doesNotOwn"], "properties": { "kind": { "enum": ["atomic", "composite"] }, "owns": { "type": "array", "items": { "type": "string" } }, "contributes": { "type": "array", "items": { "type": "string" } }, "doesNotOwn": { "type": "array", "items": { "type": "string" } } }, "additionalProperties": false },
+    "reviewAction": { "enum": ["approve", "rework", "reject", "continue", "retry", "terminate"] },
+    "businessReviewAction": { "enum": ["approve", "rework", "reject"] },
+    "businessGraph": { "allOf": [{ "$ref": "#/$defs/root" }, { "type": "object", "required": ["graphId", "systemId", "roles", "entryRoleId", "edges"], "properties": { "graphId": { "type": "string", "minLength": 1 }, "systemId": { "type": "string", "minLength": 1 }, "roles": { "type": "array", "minItems": 1, "items": { "type": "string" } }, "entryRoleId": { "type": "string", "minLength": 1 }, "edges": { "type": "array", "items": { "$ref": "#/$defs/edge" } } } }] },
+    "edge": { "type": "object", "required": ["edgeId", "fromRoleId", "toRoleId", "eventType"], "properties": { "edgeId": { "type": "string", "minLength": 1 }, "fromRoleId": { "type": "string" }, "toRoleId": { "type": "string" }, "eventType": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" }, "contextMap": { "type": "object", "additionalProperties": { "type": "string" } }, "artifactRefs": { "type": "array", "items": { "type": "string" } } }, "additionalProperties": false },
+    "handoffProjection": { "allOf": [{ "$ref": "#/$defs/root" }, { "type": "object", "required": ["projectionId", "edgeId", "fromRoleId", "toRoleId", "eventType", "contextMap", "artifactRefs"], "properties": { "projectionId": { "type": "string" }, "edgeId": { "type": "string" }, "fromRoleId": { "type": "string" }, "toRoleId": { "type": "string" }, "eventType": { "type": "string" }, "contextMap": { "type": "object", "additionalProperties": { "type": "string" } }, "artifactRefs": { "type": "array", "items": { "type": "string" } } } }] },
+    "environment": { "type": "object", "required": ["filesystem", "process", "network"], "properties": { "filesystem": { "oneOf": [{ "enum": ["staged", "read_only", "none"] }, { "type": "object", "required": ["read", "write"], "properties": { "read": { "type": "boolean" }, "write": { "type": "boolean" } }, "additionalProperties": false }] }, "process": { "enum": ["allow", "deny"] }, "network": { "enum": ["allow", "deny"] }, "limits": { "type": "object", "properties": { "timeoutMs": { "type": "integer", "minimum": 1 }, "maxOutputBytes": { "type": "integer", "minimum": 1 }, "maxStorageBytes": { "type": "integer", "minimum": 1 } }, "additionalProperties": false } }, "additionalProperties": false },
+    "harnessTemplate": { "allOf": [{ "$ref": "#/$defs/root" }, { "type": "object", "required": ["templateId", "backend", "model", "allowedTools", "environment"], "properties": { "kind": { "const": "harness" }, "templateId": { "type": "string" }, "backend": { "type": "string" }, "model": { "type": "string" }, "preset": { "type": "string" }, "allowedTools": { "type": "array", "uniqueItems": true, "items": { "type": "string" } }, "environment": { "$ref": "#/$defs/environment" } } }] },
+    "executionBindings": { "allOf": [{ "$ref": "#/$defs/root" }, { "type": "object", "required": ["roles"], "properties": { "harnessTemplates": { "type": "object", "additionalProperties": { "$ref": "#/$defs/harnessTemplate" } }, "defaults": { "type": "object", "properties": { "harnessTemplate": { "type": "string" } }, "additionalProperties": false }, "roles": { "type": "object", "additionalProperties": { "type": "object", "required": ["kind", "harnessTemplate"], "properties": { "kind": { "const": "harness" }, "harnessTemplate": { "type": "string" } }, "additionalProperties": false } } } }] },
+    "capabilityPreview": { "allOf": [{ "$ref": "#/$defs/root" }, { "type": "object", "required": ["backend", "verifiedTools", "verifiedAt", "digest", "readiness"], "properties": { "backend": { "type": "string" }, "model": { "type": "string" }, "verifiedTools": { "type": "array", "uniqueItems": true, "items": { "type": "string" } }, "adapterVersion": { "type": "string" }, "verifiedAt": { "type": "string", "format": "date-time" }, "digest": { "type": "string", "minLength": 1 }, "readiness": { "enum": ["ready", "degraded", "unavailable"] } } }] },
+    "runCapabilitySnapshot": { "allOf": [{ "$ref": "#/$defs/root" }, { "type": "object", "required": ["backend", "model", "adapterVersion", "verifiedTools", "verifiedAt", "digest"], "properties": { "backend": { "type": "string" }, "model": { "type": "string" }, "adapterVersion": { "type": "string" }, "verifiedTools": { "type": "array", "uniqueItems": true, "items": { "type": "string" } }, "verifiedAt": { "type": "string", "format": "date-time" }, "digest": { "type": "string", "minLength": 1 } } }] },
+    "capabilityProperties": { "type": "object", "required": ["backend", "verifiedTools", "verifiedAt", "digest", "readiness"], "properties": { "backend": { "type": "string" }, "model": { "type": "string" }, "verifiedTools": { "type": "array", "uniqueItems": true, "items": { "type": "string" } }, "adapterVersion": { "type": "string" }, "verifiedAt": { "type": "string", "format": "date-time" }, "digest": { "type": "string", "minLength": 1 }, "readiness": { "enum": ["ready", "degraded", "unavailable"] } }, "additionalProperties": false },
+    "resolvedExecutionPlan": { "allOf": [{ "$ref": "#/$defs/root" }, { "type": "object", "required": ["roleId", "backend", "model", "capabilitySnapshot", "allowedTools", "verifiedTools", "effectiveEnvironmentPolicy", "policyDigest", "recoveryIdentity"], "properties": { "roleId": { "type": "string" }, "backend": { "type": "string" }, "model": { "type": "string" }, "capabilitySnapshot": { "$ref": "#/$defs/runCapabilitySnapshot" }, "allowedTools": { "type": "array", "uniqueItems": true, "items": { "type": "string" } }, "verifiedTools": { "type": "array", "uniqueItems": true, "items": { "type": "string" } }, "effectiveEnvironmentPolicy": { "$ref": "#/$defs/environmentPolicy" }, "policyDigest": { "type": "string" }, "recoveryIdentity": { "type": "string" } } }] },
+    "environmentPolicy": { "type": "object", "required": ["ogsContractVersion", "schemaVersion", "root", "filesystem", "process", "network", "limits", "policyDigest"], "properties": { "ogsContractVersion": { "const": 2 }, "schemaVersion": { "const": 1 }, "root": { "type": "string", "minLength": 1 }, "filesystem": { "type": "object", "required": ["read", "write"], "properties": { "read": { "type": "boolean" }, "write": { "type": "boolean" } }, "additionalProperties": false }, "process": { "type": "boolean" }, "network": { "type": "boolean" }, "limits": { "type": "object", "required": ["timeoutMs", "maxOutputBytes", "maxStorageBytes"], "properties": { "timeoutMs": { "type": "integer", "minimum": 1 }, "maxOutputBytes": { "type": "integer", "minimum": 1 }, "maxStorageBytes": { "type": "integer", "minimum": 1 } }, "additionalProperties": false }, "policyDigest": { "type": "string", "minLength": 1 } }, "additionalProperties": false },
+    "reviewRequest": { "allOf": [
+      { "$ref": "#/$defs/root" },
+      { "type": "object", "required": ["reviewId", "runId", "round", "lineageId", "branchId", "loopIteration", "stateVersion", "trigger", "status"], "properties": { "reviewId": { "type": "string" }, "runId": { "type": "string" }, "round": { "type": "integer", "minimum": 1 }, "lineageId": { "type": "string" }, "branchId": { "type": "string" }, "loopIteration": { "type": "integer", "minimum": 0 }, "stateVersion": { "type": "integer", "minimum": 0 }, "trigger": { "enum": ["explicit", "exception"] }, "exceptionContext": { "type": "object", "required": ["code"], "properties": { "code": { "type": "string" }, "details": { "type": "object" } }, "additionalProperties": false }, "status": { "enum": ["pending", "resolved", "cancelled"] }, "decision": { "$ref": "#/$defs/decision" } } },
+      { "if": { "properties": { "trigger": { "const": "explicit" } } }, "then": { "properties": { "decision": { "properties": { "action": { "$ref": "#/$defs/businessReviewAction" } } } } } },
+      { "if": { "properties": { "trigger": { "const": "exception" } } }, "then": { "properties": { "decision": { "properties": { "action": { "$ref": "#/$defs/exceptionReviewAction" } } } } } }
+    ] },
+    "decision": { "type": "object", "required": ["action", "actor", "decidedAt", "round", "lineageId", "branchId", "loopIteration", "stateVersion"], "properties": { "action": { "$ref": "#/$defs/reviewAction" }, "actor": { "type": "string" }, "comment": { "type": "string" }, "decidedAt": { "type": "string", "format": "date-time" }, "round": { "type": "integer", "minimum": 1 }, "lineageId": { "type": "string" }, "branchId": { "type": "string" }, "loopIteration": { "type": "integer", "minimum": 0 }, "stateVersion": { "type": "integer", "minimum": 0 }, "targetRoleId": { "type": "string" }, "scope": { "enum": ["branch", "run"] }, "additionalBudget": { "type": "integer", "minimum": 1 } }, "additionalProperties": false },
+    "exceptionReviewAction": { "enum": ["continue", "retry", "rework", "reject", "terminate"] },
+    "evidenceEvent": { "allOf": [{ "$ref": "#/$defs/root" }, { "type": "object", "required": ["eventId", "eventType", "runId", "recordedAt", "payload"], "properties": { "eventId": { "type": "string" }, "eventType": { "type": "string" }, "runId": { "type": "string" }, "recordedAt": { "type": "string", "format": "date-time" }, "payload": {} } }] }
+  }
+}

@@ -8,7 +8,6 @@ import { resolveProjectRoleRepoRoot, resolveProjectRoleRootDir, resolveTemplateR
 import { isRuntimeOnlyErrorEvent } from "../runtime/error-flow-utils.js";
 import { buildFlowContractKeyForFlow, loadFlowContractPlan } from "../runtime/flow-contract.js";
 import { readJsonFile, writeJsonFileAtomic, writeTextFileAtomic } from "../runtime/json-file.js";
-import { isDirectModelRef } from "../runtime/model-selection.js";
 import { RuntimeError } from "../runtime/runtime-errors.js";
 import {
   ensureProjectSkeleton,
@@ -24,8 +23,7 @@ import {
 } from "../runtime/project-lifecycle.js";
 import { validateRolePackageManifest } from "../runtime/role-repo.js";
 import { pathExists } from "../runtime/run-store.js";
-import { loadProfiles, loadTools } from "../runtime/runtime-loader.js";
-import { validateProfilesConfig, validateToolsConfig } from "../runtime/config.js";
+import { assertNoLegacyV1ExecutionAssets, loadExecutionBindingsV2 } from "../runtime/contract-v2-loader.js";
 import { SYSTEM_END_ROLE_ID } from "../runtime/types.js";
 import { importMermaidToAuthoring, saveStudioAuthoringDraft } from "./studio-authoring.js";
 import {
@@ -43,6 +41,7 @@ import {
 import type { ModelCatalogEntry, SystemDefinition } from "../runtime/types.js";
 import type { ResolvedModelRuntimeConfig } from "../runtime/model-selection.js";
 import type { CompilerDiagnostic } from "../runtime/compiler.js";
+import type { ExecutionBindingsV2 } from "../runtime/contract-v2.js";
 import { loadSystemDesign, saveSystemDesign, systemDefinitionToDesign } from "../design/index.js";
 
 type JsonRecord = Record<string, unknown>;
@@ -50,20 +49,6 @@ type JsonRecord = Record<string, unknown>;
 type ProjectCreatePreferences = {
   authoringDefaults?: unknown;
   modelProfileStrategy?: unknown;
-};
-
-type ProjectCreateModelDefaults = {
-  model?: string;
-  variant?: string;
-  timeoutMs?: number;
-  maxOutputBytes?: number;
-};
-
-type ProjectCreateProfileDraft = {
-  profileId: string;
-  toolRef: string;
-  timeoutMs?: number;
-  maxOutputBytes?: number;
 };
 
 type ProjectCreateTestHooks = {
@@ -77,12 +62,10 @@ const PROJECT_CONTROLLED_PATHS = [
   "system.mmd",
   "system.design.json",
   "system.example.mmd",
-  "profiles.json",
-  "tools.json",
   ".ogs/project.json",
   ".ogs/runtime.json",
   ".ogs/model-catalog.json",
-  ".ogs/model-selection.json",
+  ".ogs/execution-bindings.json",
   ".ogs/laws.json",
   ".ogs/user-profile.json",
   ".ogs/runs-index.json",
@@ -136,130 +119,6 @@ function sanitizeProjectCreatePreferences(args: {
   };
 }
 
-function normalizeModelDefaults(value: unknown): ProjectCreateModelDefaults | undefined {
-  const record = asRecord(value);
-  const defaults = asRecord(record?.modelDefaults ?? record?.defaults ?? record);
-  if (!defaults) {
-    return undefined;
-  }
-  const model = asString(defaults.model ?? defaults.modelRef);
-  const variant = asString(defaults.variant);
-  const timeoutMs = asPositiveInteger(defaults.timeoutMs);
-  const maxOutputBytes = asPositiveInteger(defaults.maxOutputBytes);
-  if (model && !isDirectModelRef(model)) {
-    throw new Error("INVALID_PROJECT_MODEL_DEFAULT");
-  }
-  if (!model && !variant && !timeoutMs && !maxOutputBytes) {
-    return undefined;
-  }
-  return {
-    ...(model ? { model } : {}),
-    ...(variant ? { variant } : {}),
-    ...(timeoutMs ? { timeoutMs } : {}),
-    ...(maxOutputBytes ? { maxOutputBytes } : {})
-  };
-}
-
-function normalizeProfileDrafts(value: unknown): ProjectCreateProfileDraft[] {
-  const record = asRecord(value);
-  const profile = asRecord(record?.profile);
-  const entries = Array.isArray(record?.profiles)
-    ? record.profiles
-    : profile
-      ? [profile]
-      : [];
-  return entries
-    .map((entry) => asRecord(entry))
-    .filter((entry): entry is JsonRecord => Boolean(entry))
-    .map((entry) => ({
-      profileId: asString(entry.profileId)?.trim() ?? "",
-      toolRef: asString(entry.toolRef)?.trim() ?? "",
-      timeoutMs: asPositiveInteger(entry.timeoutMs),
-      maxOutputBytes: asPositiveInteger(entry.maxOutputBytes)
-    }))
-    .filter((entry) => entry.profileId && entry.toolRef);
-}
-
-async function applyProjectCreateModelDefaults(args: {
-  workdir: string;
-  systemId: string;
-  modelSelectionPath: string;
-  strategy?: unknown;
-}): Promise<ProjectCreateModelDefaults | undefined> {
-  const modelDefaults = normalizeModelDefaults(args.strategy);
-  if (!modelDefaults) {
-    return undefined;
-  }
-  const existing = asRecord(await readJsonFile(args.modelSelectionPath).catch(() => undefined)) ?? {};
-  const systems = asRecord(existing.systems) ?? {};
-  const systemEntry = asRecord(systems[args.systemId]) ?? {};
-  await writeJsonFileAtomic(args.modelSelectionPath, {
-    ...existing,
-    configVersion: "1",
-    defaults: {
-      ...(asRecord(existing.defaults) ?? {}),
-      ...modelDefaults
-    },
-    systems: {
-      ...systems,
-      [args.systemId]: {
-        ...systemEntry,
-        defaults: {
-          ...(asRecord(systemEntry.defaults) ?? {}),
-          ...modelDefaults
-        }
-      }
-    }
-  });
-  return modelDefaults;
-}
-
-async function applyProjectCreateProfiles(args: {
-  workdir: string;
-  strategy?: unknown;
-}): Promise<ProjectCreateProfileDraft[]> {
-  const incoming = normalizeProfileDrafts(args.strategy);
-  if (!incoming.length) {
-    return [];
-  }
-  const profilesPath = resolve(args.workdir, "profiles.json");
-  const existing = await loadProfiles(undefined, args.workdir).catch(() => []);
-  const byProfileId = new Map(existing.map((profile) => [profile.profileId, profile]));
-  for (const profile of incoming) {
-    byProfileId.set(profile.profileId, profile);
-  }
-  const profiles = Array.from(byProfileId.values()).sort((left, right) => left.profileId.localeCompare(right.profileId));
-  await writeJsonFileAtomic(profilesPath, validateProfilesConfig(profiles, profilesPath));
-  return incoming;
-}
-
-async function persistProjectCreatePreferences(args: {
-  workdir: string;
-  authoring: Record<string, unknown>;
-  preferences?: ProjectCreatePreferences;
-}): Promise<Record<string, unknown>> {
-  if (!args.preferences) {
-    return args.authoring;
-  }
-  const ogsPaths = resolveOgsPaths(args.workdir);
-  const projectMeta = asRecord((await readJsonFile(ogsPaths.projectPath).catch(() => undefined)) ?? {});
-  const existingVisualizer = asRecord(projectMeta?.visualizer) ?? {};
-  await writeJsonFileAtomic(ogsPaths.projectPath, {
-    ...(projectMeta ?? {}),
-    visualizer: {
-      ...existingVisualizer,
-      projectCreate: args.preferences
-    }
-  });
-  return {
-    ...args.authoring,
-    visualizer: {
-      ...(asRecord(args.authoring.visualizer) ?? {}),
-      projectCreate: args.preferences
-    }
-  };
-}
-
 async function hasProjectFiles(workdir: string): Promise<boolean> {
   const systemStat = await stat(resolve(workdir, "system.mmd")).catch(() => undefined);
   const projectStat = await stat(resolve(workdir, ".ogs", "project.json")).catch(() => undefined);
@@ -306,8 +165,16 @@ export async function inspectProjectWorkspace(workdir: string): Promise<Record<s
       })()
     : null;
   const isProjectValid = projectValidation?.ok === true;
+  const authoringDraft = hasProject
+    ? await readJsonFile(resolve(workdir, ".ogs", "studio", "system.authoring.json")).catch(() => undefined)
+    : undefined;
+  const isUnboundAuthoringDraft = Boolean(
+    !isProjectValid && authoringDraft && typeof authoringDraft === "object" && !Array.isArray(authoringDraft) &&
+    (authoringDraft as Record<string, unknown>).ogsContractVersion === 2 &&
+    (authoringDraft as Record<string, unknown>).version === 2
+  );
   const state = hasProject
-    ? (isProjectValid ? "project" : "project-invalid")
+    ? (isProjectValid ? "project" : isUnboundAuthoringDraft ? "project-draft-unbound" : "project-invalid")
     : entries.length === 0
       ? "empty"
       : controlledPathConflicts.length
@@ -376,8 +243,6 @@ async function removeCreatedProjectFiles(workdir: string, testHooks?: ProjectCre
     [resolve(workdir, "system.mmd"), { force: true }],
     [resolve(workdir, "system.design.json"), { force: true }],
     [resolve(workdir, "system.example.mmd"), { force: true }],
-    [resolve(workdir, "profiles.json"), { force: true }],
-    [resolve(workdir, "tools.json"), { force: true }],
     [resolve(workdir, ".ogs"), { recursive: true, force: true }],
     [resolve(workdir, "og-roles"), { recursive: true, force: true }]
   ] as const) {
@@ -410,11 +275,7 @@ function buildWorkbenchStructure(system: SystemDefinition): Record<string, unkno
     flowCount: system.flows.length,
     roles: system.roleIds.map((roleId) => ({
       roleId,
-      bindingKind: system.executionBinding[roleId]
-        ? "profile"
-        : system.modelBinding[roleId]
-          ? "model"
-          : "noop",
+      bindingKind: "model",
       routingMode: system.graph?.routingModeByRoleId[roleId],
       joinMode: system.graph?.joinModeByRoleId[roleId],
       reviewMode: system.graph?.reviewByRoleId?.[roleId]?.mode
@@ -597,6 +458,7 @@ export async function validateProjectSystemSource(args: {
   systemSource: string;
   modelCatalogModels?: ModelCatalogEntry[];
   modelCatalogGeneratedAt?: string;
+  executionBindings?: ExecutionBindingsV2;
 }): Promise<Record<string, unknown>> {
   try {
     const context = await assembleProjectContextFromSource({
@@ -604,7 +466,8 @@ export async function validateProjectSystemSource(args: {
       systemPath: args.systemPath,
       systemSource: args.systemSource,
       modelCatalogModels: args.modelCatalogModels,
-      modelCatalogGeneratedAt: args.modelCatalogGeneratedAt
+      modelCatalogGeneratedAt: args.modelCatalogGeneratedAt,
+      executionBindings: args.executionBindings
     });
     return {
       ok: true,
@@ -689,7 +552,17 @@ export async function saveProjectSystemSource(args: {
     ? savedPath.toLowerCase() === canonicalSystemPath.toLowerCase()
     : savedPath === canonicalSystemPath;
   if (isCanonicalSave) {
-    const importedDesign = systemDefinitionToDesign(parseSystemFromMermaidSource(args.systemSource));
+    const parsedSystem = parseSystemFromMermaidSource(args.systemSource);
+    const executionBindings = await loadExecutionBindingsV2(resolve(args.workdir, ".ogs", "execution-bindings.json"));
+    const defaultHarnessTemplate = executionBindings.defaults?.harnessTemplate;
+    const harnessTemplateByRoleId = Object.fromEntries(parsedSystem.roleIds.flatMap((roleId) => {
+      const templateId = executionBindings.roles[roleId]?.harnessTemplate ?? defaultHarnessTemplate;
+      return templateId ? [[roleId, templateId]] : [];
+    }));
+    const importedDesign = systemDefinitionToDesign(parsedSystem, {
+      harnessTemplateByRoleId,
+      defaultHarnessTemplate
+    });
     const existingDesign = await loadSystemDesign(args.workdir);
     await saveSystemDesign(args.workdir, existingDesign
       ? {
@@ -849,16 +722,18 @@ export async function exportTeamPackage(workdir: string): Promise<Record<string,
   const systemHash = createHash("sha256").update(systemSource).digest("hex");
   const design = await loadSystemDesign(workdir);
   const runtime = asRecord(await readOptionalJson(ogsPaths.runtimePath));
+  const executionBindingsPath = resolve(workdir, ".ogs", "execution-bindings.json");
+  const executionBindingsFile = await lstat(executionBindingsPath).catch(() => undefined);
+  const executionBindings = asRecord(await readOptionalJson(executionBindingsPath));
+  if (!executionBindingsFile?.isFile() || executionBindings?.ogsContractVersion !== 2) {
+    throw new Error("PROJECT_EXPORT_INVALID: v2 Team Package requires .ogs/execution-bindings.json with ogsContractVersion=2.");
+  }
+  await assertNoLegacyV1ExecutionAssets(workdir);
   const roleRepo = asString(runtime?.roleRepo) ?? "./og-roles";
   const roleRoot = resolveProjectRoleRootDir(workdir, roleRepo);
   const executableFiles = [
     ...await collectPortablePackageFiles(roleRoot, "og-roles/roles"),
-    ...await collectPortablePackageFiles(resolve(workdir, ".ogs", "contracts"), ".ogs/contracts"),
-    // Execution profiles may point at project-local helpers (for example the
-    // classic-team document/media publishers). Keep those helpers in the
-    // Team Package so an isolated simulation has the same executable assets
-    // as the authored TeamVersion.
-    ...await collectPortablePackageFiles(resolve(workdir, "tools"), "tools")
+    ...await collectPortablePackageFiles(resolve(workdir, ".ogs", "contracts"), ".ogs/contracts")
   ];
   for (const fileName of [
     "semantics.yaml",
@@ -900,9 +775,11 @@ export async function exportTeamPackage(workdir: string): Promise<Record<string,
   const generatedAt = new Date().toISOString();
   return {
     mode: "team-v2",
+    ogsContractVersion: 2,
     releaseManifest: {
       manifestVersion: 1,
       packageMode: "team-v2",
+      ogsContractVersion: 2,
       generatedAt,
       projectId: asString(projectRecord?.projectId),
       systemPath: "system.mmd",
@@ -911,20 +788,17 @@ export async function exportTeamPackage(workdir: string): Promise<Record<string,
         "system.mmd",
         "system.design.json",
         ".ogs/runtime.json",
-        ".ogs/model-selection.json",
+        ".ogs/execution-bindings.json",
         ".ogs/model-catalog.json",
         ".ogs/laws.json",
         ".ogs/user-profile.json",
         ".ogs/release-baselines.json",
-        "profiles.json",
-        "tools.json",
         ".ogs/project.json",
         ".ogs/semantics.*",
         ".ogs/models.*",
         ".ogs/systems/**",
         ".ogs/subsystems/**",
         ".ogs/contracts/**",
-        "tools/**",
         "og-roles/roles/**"
       ],
       requiredEnv: [],
@@ -936,13 +810,11 @@ export async function exportTeamPackage(workdir: string): Promise<Record<string,
       systemSource,
       design,
       runtime: runtime ? { ...runtime, roleRepo: "./og-roles" } : null,
-      modelSelection: await readOptionalJson(ogsPaths.modelSelectionPath),
+      executionBindings,
       modelCatalog: await readOptionalJson(ogsPaths.modelCatalogPath),
       laws: await readOptionalJson(ogsPaths.lawsPath),
       userProfile: await readOptionalJson(ogsPaths.userProfilePath),
       releaseBaselineScenarios: await readOptionalJson(resolve(workdir, ".ogs", "release-baselines.json")),
-      profiles: await readOptionalJson(resolve(workdir, "profiles.json")),
-      tools: await readOptionalJson(resolve(workdir, "tools.json")),
       digestVersion: 3,
       project: projectMeta,
       executableFiles
@@ -956,8 +828,8 @@ export async function loadTeamPackage(args: {
 }): Promise<Record<string, unknown>> {
   const record = asRecord(args.bundle);
   const team = asRecord(record?.team);
-  if (record?.mode !== "team-v2" || !team) {
-    throw new Error("PROJECT_PACKAGE_VERSION_UNSUPPORTED: expected mode=team-v2.");
+  if (record?.mode !== "team-v2" || record?.ogsContractVersion !== 2 || !team) {
+    throw new Error("PROJECT_PACKAGE_VERSION_UNSUPPORTED: expected team-v2 with ogsContractVersion=2.");
   }
   const systemSource = asString(team.systemSource);
   if (!systemSource) {
@@ -965,17 +837,23 @@ export async function loadTeamPackage(args: {
   }
   const projectRoot = await realpath(args.workdir);
   const ogsPaths = resolveOgsPaths(projectRoot);
+  const bindings = asRecord(team.executionBindings);
+  if (bindings?.ogsContractVersion !== 2) {
+    throw new Error("PROJECT_PACKAGE_VERSION_UNSUPPORTED: v2 Team Package requires executionBindings with ogsContractVersion=2.");
+  }
+  await assertNoLegacyV1ExecutionAssets(projectRoot);
   const writes: Array<[string, unknown, boolean]> = [
     [resolve(projectRoot, "system.mmd"), systemSource, false],
     [ogsPaths.runtimePath, team.runtime ?? null, true],
-    [ogsPaths.modelSelectionPath, team.modelSelection ?? null, true],
     [ogsPaths.modelCatalogPath, team.modelCatalog ?? null, true],
     [ogsPaths.lawsPath, team.laws ?? null, true],
     [ogsPaths.userProfilePath, team.userProfile ?? null, true],
-    [resolve(projectRoot, ".ogs", "release-baselines.json"), team.releaseBaselineScenarios ?? null, true],
-    [resolve(projectRoot, "profiles.json"), team.profiles ?? null, true],
-    [resolve(projectRoot, "tools.json"), team.tools ?? null, true]
+    [resolve(projectRoot, ".ogs", "release-baselines.json"), team.releaseBaselineScenarios ?? null, true]
   ];
+  if (team.profiles !== undefined || team.tools !== undefined || team.modelSelection !== undefined) {
+    throw new Error("V2_LEGACY_EXECUTION_CONFIG: Team Package cannot contain model-selection, profiles, or tools assets.");
+  }
+  writes.push([resolve(projectRoot, ".ogs", "execution-bindings.json"), team.executionBindings, true]);
   const designPath = resolve(projectRoot, "system.design.json");
   if (team.design !== undefined && team.design !== null) {
     writes.splice(1, 0, [designPath, team.design, true]);
@@ -1142,7 +1020,11 @@ export async function createProjectVisualization(args: {
       workdir: targetWorkdir,
       authoring: authoringRecord,
       validateSystemSource: validateProjectSystemSource,
-      persistCanonicalDesign: true
+      // The empty starter is an intentionally unbound draft. Its scaffolded design is already
+      // canonical; re-projecting it would incorrectly require a runnable Harness before the
+      // user has configured one in Studio.
+      persistCanonicalDesign: templateId !== "empty",
+      allowUnboundBindings: true
     });
     if (forceCreateFailure) {
       const forcedError = new Error("PROJECT_CREATE_FORCED_FAILURE") as Error & {
@@ -1167,8 +1049,7 @@ export async function createProjectVisualization(args: {
       mode: "team-v2",
       runCount: index.runs.length,
       modelCatalogPath: modelSyncResult.catalogPath,
-      modelSelectionPath: modelSyncResult.selectionPath,
-      selectedModel: modelSyncResult.selectedModel,
+      executionBindingsPath: modelSyncResult.executionBindingsPath,
       importedRoleIds: syncResult.importedRoleIds,
       importedModelIds: syncResult.importedModelIds,
       warnings: [],
@@ -1313,17 +1194,16 @@ export async function importInstalledRolesVisualization(args: {
 export async function inspectProjectVisualization(workdir: string): Promise<Record<string, unknown>> {
   const ogsPaths = resolveOgsPaths(workdir);
   const context = await loadProjectContext(workdir);
+  const executionBindings = await loadExecutionBindingsV2(ogsPaths.executionBindingsPath);
   const persistedIndex = await loadPersistedRunsIndex(workdir);
   const projectName = asString(asRecord(context.projectMeta)?.projectName)?.trim() || basename(workdir);
 
   return {
     workdir,
-    modelSelection: context.modelSelection ?? null,
-    modelSelectionDigest: context.modelSelection
-      ? `sha256:${createHash("sha256").update(JSON.stringify(context.modelSelection)).digest("hex")}`
-      : `sha256:${createHash("sha256").update(JSON.stringify({ configVersion: "3" })).digest("hex")}`,
+    executionBindings,
+    executionBindingsDigest: `sha256:${createHash("sha256").update(JSON.stringify(executionBindings)).digest("hex")}`,
     modelCatalog: context.modelCatalog ?? null,
-    resolvedModelSelection: Object.fromEntries(context.resolvedModelsByRoleId.entries()),
+    resolvedHarnessBindings: Object.fromEntries(context.resolvedModelsByRoleId.entries()),
     project: {
       projectName,
       projectId: asString(asRecord(context.projectMeta)?.projectId),
@@ -1334,14 +1214,6 @@ export async function inspectProjectVisualization(workdir: string): Promise<Reco
       roleCount: context.system.roleIds.length,
       roleIds: context.system.roleIds,
       flowCount: context.system.flows.length,
-      modelBindings: Object.entries(context.system.modelBinding).map(([roleId, modelRef]) => ({
-        roleId,
-        modelRef
-      })),
-      execBindings: Object.entries(context.system.executionBinding).map(([roleId, profileId]) => ({
-        roleId,
-        profileId
-      })),
       reviewedRoleIds: Object.keys(context.system.graph?.reviewByRoleId ?? {}).sort(),
       joinRoleIds: Object.keys(context.system.graph?.joinModeByRoleId ?? {}).sort(),
       loopRoleIds: Object.keys(context.system.graph?.loopMaxByRoleId ?? {}).sort(),
@@ -1357,11 +1229,11 @@ export async function inspectProjectVisualization(workdir: string): Promise<Reco
       lawSummary: context.compilerSnapshot.lawSummary,
       compilerDigest: context.compilerSnapshot.digest,
       compilerDiagnostics: context.compilerSnapshot.diagnostics,
-      modelSelectionWarnings: context.resolvedModelWarnings,
+      harnessBindingWarnings: context.resolvedModelWarnings,
       artifactPaths: {
         systemPath: context.systemPath,
         runtimePath: ogsPaths.runtimePath,
-        modelSelectionPath: ogsPaths.modelSelectionPath,
+        executionBindingsPath: ogsPaths.executionBindingsPath,
         modelCatalogPath: ogsPaths.modelCatalogPath,
         lawsPath: ogsPaths.lawsPath,
         userProfilePath: ogsPaths.userProfilePath,
@@ -1384,74 +1256,19 @@ export async function inspectProjectSystemVisualization(workdir: string): Promis
 export async function inspectProjectConfigVisualization(workdir: string): Promise<Record<string, unknown>> {
   const ogsPaths = resolveOgsPaths(workdir);
   const context = await loadProjectContext(workdir);
+  const executionBindings = await loadExecutionBindingsV2(ogsPaths.executionBindingsPath);
   return {
     workdir,
     paths: ogsPaths,
     runtime: context.runtimeConfig,
-    modelSelection: context.modelSelection ?? null,
+    executionBindings,
     modelCatalog: context.modelCatalog ?? null,
     laws: context.laws ?? null,
     userProfile: context.userProfile ?? null,
-    profiles: context.profiles ?? [],
-    tools: context.tools ?? [],
     project: context.projectMeta ?? null,
     roleRepoRoot: context.roleRepoRoot,
     compilerDigest: context.compilerSnapshot.digest,
-    modelSelectionWarnings: context.resolvedModelWarnings
-  };
-}
-
-export async function upsertProjectProfilesVisualization(args: {
-  workdir: string;
-  profiles: unknown;
-}): Promise<Record<string, unknown>> {
-  const profilesPath = resolve(args.workdir, "profiles.json");
-  const incoming = validateProfilesConfig(args.profiles, profilesPath);
-  const existing = await loadProfiles(undefined, args.workdir);
-  const byProfileId = new Map(existing.map((profile) => [profile.profileId, profile]));
-  for (const profile of incoming) {
-    byProfileId.set(profile.profileId, profile);
-  }
-  const profiles = Array.from(byProfileId.values()).sort((left, right) => left.profileId.localeCompare(right.profileId));
-  await writeJsonFileAtomic(profilesPath, profiles);
-  invalidateProjectProjectionCache(args.workdir);
-  return {
-    workdir: args.workdir,
-    profilesPath,
-    profiles
-  };
-}
-
-export async function upsertProjectExecutionConfigVisualization(args: {
-  workdir: string;
-  profiles: unknown;
-  tools: unknown;
-}): Promise<Record<string, unknown>> {
-  const profilesPath = resolve(args.workdir, "profiles.json");
-  const toolsPath = resolve(args.workdir, "tools.json");
-  const incomingProfiles = validateProfilesConfig(args.profiles, profilesPath);
-  const incomingTools = validateToolsConfig({ tools: args.tools }, toolsPath).tools;
-  const existingProfiles = await loadProfiles(undefined, args.workdir).catch(() => []);
-  const existingTools = await loadTools(undefined, args.workdir).catch(() => []);
-  const profilesById = new Map(existingProfiles.map((profile) => [profile.profileId, profile]));
-  const toolsByRef = new Map(existingTools.map((tool) => [tool.toolRef, tool]));
-  for (const profile of incomingProfiles) {
-    profilesById.set(profile.profileId, profile);
-  }
-  for (const tool of incomingTools) {
-    toolsByRef.set(tool.toolRef, tool);
-  }
-  const profiles = Array.from(profilesById.values()).sort((left, right) => left.profileId.localeCompare(right.profileId));
-  const tools = Array.from(toolsByRef.values()).sort((left, right) => left.toolRef.localeCompare(right.toolRef));
-  await writeJsonFileAtomic(profilesPath, validateProfilesConfig(profiles, profilesPath));
-  await writeJsonFileAtomic(toolsPath, validateToolsConfig({ tools }, toolsPath));
-  invalidateProjectProjectionCache(args.workdir);
-  return {
-    workdir: args.workdir,
-    profilesPath,
-    toolsPath,
-    profiles,
-    tools
+    harnessBindingWarnings: context.resolvedModelWarnings
   };
 }
 
@@ -1490,13 +1307,7 @@ function getBindingSourceLabel(args: {
   context: ProjectContext;
   resolvedModel?: ResolvedModelRuntimeConfig;
 }): string {
-  if (args.context.system.executionBinding[args.roleId]) {
-    return "system.mmd:exec.bind";
-  }
-  if (args.resolvedModel?.bindingSource === "selection") {
-    return ".ogs/model-selection.json";
-  }
-  return "none";
+  return args.resolvedModel ? ".ogs/execution-bindings.json" : "none";
 }
 
 export async function inspectProjectBindingVisualization(workdir: string): Promise<Record<string, unknown>> {
@@ -1507,15 +1318,13 @@ export async function inspectProjectBindingVisualization(workdir: string): Promi
     .map((roleId) => {
       const binding = context.compilerSnapshot.bindingSummaryByRoleId[roleId];
       const resolvedModel = context.resolvedModelsByRoleId.get(roleId);
-      const bindingKind = binding?.kind ?? "noop";
+      const bindingKind = binding?.kind ?? "unresolved";
       return {
         roleId,
         bindingKind,
-        declaredBinding: context.system.executionBinding[roleId] ?? context.system.modelBinding[roleId],
-        resolvedBinding:
-          bindingKind === "profile"
-            ? context.system.executionBinding[roleId]
-            : resolvedModel ? `${resolvedModel.backend}/${resolvedModel.modelId}` : binding?.modelId,
+        declaredBinding: context.executionBindings.roles[roleId]?.harnessTemplate
+          ?? context.executionBindings.defaults?.harnessTemplate,
+        resolvedBinding: resolvedModel ? `${resolvedModel.backend}/${resolvedModel.modelId}` : binding?.modelId,
         variant: resolvedModel?.variant,
         timeoutMs: resolvedModel?.timeoutMs,
         maxOutputBytes: resolvedModel?.maxOutputBytes,
