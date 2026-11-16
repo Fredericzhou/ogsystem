@@ -32,7 +32,7 @@ export async function initializeV2TeamDraftAssets(project, locale = "zh-CN") {
           filesystem: "none",
           process: "deny",
           network: "deny",
-          limits: { timeoutMs: 120000, maxOutputBytes: 65536 }
+          limits: { timeoutMs: 600000, maxOutputBytes: 131072 }
         },
         preset: "team-factory"
       }

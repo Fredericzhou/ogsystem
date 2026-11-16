@@ -1220,7 +1220,7 @@ async function renderHarnessRepository() {
     { templateId: "builtin.codex.gpt-6-luna", name: "Codex starter", backend: "codex", model: "gpt-6-luna", description: en ? "Codex CLI starter with no tools enabled." : "Codex CLI 起始模板，默认不开放工具。" },
     { templateId: "builtin.opencode.gpt-6-luna", name: "OpenCode starter", backend: "opencode", model: "gpt-6-luna", description: en ? "OpenCode starter with no tools enabled." : "OpenCode 起始模板，默认不开放工具。" },
     { templateId: "builtin.pi.gpt-6-luna", name: "Pi starter", backend: "pi", model: "gpt-6-luna", description: en ? "Pi starter with no tools enabled." : "Pi 起始模板，默认不开放工具。" }
-  ].map((item) => ({ ...item, allowedTools: [], environment: { filesystem: "none", process: "deny", network: "deny", limits: { timeoutMs: 120000, maxOutputBytes: 65536 } } }));
+  ].map((item) => ({ ...item, allowedTools: [], environment: { filesystem: "none", process: "deny", network: "deny", limits: { timeoutMs: 600000, maxOutputBytes: 131072 } } }));
   let templates = [];
   let backendSnapshot = [];
 
@@ -1286,7 +1286,7 @@ async function renderHarnessRepository() {
   };
   const closeDialog = (dialog) => { if (dialog.open) dialog.close(); dialog.remove(); };
   const openEditor = async (source) => {
-    const item = source ? normalizeTemplate(source) : normalizeTemplate({ templateId: `harness.${Date.now().toString(36)}`, backend: "codex", model: "gpt-6-luna", allowedTools: [], environment: { filesystem: "none", process: "deny", network: "deny", limits: { timeoutMs: 120000, maxOutputBytes: 65536, maxStorageBytes: 104857600 } }, status: "draft" });
+    const item = source ? normalizeTemplate(source) : normalizeTemplate({ templateId: `harness.${Date.now().toString(36)}`, backend: "codex", model: "gpt-6-luna", allowedTools: [], environment: { filesystem: "none", process: "deny", network: "deny", limits: { timeoutMs: 600000, maxOutputBytes: 131072, maxStorageBytes: 104857600 } }, status: "draft" });
     const dialog = document.createElement("dialog");
     dialog.className = "harness-editor-dialog";
     const backendOptions = (backendSnapshot.length ? backendSnapshot : [{ backend: item.backend, displayName: item.backend }]).map((backend) => `<option value="${esc(backend.backend || backend.id || "")}"${(backend.backend || backend.id) === item.backend ? " selected" : ""}>${esc(backend.displayName || backend.backend || backend.id || "")}</option>`).join("");
@@ -1303,7 +1303,7 @@ async function renderHarnessRepository() {
       ["max", en ? "Max" : "最高"]
     ];
     const reasoningSelect = reasoningOptions.map(([value, label]) => `<option value="${value}"${(item.reasoningEffort || "auto") === value ? " selected" : ""}>${label}</option>`).join("");
-    dialog.innerHTML = `<form method="dialog" class="harness-editor-form"><div class="dialog-head"><div><span class="section-kicker">${source ? (en ? "Edit template" : "编辑模板") : (en ? "New template" : "新建模板")}</span><h2>${esc(item.name || item.templateId)}</h2></div><button type="button" class="close-button" data-harness-close aria-label="${en ? "Close" : "关闭"}">×</button></div><div class="harness-editor-grid"><label>${en ? "Template ID" : "模板 ID"}<input name="templateId" required pattern="[a-zA-Z0-9._\\-]+" value="${esc(item.templateId || "")}"${source ? " readonly" : ""}></label><label>${en ? "Display name" : "显示名称"}<input name="name" value="${esc(item.name || "")}" placeholder="${en ? "Optional display name" : "可选显示名称"}"></label><label>${en ? "Backend" : "底座"}<select name="backend" required>${backendOptions}</select></label><label>${en ? "Model" : "模型"}<input name="model" required value="${esc(item.model || "gpt-6-luna")}"></label><label>${en ? "Model variant" : "模型变体"}<input name="variant" value="${esc(item.variant || "")}" placeholder="${en ? "Optional backend variant" : "可选的底座模型变体"}"></label><label>${en ? "Reasoning strength" : "推理强度"}<select name="reasoningEffort">${reasoningSelect}</select></label><label class="harness-wide">${en ? "Description" : "说明"}<textarea name="description" rows="2">${esc(item.description || "")}</textarea></label><fieldset class="harness-tool-fieldset harness-wide"><legend>${en ? "Allowed tools" : "允许工具"}</legend><p class="form-hint" data-harness-tool-hint>${en ? "Choose tools after native discovery. Only verified tools can be allowed." : "先执行底座能力发现；只能选择已验证工具。"}</p><div class="harness-tool-options" data-harness-tools></div></fieldset><fieldset class="harness-environment-fieldset harness-wide"><legend>${en ? "Environment and limits" : "环境与配额"}</legend><div class="harness-environment-grid"><label>Filesystem<select name="filesystem"><option value="none">none</option><option value="read_only">read_only</option><option value="staged">staged</option></select></label><label>Process<select name="process"><option value="deny">deny</option><option value="allow">allow</option></select></label><label>Network<select name="network"><option value="deny">deny</option><option value="allow">allow</option></select></label><label>Timeout (ms)<input name="timeoutMs" type="number" min="1" value="${esc(String(limits.timeoutMs || 120000))}"></label><label>Max output bytes<input name="maxOutputBytes" type="number" min="1" value="${esc(String(limits.maxOutputBytes || 65536))}"></label><label>Max storage bytes<input name="maxStorageBytes" type="number" min="1" value="${esc(String(limits.maxStorageBytes || 104857600))}"></label></div></fieldset><section class="harness-readonly-capabilities harness-wide"><div class="panel-head"><div><span class="section-kicker">${en ? "Adapter capabilities" : "适配器能力"}</span><h3>${en ? "Reported by the backend" : "由底座报告"}</h3></div></div><div data-harness-capabilities class="harness-capabilities-readonly"><span class="empty-note">${en ? "Select a backend to inspect capabilities." : "选择底座查看能力。"}</span></div></section></div><p class="form-status" data-harness-editor-status role="status" aria-live="polite"></p><div class="form-actions"><button type="button" class="secondary-button" data-harness-close>${en ? "Cancel" : "取消"}</button><button type="button" class="secondary-button" data-harness-save-draft>${en ? "Save draft" : "保存草稿"}</button><button type="submit" class="primary-button" data-harness-save>${en ? "Save" : "保存"}</button></div></form>`;
+    dialog.innerHTML = `<form method="dialog" class="harness-editor-form"><div class="dialog-head"><div><span class="section-kicker">${source ? (en ? "Edit template" : "编辑模板") : (en ? "New template" : "新建模板")}</span><h2>${esc(item.name || item.templateId)}</h2></div><button type="button" class="close-button" data-harness-close aria-label="${en ? "Close" : "关闭"}">×</button></div><div class="harness-editor-grid"><label>${en ? "Template ID" : "模板 ID"}<input name="templateId" required pattern="[a-zA-Z0-9._\\-]+" value="${esc(item.templateId || "")}"${source ? " readonly" : ""}></label><label>${en ? "Display name" : "显示名称"}<input name="name" value="${esc(item.name || "")}" placeholder="${en ? "Optional display name" : "可选显示名称"}"></label><label>${en ? "Backend" : "底座"}<select name="backend" required>${backendOptions}</select></label><label>${en ? "Model" : "模型"}<input name="model" required value="${esc(item.model || "gpt-6-luna")}"></label><label>${en ? "Model variant" : "模型变体"}<input name="variant" value="${esc(item.variant || "")}" placeholder="${en ? "Optional backend variant" : "可选的底座模型变体"}"></label><label>${en ? "Reasoning strength" : "推理强度"}<select name="reasoningEffort">${reasoningSelect}</select></label><label class="harness-wide">${en ? "Description" : "说明"}<textarea name="description" rows="2">${esc(item.description || "")}</textarea></label><fieldset class="harness-tool-fieldset harness-wide"><legend>${en ? "Allowed tools" : "允许工具"}</legend><p class="form-hint" data-harness-tool-hint>${en ? "Choose tools after native discovery. Only verified tools can be allowed." : "先执行底座能力发现；只能选择已验证工具。"}</p><div class="harness-tool-options" data-harness-tools></div></fieldset><fieldset class="harness-environment-fieldset harness-wide"><legend>${en ? "Environment and limits" : "环境与配额"}</legend><div class="harness-environment-grid"><label>Filesystem<select name="filesystem"><option value="none">none</option><option value="read_only">read_only</option><option value="staged">staged</option></select></label><label>Process<select name="process"><option value="deny">deny</option><option value="allow">allow</option></select></label><label>Network<select name="network"><option value="deny">deny</option><option value="allow">allow</option></select></label><label>Timeout (ms)<input name="timeoutMs" type="number" min="1" value="${esc(String(limits.timeoutMs || 600000))}"></label><label>Max output bytes<input name="maxOutputBytes" type="number" min="1" value="${esc(String(limits.maxOutputBytes || 131072))}"></label><label>Max storage bytes<input name="maxStorageBytes" type="number" min="1" value="${esc(String(limits.maxStorageBytes || 104857600))}"></label></div></fieldset><section class="harness-readonly-capabilities harness-wide"><div class="panel-head"><div><span class="section-kicker">${en ? "Adapter capabilities" : "适配器能力"}</span><h3>${en ? "Reported by the backend" : "由底座报告"}</h3></div></div><div data-harness-capabilities class="harness-capabilities-readonly"><span class="empty-note">${en ? "Select a backend to inspect capabilities." : "选择底座查看能力。"}</span></div></section></div><p class="form-status" data-harness-editor-status role="status" aria-live="polite"></p><div class="form-actions"><button type="button" class="secondary-button" data-harness-close>${en ? "Cancel" : "取消"}</button><button type="button" class="secondary-button" data-harness-save-draft>${en ? "Save draft" : "保存草稿"}</button><button type="submit" class="primary-button" data-harness-save>${en ? "Save" : "保存"}</button></div></form>`;
     document.body.append(dialog);
     const form = dialog.querySelector("form");
     const toolHost = dialog.querySelector("[data-harness-tools]");
@@ -3210,6 +3210,23 @@ function deleteStudioAuthoringFlow(authoring, canvas, flow) {
   return { authoring: nextAuthoring, canvas: nextCanvas };
 }
 
+function studioAgentProgressSummary(item, locale = "zh-CN") {
+  const agentEvent = item?.agentEvent || item?.event || item;
+  const type = String(agentEvent?.type || "").toLowerCase();
+  const english = locale === "en";
+  const toolName = agentEvent?.tool || agentEvent?.toolName || agentEvent?.name;
+  const tool = toolName ? ` · ${toolName}` : "";
+  if (type === "session_started") return english ? "Connected to the backend" : "已连接到底座";
+  if (type === "reasoning" || type === "reasoning_delta") return english ? "Reasoning through the task…" : "正在梳理任务…";
+  if (type === "text_delta") return english ? "Drafting the structured result…" : "正在形成结构化结果…";
+  if (type === "tool_started" || type === "tool_invocation") return english ? `Running a backend tool${tool}…` : `正在运行底座工具${tool}…`;
+  if (type === "tool_finished" || type === "tool_result") return english ? `Received the tool result${tool}` : `已收到工具结果${tool}`;
+  if (type === "permission_required" || type === "permission_request") return english ? "Checking execution permission…" : "正在检查执行权限…";
+  if (type === "turn_completed") return english ? "The backend returned a result" : "底座已返回结果";
+  if (type === "turn_failed") return english ? "The backend reported an error" : "底座报告了错误";
+  return english ? "Working through the task…" : "正在处理任务…";
+}
+
 function resolveStudioSelectedFlow(authoring, selection) {
   if (selection.roleId) return null;
   if (!selection.flowKey || !selection.flowId) return null;
@@ -3403,6 +3420,12 @@ async function resumeStudioProgress(teamVersionId, stage, graph, debugPanel, set
           pendingHandoffs.delete(roleId);
         }
         item._studioAuditItem = { ...(item._studioAuditItem || {}), ...event };
+        if (event.type === "agent_event") {
+          item.dataset.status = "working";
+          const statusSpan = item.querySelector(".team-debug-time-status") || item.querySelector("header span");
+          if (statusSpan) statusSpan.textContent = studioAgentProgressSummary(event, state.locale);
+          continue;
+        }
         const detail = event.failure || event.stdout || event.stdoutPreview || event.content || event.reason || event.eventType || "";
         if (detail) {
           const body = item.querySelector(".team-debug-bubble-body");
@@ -4998,21 +5021,6 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
           };
           return labels[item.type] || String(item.type || "event").replaceAll("_", " ");
         };
-        const agentProgressSummary = (item) => {
-          const agentEvent = item.agentEvent || item.event;
-          const type = String(agentEvent?.type || "").toLowerCase();
-          const english = state.locale === "en";
-          const tool = agentEvent?.tool ? ` · ${agentEvent.tool}` : "";
-          if (type === "session_started") return english ? "Connected to the backend" : "已连接到底座";
-          if (type === "reasoning" || type === "reasoning_delta") return english ? "Reasoning through the task…" : "正在梳理任务…";
-          if (type === "text_delta") return english ? "Drafting the structured result…" : "正在形成结构化结果…";
-          if (type === "tool_started" || type === "tool_invocation") return english ? `Running a backend tool${tool}…` : `正在运行底座工具${tool}…`;
-          if (type === "tool_finished" || type === "tool_result") return english ? `Received the tool result${tool}` : `已收到工具结果${tool}`;
-          if (type === "permission_required" || type === "permission_request") return english ? "Checking execution permission…" : "正在检查执行权限…";
-          if (type === "turn_completed") return english ? "The backend returned a result" : "底座已返回结果";
-          if (type === "turn_failed") return english ? "The backend reported an error" : "底座报告了错误";
-          return english ? "Working through the task…" : "正在处理任务…";
-        };
         const drawTranscript = (events = []) => {
           if (!result || !ownsRuntimePanel()) return;
           let panel = result.querySelector(".team-simulation-result");
@@ -5149,17 +5157,7 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
               card._studioAuditItem = { ...(card._studioAuditItem || {}), ...item };
               card.dataset.status = "working";
               const statusSpan = card.querySelector(".team-debug-time-status") || card.querySelector("header span");
-              if (statusSpan) statusSpan.textContent = `${studioSimulationEventTime(item)} · ${studioSimulationStatus("working")}`;
-              const progress = card.querySelector("[data-debug-section=agent-progress]") || (() => {
-                const section = document.createElement("section");
-                section.dataset.debugSection = "agent-progress";
-                section.className = "studio-agent-progress";
-                section.innerHTML = `<small>${state.locale === "en" ? "Live progress" : "实时进展"}</small><p></p>`;
-                (card.querySelector(".team-debug-bubble-body") || card).append(section);
-                return section;
-              })();
-              const progressText = progress.querySelector("p");
-              if (progressText) progressText.textContent = agentProgressSummary(item);
+              if (statusSpan) statusSpan.textContent = studioAgentProgressSummary(item, state.locale);
               continue;
             }
             if (!String(item.type || "").startsWith("role.") && item.type !== "role_waiting") continue;
@@ -5187,7 +5185,20 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
             const attempt = item.attempt ? ` · ${state.locale === "en" ? "attempt" : "尝试"} ${item.attempt}/${item.maxAttempts || "?"}` : "";
             const duration = item.durationMs !== undefined ? ` · ${Number(item.durationMs).toLocaleString(state.locale)} ms` : "";
             const statusSpan = card.querySelector(".team-debug-time-status") || card.querySelector("header span");
-            if (statusSpan) statusSpan.textContent = `${studioSimulationEventTime(item)} · ${studioSimulationStatus(status)}${attempt}${duration}`;
+            if (statusSpan) {
+              if (item.type === "role_waiting") {
+                const waitStage = item.stage === "model_provider"
+                  ? (state.locale === "en" ? "model service" : "模型服务")
+                  : item.stage === "cli_tool"
+                    ? (state.locale === "en" ? "execution tool" : "执行工具")
+                    : item.stage;
+                statusSpan.textContent = waitStage
+                  ? `${state.locale === "en" ? "Working" : "工作中"} · ${waitStage}`
+                  : (state.locale === "en" ? "Working" : "工作中");
+              } else {
+                statusSpan.textContent = `${studioSimulationEventTime(item)} · ${studioSimulationStatus(status)}${attempt}${duration}`;
+              }
+            }
             if (item.type === "role.input_ready" || item.inputContext) {
               addSection(card, state.locale === "en" ? "Input" : "收到的任务", item.inputContext, "input");
             }

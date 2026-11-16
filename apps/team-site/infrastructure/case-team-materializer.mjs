@@ -33,7 +33,14 @@ export const caseTeamMaterializer = Object.freeze({
         && bindings?.ogsContractVersion === 2
         && bindings?.schemaVersion === 1
         && bindings?.harnessTemplates
-        && bindings?.roles;
+        && bindings?.roles
+        // Built-in cases are regenerated when their execution budget still
+        // carries the old 120s default. User-authored Harness templates are
+        // never rewritten by this check.
+        && Object.values(bindings.harnessTemplates).every((template) => {
+          const timeoutMs = Number(template?.environment?.limits?.timeoutMs);
+          return Number.isFinite(timeoutMs) && timeoutMs >= 600000;
+        });
     } catch {
       return false;
     }

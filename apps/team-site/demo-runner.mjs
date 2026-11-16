@@ -19,7 +19,7 @@ const cliPath = join(repositoryRoot, "bin", "ogs.mjs");
 // available for explicit cross-backend and text-only scenarios.
 export const DEFAULT_DEMO_BACKEND = "codex";
 export const DEFAULT_DEMO_MODEL = "gpt-6-luna";
-const DEFAULT_DEMO_MODEL_TIMEOUT_MS = 120000;
+const DEFAULT_DEMO_MODEL_TIMEOUT_MS = 600000;
 // A classic team can contain several sequential model activations. The
 // process wrapper must outlive that chain; each role still keeps its own
 // model timeout and Runtime node budget.
