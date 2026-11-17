@@ -1232,9 +1232,9 @@ async function renderHarnessRepository() {
   const referenceModels = root.querySelector("[data-harness-reference-models]");
   const referenceModelCount = root.querySelector("[data-harness-reference-model-count]");
   const builtinTemplates = [
-    { templateId: "builtin.codex.gpt-6-luna", name: "Codex starter", backend: "codex", model: "gpt-6-luna", description: en ? "Codex CLI starter with no tools enabled." : "Codex CLI 起始模板，默认不开放工具。" },
-    { templateId: "builtin.opencode.gpt-6-luna", name: "OpenCode starter", backend: "opencode", model: "gpt-6-luna", description: en ? "OpenCode starter with no tools enabled." : "OpenCode 起始模板，默认不开放工具。" },
-    { templateId: "builtin.pi.gpt-6-luna", name: "Pi starter", backend: "pi", model: "gpt-6-luna", description: en ? "Pi starter with no tools enabled." : "Pi 起始模板，默认不开放工具。" }
+    { templateId: "builtin.codex.gpt-6-luna", name: "Codex starter", backend: "codex", model: "gpt-6-luna", description: en ? "Codex CLI starter; copies enable all discovered tools." : "Codex CLI 起始模板；复制时默认开放全部已发现工具。" },
+    { templateId: "builtin.opencode.gpt-6-luna", name: "OpenCode starter", backend: "opencode", model: "gpt-6-luna", description: en ? "OpenCode starter; copies enable all discovered tools." : "OpenCode 起始模板；复制时默认开放全部已发现工具。" },
+    { templateId: "builtin.pi.gpt-6-luna", name: "Pi starter", backend: "pi", model: "gpt-6-luna", description: en ? "Pi starter; copies enable all discovered tools." : "Pi 起始模板；复制时默认开放全部已发现工具。" }
   ].map((item) => ({ ...item, allowedTools: [], environment: { filesystem: "none", process: "deny", network: "deny", limits: { timeoutMs: 600000, maxOutputBytes: 131072 } } }));
   let templates = [];
   let backendSnapshot = [];
@@ -1268,7 +1268,7 @@ async function renderHarnessRepository() {
   const statusLabel = (value) => ({ draft: en ? "Draft" : "草稿", verified: en ? "Verified" : "已验证", failed: en ? "Failed" : "验证失败", archived: en ? "Archived" : "已归档", verifying: en ? "Verifying" : "验证中" }[value] || value || (en ? "Draft" : "草稿"));
   const statusClass = (value) => value === "verified" ? "confirmed" : value === "failed" ? "failed" : value === "archived" ? "archived" : "pending";
   const renderBuiltins = () => {
-    builtinsHost.innerHTML = builtinTemplates.map((item) => { const dependency = templateDependencyState(item); return `<article class="harness-template-card harness-template-card--builtin"><div class="harness-template-card-head">${renderBackendIcon(item.backend, { size: 28, displayName: item.backend })}<div><strong>${esc(item.name)}</strong><span class="harness-template-card-subtitle">${esc(item.backend)} · ${esc(item.model)}</span></div><span class="status-chip confirmed">${en ? "Stable" : "稳定模板"}</span></div><p>${esc(item.description)}</p><div class="harness-template-card-meta"><span>0 ${en ? "allowed tools" : "个允许工具"}</span><span class="harness-template-dependency ${dependency.className}">${esc(dependency.label)}</span><span>${en ? "Built-in · cannot be archived" : "内置 · 不可归档"}</span></div><button type="button" class="secondary-button" data-harness-copy-builtin="${esc(item.templateId)}">＋ ${en ? "Copy" : "复制"}</button></article>`; }).join("");
+    builtinsHost.innerHTML = builtinTemplates.map((item) => { const dependency = templateDependencyState(item); return `<article class="harness-template-card harness-template-card--builtin"><div class="harness-template-card-head">${renderBackendIcon(item.backend, { size: 28, displayName: item.backend })}<div><strong>${esc(item.name)}</strong><span class="harness-template-card-subtitle">${esc(item.backend)} · ${esc(item.model)}</span></div><span class="status-chip confirmed">${en ? "Stable" : "稳定模板"}</span></div><p>${esc(item.description)}</p><div class="harness-template-card-meta"><span>${en ? "All discovered tools on copy" : "复制时默认开放全部已发现工具"}</span><span class="harness-template-dependency ${dependency.className}">${esc(dependency.label)}</span><span>${en ? "Built-in · cannot be archived" : "内置 · 不可归档"}</span></div><button type="button" class="secondary-button" data-harness-copy-builtin="${esc(item.templateId)}">＋ ${en ? "Copy" : "复制"}</button></article>`; }).join("");
   };
   const renderList = () => {
     const query = String(root.querySelector("[data-harness-search]")?.value || "").trim().toLowerCase();
@@ -1278,10 +1278,10 @@ async function renderHarnessRepository() {
     list.innerHTML = visible.map((item) => {
       const env = item.environment || {};
       const limits = env.limits || {};
-      const verifiedTools = item.verification?.verifiedTools || item.verifiedTools || [];
+      const allowedTools = item.allowedTools || [];
       const verificationMessage = item.verification?.message || item.verification?.error?.message;
       const dependency = templateDependencyState(item);
-      return `<article class="harness-template-card" data-template-id="${esc(item.templateId || "")}"><div class="harness-template-card-head">${renderBackendIcon(item.backend, { size: 28, displayName: item.backend })}<div><strong>${esc(item.name || item.templateId || "Harness")}</strong><span class="harness-template-card-subtitle">${esc(item.backend || "-")} · ${esc(item.model || "-")}</span></div><span class="status-chip ${statusClass(item.status)}">${esc(statusLabel(item.status))}</span></div><p class="harness-template-card-id"><code>${esc(item.templateId || "")}</code></p><div class="harness-template-card-meta"><span>${verifiedTools.length} ${en ? "verified tools" : "个已验证工具"}</span><span class="harness-template-dependency ${dependency.className}">${esc(dependency.label)}</span><span>${en ? "Reasoning" : "推理"}: ${esc(String(item.reasoningEffort || "auto"))}</span><span>${esc(String(env.filesystem || "none"))} · ${esc(String(env.process || "deny"))} · ${esc(String(env.network || "deny"))}</span>${limits.timeoutMs ? `<span>${esc(String(limits.timeoutMs))} ms` : ""}</div>${verificationMessage ? `<p class="harness-template-error">${esc(verificationMessage)}</p>` : ""}<div class="harness-template-actions"><button class="text-button" type="button" data-harness-edit="${esc(item.templateId || "")}">${en ? "Edit" : "编辑"}</button><button class="text-button" type="button" data-harness-verify="${esc(item.templateId || "")}"${item.status === "archived" ? " disabled" : ""}>${en ? "Verify" : "验证"}</button>${item.status === "verified" ? `<button class="text-button" type="button" data-harness-copy="${esc(item.templateId || "")}">${en ? "Copy" : "复制"}</button>` : ""}${item.templateId?.startsWith("builtin.") ? "" : `<button class="text-button danger-button" type="button" data-harness-archive="${esc(item.templateId || "")}">${en ? "Archive" : "归档"}</button>`}</div></article>`;
+      return `<article class="harness-template-card" data-template-id="${esc(item.templateId || "")}"><div class="harness-template-card-head">${renderBackendIcon(item.backend, { size: 28, displayName: item.backend })}<div><strong>${esc(item.name || item.templateId || "Harness")}</strong><span class="harness-template-card-subtitle">${esc(item.backend || "-")} · ${esc(item.model || "-")}</span></div><span class="status-chip ${statusClass(item.status)}">${esc(statusLabel(item.status))}</span></div><p class="harness-template-card-id"><code>${esc(item.templateId || "")}</code></p><div class="harness-template-card-meta"><span>${allowedTools.length} ${en ? "allowed tools" : "个允许工具"}</span><span class="harness-template-dependency ${dependency.className}">${esc(dependency.label)}</span><span>${en ? "Reasoning" : "推理"}: ${esc(String(item.reasoningEffort || "auto"))}</span><span>${esc(String(env.filesystem || "none"))} · ${esc(String(env.process || "deny"))} · ${esc(String(env.network || "deny"))}</span>${limits.timeoutMs ? `<span>${esc(String(limits.timeoutMs))} ms` : ""}</div>${verificationMessage ? `<p class="harness-template-error">${esc(verificationMessage)}</p>` : ""}<div class="harness-template-actions"><button class="text-button" type="button" data-harness-edit="${esc(item.templateId || "")}">${en ? "Edit" : "编辑"}</button><button class="text-button" type="button" data-harness-verify="${esc(item.templateId || "")}"${item.status === "archived" ? " disabled" : ""}>${en ? "Verify" : "验证"}</button>${item.status === "verified" ? `<button class="text-button" type="button" data-harness-copy="${esc(item.templateId || "")}">${en ? "Copy" : "复制"}</button>` : ""}${item.templateId?.startsWith("builtin.") ? "" : `<button class="text-button danger-button" type="button" data-harness-archive="${esc(item.templateId || "")}">${en ? "Archive" : "归档"}</button>`}</div></article>`;
     }).join("");
   };
   const modelIsAvailable = (item) => item?.runnable === true || ["runnable", "verified", "available", "ready"].includes(String(item?.status || "").toLowerCase());
@@ -1374,11 +1374,22 @@ async function renderHarnessRepository() {
     const selectedTools = new Set(item.allowedTools || []);
     let discoveredTools = [];
     let toolsConfigurable = true;
+    let lastDiscoveryKey = `${item.backend}:${item.model}`;
+    let discoveryRequestVersion = 0;
     const showDiscovery = async () => {
+      const discoveryKey = `${backendSelect.value}:${form.elements.model.value.trim()}`;
+      const requestVersion = ++discoveryRequestVersion;
+      const isCurrentRequest = () => requestVersion === discoveryRequestVersion
+        && discoveryKey === `${backendSelect.value}:${form.elements.model.value.trim()}`;
+      const bindingChanged = discoveryKey !== lastDiscoveryKey;
+      const saveButtons = [...form.querySelectorAll("[data-harness-save-draft], button[type=submit]")];
+      saveButtons.forEach((button) => { button.disabled = true; });
       toolHost.innerHTML = `<span class="empty-note">${en ? "Discovering native tools…" : "正在发现原生工具…"}</span>`;
       try {
         const payload = await discover(backendSelect.value, form.elements.model.value);
+        if (!isCurrentRequest()) return;
         const sourceInfo = payload.source || payload.sources?.find((entry) => entry.backend === backendSelect.value) || {};
+        const resources = payload.resources || sourceInfo.resources || {};
         const capabilities = sourceInfo.capabilities || payload.capabilities || {};
         const nativeStatus = payload.nativeTools?.status || "ready";
         const nativeDetail = payload.nativeTools?.detail || "";
@@ -1387,19 +1398,40 @@ async function renderHarnessRepository() {
           ? payload.nativeTools.verifiedTools.filter((tool) => typeof tool === "string" && tool.trim())
           : [];
         discoveredTools = [...new Set(tools.map((tool) => typeof tool === "string" ? tool : tool.name || tool.id).filter(Boolean))];
+        if (!source || bindingChanged) {
+          selectedTools.clear();
+          discoveredTools.forEach((tool) => selectedTools.add(tool));
+          form.elements.filesystem.value = resources.filesystem === true ? "staged" : "none";
+          form.elements.process.value = resources.process === true ? "allow" : "deny";
+          form.elements.network.value = resources.network === true ? "allow" : "deny";
+        }
+        lastDiscoveryKey = discoveryKey;
         toolHost.innerHTML = toolsConfigurable && discoveredTools.length
-          ? discoveredTools.map((name) => `<label class="harness-tool-option"><input type="checkbox" name="allowedTools" value="${esc(name)}"${selectedTools.has(name) ? " checked" : ""}><span>${esc(name)}</span></label>`).join("")
+          ? `<div class="harness-tool-select-actions"><button type="button" class="text-button" data-tools-select="all">${en ? "Select all" : "全选"}</button><button type="button" class="text-button" data-tools-select="none">${en ? "Clear" : "清空"}</button></div><div class="harness-tool-options">${discoveredTools.map((name) => `<label class="harness-tool-option"><input type="checkbox" name="allowedTools" value="${esc(name)}"${selectedTools.has(name) ? " checked" : ""}><span>${esc(name)}</span></label>`).join("")}</div>`
           : toolsConfigurable
             ? `<span class="empty-note">${nativeStatus === "unavailable" && nativeDetail ? esc(nativeDetail) : (en ? "No verified native tools. An empty tool set is valid." : "没有已验证原生工具；空工具集仍可使用。")}</span>`
             : `<div class="harness-tool-default"><strong>${en ? "Backend default tool set" : "使用底座默认工具集"}</strong><span>${en ? "This Backend cannot enforce a per-tool allowlist. All discovered native tools remain available." : "该底座不能强制逐项工具白名单，将开放底座发现的全部原生工具。"}</span>${discoveredTools.length ? `<code>${esc(discoveredTools.join(", "))}</code>` : ""}</div>`;
-        capHost.innerHTML = Object.entries({ ...(sourceInfo.resources || {}), ...(sourceInfo.permission || {}), ...(sourceInfo.modes || {}), ...capabilities }).filter(([, value]) => value !== undefined && value !== null).map(([key, value]) => `<span><strong>${esc(key)}</strong> ${esc(typeof value === "object" ? JSON.stringify(value) : String(value))}</span>`).join("") || `<span class="empty-note">${en ? "No capability details reported." : "底座未报告更多能力。"}</span>`;
-      } catch (error) { toolHost.innerHTML = `<span class="harness-template-error">${esc(error.message || (en ? "Discovery failed." : "能力发现失败。"))}</span>`; capHost.innerHTML = ""; }
+        capHost.innerHTML = Object.entries({ ...resources, ...(payload.permission || sourceInfo.permission || {}), ...(payload.modes || sourceInfo.modes || {}), ...capabilities }).filter(([, value]) => value !== undefined && value !== null).map(([key, value]) => `<span><strong>${esc(key)}</strong> ${esc(typeof value === "object" ? JSON.stringify(value) : String(value))}</span>`).join("") || `<span class="empty-note">${en ? "No capability details reported." : "底座未报告更多能力。"}</span>`;
+        toolHost.querySelectorAll("[data-tools-select]").forEach((button) => button.addEventListener("click", () => {
+          selectedTools.clear();
+          if (button.dataset.toolsSelect === "all") discoveredTools.forEach((tool) => selectedTools.add(tool));
+          toolHost.querySelectorAll('input[name="allowedTools"]').forEach((input) => { input.checked = selectedTools.has(input.value); });
+        }));
+      } catch (error) {
+        if (isCurrentRequest()) {
+          toolHost.innerHTML = `<span class="harness-template-error">${esc(error.message || (en ? "Discovery failed." : "能力发现失败。"))}</span>`;
+          capHost.innerHTML = "";
+        }
+      } finally {
+        if (isCurrentRequest()) saveButtons.forEach((button) => { button.disabled = false; });
+      }
     };
     form.elements.filesystem.value = env.filesystem || "none";
     form.elements.process.value = env.process || "deny";
     form.elements.network.value = env.network || "deny";
     dialog.querySelectorAll("[data-harness-close]").forEach((button) => button.addEventListener("click", () => closeDialog(dialog)));
     backendSelect.addEventListener("change", showDiscovery);
+    form.elements.model.addEventListener("change", showDiscovery);
     const save = async (event, draftOnly = false) => {
       event?.preventDefault();
       const data = new FormData(form);
@@ -1491,8 +1523,12 @@ async function renderHarnessRepository() {
     try {
       const dependency = templateDependencyState(source);
       if (dependency.className !== "confirmed") throw new Error(en ? "This starter is not available on this machine." : "该起始模板在本机暂不可用。");
+      const discovery = await discover(source.backend, source.model);
+      if (discovery.nativeTools?.status !== "ready") throw new Error(discovery.nativeTools?.detail || (en ? "Native tool discovery is unavailable." : "原生工具发现不可用。"));
+      const sourceInfo = discovery.source || discovery.sources?.find((entry) => entry.backend === source.backend) || {};
+      const resources = discovery.resources || sourceInfo.resources || {};
       const copyId = `${source.templateId}.copy-${Date.now().toString(36)}`;
-      const response = await pageFetch("/api/v2/harness/templates", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...source, templateId: copyId, name: `${source.name} · ${en ? "Copy" : "副本"}` }) });
+      const response = await pageFetch("/api/v2/harness/templates", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...source, templateId: copyId, name: `${source.name} · ${en ? "Copy" : "副本"}`, allowedTools: discovery.nativeTools.verifiedTools || [], environment: { ...source.environment, filesystem: resources.filesystem === true ? "staged" : "none", process: resources.process === true ? "allow" : "deny", network: resources.network === true ? "allow" : "deny" } }) });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || (en ? "Unable to copy starter." : "无法复制内置模板。"));
       const verifyResponse = await pageFetch(`/api/v2/harness/templates/${encodeURIComponent(copyId)}/verify`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
@@ -1961,6 +1997,47 @@ function studioSimulationErrorText(message) {
   return detail || (state.locale === "en" ? "The debug run could not be completed. Try again." : "调试无法完成，请重试。");
 }
 
+function bindStudioDebugIdSearch(container, emptyState) {
+  const input = container?.querySelector("[data-debug-history-search]");
+  if (!input) return;
+  const filter = () => {
+    const query = input.value.trim().toLowerCase();
+    let matchCount = 0;
+    container.querySelectorAll(".studio-simulation-row[data-debug-id]").forEach((row) => {
+      const matches = !query || (row.dataset.debugId || "").toLowerCase().includes(query);
+      row.hidden = !matches;
+      if (matches) matchCount += 1;
+    });
+    if (emptyState) emptyState.hidden = !query || matchCount > 0;
+  };
+  input.value = new URLSearchParams(location.search).get("debugId") || "";
+  input.addEventListener("input", filter);
+  filter();
+}
+
+async function copyStudioDebugId(debugId) {
+  const english = state.locale === "en";
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(debugId);
+    } else {
+      const field = document.createElement("textarea");
+      field.value = debugId;
+      field.setAttribute("readonly", "");
+      field.style.position = "fixed";
+      field.style.opacity = "0";
+      document.body.append(field);
+      field.select();
+      const copied = document.execCommand("copy");
+      field.remove();
+      if (!copied) throw new Error("copy failed");
+    }
+    showToast(english ? "Debug ID copied" : "调试号已复制");
+  } catch {
+    showToast(english ? "Could not copy the Debug ID" : "复制调试号失败");
+  }
+}
+
 async function renderStudioRunPage(teamVersionId, pageRequest = state.activeRequest) {
   const root = $("#studio-view");
   const english = state.locale === "en";
@@ -1982,11 +2059,12 @@ async function renderStudioRunPage(teamVersionId, pageRequest = state.activeRequ
     const history = simulations.length ? simulations.map((simulation) => {
       const detail = `/studio/teams/${encodeURIComponent(teamVersionId)}/run/${encodeURIComponent(simulation.simulationId)}`;
       const auditHref = studioArtifactsBrowserUrl(teamVersionId, simulation.simulationId, simulation.teamId || team.teamId);
-      return `<div class="material-row studio-simulation-row"><a class="studio-simulation-link" href="${detail}" data-route="${detail}"><div><strong>${esc(simulation.input || "Studio Simulation")}</strong><div class="task-record-meta"><span class="status-chip ${esc(simulation.status)}">${esc(studioSimulationStatus(simulation.status))}</span><span class="mode-chip ${esc(simulation.mode || "dry-run")}">${esc(studioSimulationModeLabel(simulation.mode))}</span><span>${esc(simulation.createdAt || "")}</span><span>${esc(simulation.simulationId)}</span></div>${simulation.failureSummary ? `<p class="task-run-last-error">${esc(studioSimulationErrorText(simulation.failureSummary))}</p>` : ""}</div></a><div class="studio-history-actions" aria-label="${english ? "Simulation actions" : "运行操作"}"><a class="secondary-button studio-history-action" href="${auditHref}" target="_blank" rel="noreferrer">${auditLabel}</a><button type="button" class="secondary-button studio-history-action" data-open-workspace="${workspaceOpenPath}"${workspaceAvailable ? "" : ` disabled title="${workspaceUnavailableTitle}"`}>${workspaceLabel}</button></div></div>`;
+      return `<div class="material-row studio-simulation-row" data-debug-id="${esc(simulation.simulationId || "")}"><a class="studio-simulation-link" href="${detail}" data-route="${detail}"><div><strong>${esc(simulation.input || "Studio Simulation")}</strong><div class="task-record-meta"><span class="status-chip ${esc(simulation.status)}">${esc(studioSimulationStatus(simulation.status))}</span><span class="mode-chip ${esc(simulation.mode || "dry-run")}">${esc(studioSimulationModeLabel(simulation.mode))}</span><span>${esc(simulation.createdAt || "")}</span><span>${esc(simulation.simulationId)}</span></div>${simulation.failureSummary ? `<p class="task-run-last-error">${esc(studioSimulationErrorText(simulation.failureSummary))}</p>` : ""}</div></a><div class="studio-history-actions" aria-label="${english ? "Simulation actions" : "运行操作"}"><a class="secondary-button studio-history-action" href="${auditHref}" target="_blank" rel="noreferrer">${auditLabel}</a><button type="button" class="secondary-button studio-history-action" data-open-workspace="${workspaceOpenPath}"${workspaceAvailable ? "" : ` disabled title="${workspaceUnavailableTitle}"`}>${workspaceLabel}</button></div></div>`;
     }).join("") : `<p class="empty-note">${english ? "No simulations for this TeamVersion yet." : "此团队版本还没有仿真记录。"}</p>`;
     const clearable = simulations.some((item) => item.mode !== "sandbox" && !item.baselineScenarioId && ["completed", "failed", "stopped"].includes(item.status));
-    root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="/studio" data-route="/studio">← ${english ? "Team repository" : "团队仓库"}</a><div class="eyebrow">OGS Studio · ${esc(team.teamId || team.teamRootId || team.projectId)}</div><h1>${esc(team.name || team.teamName)} <span class="version-badge">v${team.teamVersionNumber || 1}</span></h1><p>${english ? "Review role input, output, progress, and failures from each isolated debug run." : "按次回看独立调试中的角色输入、输出、进度和异常诊断。"}</p></div><span class="status-chip ${esc(team.teamVersionStatus || "draft")}">${esc(teamVersionMeta(team).label)}</span></section>${studioWorkspaceNav(teamVersionId, "run")}<section class="project-panel"><div class="panel-head"><div><span class="section-kicker">${english ? "Debug runs" : "调试记录"}</span><h2>${english ? "Debug history" : "调试历史"}</h2></div><div class="form-actions"><span class="count-badge">${simulations.length}</span>${clearable ? `<button class="secondary-button danger-button" type="button" data-clear-studio-history>${english ? "Clear finished debug runs" : "清理已完成调试记录"}</button>` : ""}</div></div><div class="material-list studio-simulation-list">${history}</div></section>`;
+    root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="/studio" data-route="/studio">← ${english ? "Team repository" : "团队仓库"}</a><div class="eyebrow">OGS Studio · ${esc(team.teamId || team.teamRootId || team.projectId)}</div><h1>${esc(team.name || team.teamName)} <span class="version-badge">v${team.teamVersionNumber || 1}</span></h1><p>${english ? "Review role input, output, progress, and failures from each isolated debug run." : "按次回看独立调试中的角色输入、输出、进度和异常诊断。"}</p></div><span class="status-chip ${esc(team.teamVersionStatus || "draft")}">${esc(teamVersionMeta(team).label)}</span></section>${studioWorkspaceNav(teamVersionId, "run")}<section class="project-panel"><div class="panel-head"><div><span class="section-kicker">${english ? "Debug runs" : "调试记录"}</span><h2>${english ? "Debug history" : "调试历史"}</h2></div><div class="form-actions"><span class="count-badge">${simulations.length}</span>${clearable ? `<button class="secondary-button danger-button" type="button" data-clear-studio-history>${english ? "Clear finished debug runs" : "清理已完成调试记录"}</button>` : ""}</div></div><label class="studio-debug-id-search"><span>${english ? "Search by Debug ID" : "按调试号查询"}</span><input type="search" data-debug-history-search placeholder="${english ? "Enter all or part of a Debug ID" : "输入完整或部分调试号"}" autocomplete="off"></label><p class="empty-note" data-debug-history-empty hidden>${english ? "No debug runs match this ID." : "没有匹配此调试号的记录。"}</p><div class="material-list studio-simulation-list">${history}</div></section>`;
     bindStudioWorkspaceButtons(root);
+    bindStudioDebugIdSearch(root.querySelector(".project-panel"), root.querySelector("[data-debug-history-empty]"));
     root.querySelector(".project-panel .panel-head h2").textContent = english ? "Debug history" : "调试历史";
     root.querySelector("[data-clear-studio-history]")?.addEventListener("click", async (event) => {
       const button = event.currentTarget;
@@ -2054,6 +2132,7 @@ async function renderStudioSimulationDetail(teamId, teamVersionId, simulationId,
     if (!simulationsResponse.ok) throw new Error(simulationsPayload.error || "Unable to load simulation history.");
     if (pageRequest && !isCurrentRequest(pageRequest)) return;
     const simulation = detail.simulation || {};
+    const debugRunId = simulation.simulationId || simulationId;
     const stateData = detail.state || {};
     const roleLabel = (roleId) => simulation.roleDisplayNames?.[roleId] || roleId;
     const evidenceText = stateData.finalOutputsByRoleId
@@ -2121,7 +2200,8 @@ async function renderStudioSimulationDetail(teamId, teamVersionId, simulationId,
       return studioRuntimeRoleCardMarkup({ event: { ...item, roleId }, roleName: roleNameStr, backend, authoring: simulationAuthoring, auditIndex: index, bodyMarkup, handoffMarkup, statusLabel: `${studioSimulationEventTime(item)} · ${studioSimulationStatus(item.status || "unknown")}`, focusableAvatar: false });
     }).join("") || `<li class="empty-note">${state.locale === "en" ? "No role execution trace was collected." : "未采集到角色执行流水。"}</li>`;
     const transcriptHtml = `${userPromptCard}${transcriptItemsHtml}`;
-    root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="${back}" data-route="${back}">← ${state.locale === "en" ? "Debug history" : "调试历史"}</a><div class="eyebrow">${esc(simulation.teamId || teamId)} · ${esc(simulation.teamVersionId || teamVersionId)}</div><h1>${state.locale === "en" ? "Debug run" : "调试运行"}</h1><p>${esc(simulation.createdAt || "")}</p></div><span class="status-chip ${esc(simulation.status)}">${esc(studioSimulationStatus(simulation.status))}</span></section>${runMetrics}<div class="studio-dual-core-bar"><div class="studio-dual-core-meta"><button type="button" class="secondary-button studio-history-expand-btn" data-history-toggle="expand" title="${state.locale === "en" ? "Expand history drawer" : "展开调试历史"}" aria-label="${state.locale === "en" ? "Expand history drawer" : "展开调试历史"}">▶ ${state.locale === "en" ? "History" : "历史"}</button><strong>${state.locale === "en" ? "Macro / Micro Twin Core Cockpit" : "宏微双核联动视窗"}</strong><span class="field-hint">${state.locale === "en" ? "Macro topological view & micro role chat content" : "宏观拓扑结构与微观角色对话同屏联动"}</span></div><div class="studio-layout-switcher" role="radiogroup" aria-label="${state.locale === "en" ? "Layout preference" : "宏微双核布局"}"><button type="button" class="studio-layout-switcher-btn" data-preference="structure-focus" title="${state.locale === "en" ? "Focus on Structure (60:40)" : "突出结构 (60:40)"}"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="10" height="18" rx="2"/><rect x="15" y="3" width="6" height="18" rx="2"/></svg><span>${state.locale === "en" ? "Structure" : "突出结构"}</span></button><button type="button" class="studio-layout-switcher-btn" data-preference="balanced" title="${state.locale === "en" ? "Balanced Dual-Core (50:50)" : "双核并重 (50:50)"}"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="8" height="18" rx="2"/><rect x="13" y="3" width="8" height="18" rx="2"/></svg><span>${state.locale === "en" ? "Balanced" : "双核并重"}</span></button><button type="button" class="studio-layout-switcher-btn is-active" data-preference="content-focus" title="${state.locale === "en" ? "Focus on Content (40:60)" : "突出内容 (40:60)"}"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="6" height="18" rx="2"/><rect x="11" y="3" width="10" height="18" rx="2"/></svg><span>${state.locale === "en" ? "Content" : "突出内容"}</span></button></div></div><div class="studio-run-dual-core" data-layout-preference="content-focus"><section class="studio-run-macro-panel detail-graph-section project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Macro view" : "宏观拓扑"}</span><h2>${state.locale === "en" ? "Read-only execution view" : "只读运行视图"}</h2></div><div class="panel-head-actions"><span class="status-chip">${state.locale === "en" ? "Read-only" : "只读"}</span><button type="button" class="studio-panel-maximize-btn" data-panel-maximize="macro" title="${state.locale === "en" ? "Maximize Macro Graph" : "最大化宏观图谱"}" aria-label="${state.locale === "en" ? "Maximize Macro Graph" : "最大化宏观图谱"}"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg></button></div></div><div id="studio-run-graph-stage" class="graph-stage studio-run-graph-stage" role="application" aria-label="${state.locale === "en" ? "Historical runtime graph" : "历史运行图谱"}"></div></section><section class="studio-run-micro-panel project-panel studio-debug-detail"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Micro view" : "微观内容"}</span><h2>${state.locale === "en" ? "Role execution trace" : "角色执行过程"}</h2></div><div class="panel-head-actions"><span class="count-badge">${auditTrail.length}</span><button type="button" class="studio-panel-maximize-btn" data-panel-maximize="micro" title="${state.locale === "en" ? "Maximize Micro Chat" : "最大化微观群聊"}" aria-label="${state.locale === "en" ? "Maximize Micro Chat" : "最大化微观群聊"}"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg></button></div></div><div class="team-debug-transcript-wrap"><ol class="team-debug-transcript">${transcriptHtml}</ol></div></section></div><section class="project-grid"><article class="project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Input" : "输入"}</span><h2>${state.locale === "en" ? "Debug request" : "调试任务"}</h2></div></div><pre>${esc(simulation.input || "")}</pre></article><article class="project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Result" : "结果"}</span><h2>${state.locale === "en" ? "Final outputs" : "最终结果"}</h2></div></div><pre>${esc(evidenceText || studioSimulationErrorText(stateData.error || simulation.failureSummary || ""))}</pre></article></section><section class="project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Events" : "事件"}</span><h2>${state.locale === "en" ? "Simulation events" : "调试事件"}</h2></div><span class="count-badge">${(eventPayload.events || []).length}</span></div><ol class="studio-event-list">${(eventPayload.events || []).map((event) => `<li data-role-id="${esc(event.roleId || "")}" data-edge-id="${esc(event.edgeId || event.flowId || "")}"><time>${esc(studioSimulationEventTime(event))}</time><strong>${esc(event.type || "event")}${event.status ? ` · ${esc(studioSimulationStatus(event.status))}` : ""}</strong>${event.roleId ? `<span>${esc(roleLabel(event.roleId))}</span>` : ""}${event.failure ? `<span>${esc(studioSimulationErrorText(event.failure))}</span>` : ""}</li>`).join("")}</ol></section><p class="form-hint">${state.locale === "en" ? "Studio debug runs are isolated from Project Runs. Evidence is read-only." : "Studio 调试与项目运行隔离保存，证据为只读。"}</p><aside id="studio-audit-drilldown-drawer" class="studio-audit-drilldown-drawer" aria-label="${state.locale === "en" ? "Audit Drilldown" : "审计下钻明细"}" hidden><div class="studio-audit-drawer-head"><div><span class="section-kicker">${state.locale === "en" ? "Audit drilldown" : "深度审计下钻"}</span><h3 data-audit-drawer-title>${state.locale === "en" ? "Role Activation Audit" : "角色激活审计明细"}</h3></div><button type="button" class="close-button" data-audit-drawer-close aria-label="${state.locale === "en" ? "Close" : "关闭"}">×</button></div><div class="studio-audit-drawer-tabs" role="tablist"><button type="button" class="studio-audit-drawer-tab is-active" data-audit-tab="telemetry" role="tab" aria-selected="true"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg><span>${state.locale === "en" ? "Telemetry" : "调用明细"}</span></button><button type="button" class="studio-audit-drawer-tab" data-audit-tab="input" role="tab" aria-selected="false"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg><span>${state.locale === "en" ? "Input Context" : "输入上下文"}</span></button><button type="button" class="studio-audit-drawer-tab" data-audit-tab="output" role="tab" aria-selected="false"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg><span>${state.locale === "en" ? "Output" : "执行交付"}</span></button><button type="button" class="studio-audit-drawer-tab" data-audit-tab="diagnostics" role="tab" aria-selected="false"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><span>${state.locale === "en" ? "Diagnostics" : "失败诊断"}</span></button><button type="button" class="studio-audit-drawer-tab" data-audit-tab="raw" role="tab" aria-selected="false"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg><span>${state.locale === "en" ? "Raw JSON" : "原始数据"}</span></button></div><div class="studio-audit-drawer-body" data-audit-drawer-body></div><div class="studio-audit-drawer-foot"><button type="button" class="secondary-button" data-audit-action="focus-node"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="8"/></svg><span>${state.locale === "en" ? "Focus Node" : "定位图谱节点"}</span></button><button type="button" class="secondary-button" data-audit-action="copy-json"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><span>${state.locale === "en" ? "Copy JSON" : "复制 JSON"}</span></button><button type="button" class="primary-button" data-audit-drawer-close>${state.locale === "en" ? "Close" : "关闭"}</button></div></aside>`;
+    root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="${back}" data-route="${back}">← ${state.locale === "en" ? "Debug history" : "调试历史"}</a><div class="studio-debug-id-display"><div class="eyebrow">${state.locale === "en" ? "Debug ID" : "调试号"} · <code>${esc(debugRunId)}</code></div><button class="studio-copy-debug-id" type="button" data-copy-debug-id title="${state.locale === "en" ? "Copy Debug ID" : "复制调试号"}" aria-label="${state.locale === "en" ? "Copy Debug ID" : "复制调试号"}"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button></div><h1>${state.locale === "en" ? "Debug run" : "调试运行"}</h1><p>${esc(simulation.createdAt || "")}</p></div><span class="status-chip ${esc(simulation.status)}">${esc(studioSimulationStatus(simulation.status))}</span></section>${runMetrics}<div class="studio-dual-core-bar"><div class="studio-dual-core-meta"><button type="button" class="secondary-button studio-history-expand-btn" data-history-toggle="expand" title="${state.locale === "en" ? "Expand history drawer" : "展开调试历史"}" aria-label="${state.locale === "en" ? "Expand history drawer" : "展开调试历史"}">▶ ${state.locale === "en" ? "History" : "历史"}</button><strong>${state.locale === "en" ? "Macro / Micro Twin Core Cockpit" : "宏微双核联动视窗"}</strong><span class="field-hint">${state.locale === "en" ? "Macro topological view & micro role chat content" : "宏观拓扑结构与微观角色对话同屏联动"}</span></div><div class="studio-layout-switcher" role="radiogroup" aria-label="${state.locale === "en" ? "Layout preference" : "宏微双核布局"}"><button type="button" class="studio-layout-switcher-btn" data-preference="structure-focus" title="${state.locale === "en" ? "Focus on Structure (60:40)" : "突出结构 (60:40)"}"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="10" height="18" rx="2"/><rect x="15" y="3" width="6" height="18" rx="2"/></svg><span>${state.locale === "en" ? "Structure" : "突出结构"}</span></button><button type="button" class="studio-layout-switcher-btn" data-preference="balanced" title="${state.locale === "en" ? "Balanced Dual-Core (50:50)" : "双核并重 (50:50)"}"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="8" height="18" rx="2"/><rect x="13" y="3" width="8" height="18" rx="2"/></svg><span>${state.locale === "en" ? "Balanced" : "双核并重"}</span></button><button type="button" class="studio-layout-switcher-btn is-active" data-preference="content-focus" title="${state.locale === "en" ? "Focus on Content (40:60)" : "突出内容 (40:60)"}"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="6" height="18" rx="2"/><rect x="11" y="3" width="10" height="18" rx="2"/></svg><span>${state.locale === "en" ? "Content" : "突出内容"}</span></button></div></div><div class="studio-run-dual-core" data-layout-preference="content-focus"><section class="studio-run-macro-panel detail-graph-section project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Macro view" : "宏观拓扑"}</span><h2>${state.locale === "en" ? "Read-only execution view" : "只读运行视图"}</h2></div><div class="panel-head-actions"><span class="status-chip">${state.locale === "en" ? "Read-only" : "只读"}</span><button type="button" class="studio-panel-maximize-btn" data-panel-maximize="macro" title="${state.locale === "en" ? "Maximize Macro Graph" : "最大化宏观图谱"}" aria-label="${state.locale === "en" ? "Maximize Macro Graph" : "最大化宏观图谱"}"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg></button></div></div><div id="studio-run-graph-stage" class="graph-stage studio-run-graph-stage" role="application" aria-label="${state.locale === "en" ? "Historical runtime graph" : "历史运行图谱"}"></div></section><section class="studio-run-micro-panel project-panel studio-debug-detail"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Micro view" : "微观内容"}</span><h2>${state.locale === "en" ? "Role execution trace" : "角色执行过程"}</h2></div><div class="panel-head-actions"><span class="count-badge">${auditTrail.length}</span><button type="button" class="studio-panel-maximize-btn" data-panel-maximize="micro" title="${state.locale === "en" ? "Maximize Micro Chat" : "最大化微观群聊"}" aria-label="${state.locale === "en" ? "Maximize Micro Chat" : "最大化微观群聊"}"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg></button></div></div><div class="team-debug-transcript-wrap"><ol class="team-debug-transcript">${transcriptHtml}</ol></div></section></div><section class="project-grid"><article class="project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Input" : "输入"}</span><h2>${state.locale === "en" ? "Debug request" : "调试任务"}</h2></div></div><pre>${esc(simulation.input || "")}</pre></article><article class="project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Result" : "结果"}</span><h2>${state.locale === "en" ? "Final outputs" : "最终结果"}</h2></div></div><pre>${esc(evidenceText || studioSimulationErrorText(stateData.error || simulation.failureSummary || ""))}</pre></article></section><section class="project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Events" : "事件"}</span><h2>${state.locale === "en" ? "Simulation events" : "调试事件"}</h2></div><span class="count-badge">${(eventPayload.events || []).length}</span></div><ol class="studio-event-list">${(eventPayload.events || []).map((event) => `<li data-role-id="${esc(event.roleId || "")}" data-edge-id="${esc(event.edgeId || event.flowId || "")}"><time>${esc(studioSimulationEventTime(event))}</time><strong>${esc(event.type || "event")}${event.status ? ` · ${esc(studioSimulationStatus(event.status))}` : ""}</strong>${event.roleId ? `<span>${esc(roleLabel(event.roleId))}</span>` : ""}${event.failure ? `<span>${esc(studioSimulationErrorText(event.failure))}</span>` : ""}</li>`).join("")}</ol></section><p class="form-hint">${state.locale === "en" ? "Studio debug runs are isolated from Project Runs. Evidence is read-only." : "Studio 调试与项目运行隔离保存，证据为只读。"}</p><aside id="studio-audit-drilldown-drawer" class="studio-audit-drilldown-drawer" aria-label="${state.locale === "en" ? "Audit Drilldown" : "审计下钻明细"}" hidden><div class="studio-audit-drawer-head"><div><span class="section-kicker">${state.locale === "en" ? "Audit drilldown" : "深度审计下钻"}</span><h3 data-audit-drawer-title>${state.locale === "en" ? "Role Activation Audit" : "角色激活审计明细"}</h3></div><button type="button" class="close-button" data-audit-drawer-close aria-label="${state.locale === "en" ? "Close" : "关闭"}">×</button></div><div class="studio-audit-drawer-tabs" role="tablist"><button type="button" class="studio-audit-drawer-tab is-active" data-audit-tab="telemetry" role="tab" aria-selected="true"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg><span>${state.locale === "en" ? "Telemetry" : "调用明细"}</span></button><button type="button" class="studio-audit-drawer-tab" data-audit-tab="input" role="tab" aria-selected="false"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg><span>${state.locale === "en" ? "Input Context" : "输入上下文"}</span></button><button type="button" class="studio-audit-drawer-tab" data-audit-tab="output" role="tab" aria-selected="false"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg><span>${state.locale === "en" ? "Output" : "执行交付"}</span></button><button type="button" class="studio-audit-drawer-tab" data-audit-tab="diagnostics" role="tab" aria-selected="false"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><span>${state.locale === "en" ? "Diagnostics" : "失败诊断"}</span></button><button type="button" class="studio-audit-drawer-tab" data-audit-tab="raw" role="tab" aria-selected="false"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg><span>${state.locale === "en" ? "Raw JSON" : "原始数据"}</span></button></div><div class="studio-audit-drawer-body" data-audit-drawer-body></div><div class="studio-audit-drawer-foot"><button type="button" class="secondary-button" data-audit-action="focus-node"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="8"/></svg><span>${state.locale === "en" ? "Focus Node" : "定位图谱节点"}</span></button><button type="button" class="secondary-button" data-audit-action="copy-json"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><span>${state.locale === "en" ? "Copy JSON" : "复制 JSON"}</span></button><button type="button" class="primary-button" data-audit-drawer-close>${state.locale === "en" ? "Close" : "关闭"}</button></div></aside>`;
+    root.querySelector("[data-copy-debug-id]")?.addEventListener("click", () => copyStudioDebugId(debugRunId));
     const evidenceDrawer = root.querySelector("#studio-audit-drilldown-drawer");
     if (evidenceDrawer) {
       evidenceDrawer.setAttribute("aria-label", state.locale === "en" ? "Evidence information" : "证据信息");
@@ -2131,17 +2211,8 @@ async function renderStudioSimulationDetail(teamId, teamVersionId, simulationId,
       if (drawerTitle) drawerTitle.textContent = state.locale === "en" ? "Role execution evidence" : "角色执行证据";
     }
     root.querySelector(".studio-run-metrics > .field-hint")?.remove();
-    root.querySelector(".studio-dual-core-meta > strong")?.remove();
-    root.querySelector(".studio-dual-core-meta > .field-hint")?.remove();
+    root.querySelector(".studio-dual-core-bar")?.remove();
     const dualCore = root.querySelector(".studio-run-dual-core");
-    const runInputOutput = dualCore?.nextElementSibling?.matches?.(".project-grid") ? dualCore.nextElementSibling : null;
-    if (dualCore && runInputOutput) {
-      dualCore.parentNode.insertBefore(runInputOutput, dualCore);
-      const layoutStack = document.createElement("div");
-      layoutStack.className = "studio-run-layout-stack";
-      dualCore.parentNode.insertBefore(layoutStack, runInputOutput);
-      layoutStack.append(runInputOutput, dualCore);
-    }
     const eventsPanel = [...root.querySelectorAll("section.project-panel")].find((panel) => panel.querySelector("h2")?.textContent === (state.locale === "en" ? "Simulation events" : "调试事件"));
     if (eventsPanel) {
       const eventsDetails = document.createElement("details");
@@ -2227,6 +2298,7 @@ async function renderStudioSimulationDetail(teamId, teamVersionId, simulationId,
       });
     });
     const dualCoreContainer = root.querySelector(".studio-run-dual-core");
+    observeStudioRuntimeLayout(dualCoreContainer);
     if (dualCoreContainer && !dualCoreContainer.querySelector("[data-runtime-split-handle]")) {
       dualCoreContainer.insertAdjacentHTML("beforeend", `<button type="button" class="studio-runtime-split-handle" data-runtime-split-handle aria-label="${state.locale === "en" ? "Resize graph and chat panels" : "调整图谱和群聊面板宽度"}" title="${state.locale === "en" ? "Resize graph and chat panels" : "调整图谱和群聊面板宽度"}"><span aria-hidden="true"></span></button>`);
       const splitHandle = dualCoreContainer.querySelector("[data-runtime-split-handle]");
@@ -2349,6 +2421,7 @@ async function renderStudioSimulationDetail(teamId, teamVersionId, simulationId,
         const drawer = root.querySelector("#studio-simulation-artifact-drawer");
         if (!drawer) return;
         drawer.hidden = !drawer.hidden;
+        drawer.classList.toggle("is-open", !drawer.hidden);
         openDrawerButton.setAttribute("aria-expanded", String(!drawer.hidden));
         if (!drawer.hidden) {
           const listContainer = drawer.querySelector(".studio-artifact-drawer-list");
@@ -2406,6 +2479,7 @@ async function renderStudioSimulationDetail(teamId, teamVersionId, simulationId,
         const drawer = root.querySelector("#studio-simulation-artifact-drawer");
         if (drawer) {
           drawer.hidden = true;
+          drawer.classList.remove("is-open");
           openDrawerButton.setAttribute("aria-expanded", "false");
         }
       });
@@ -2422,20 +2496,62 @@ async function renderStudioSimulationDetail(teamId, teamVersionId, simulationId,
     const split = document.createElement("div");
     split.className = "studio-run-split";
     if (wasHistoryCollapsed) split.classList.add("is-history-collapsed");
-    split.innerHTML = `<aside class="studio-run-history" data-layout-scroll><div class="studio-run-history-head"><h2>${state.locale === "en" ? "Debug history" : "调试历史"}</h2><button type="button" class="studio-history-collapse-btn" data-history-toggle="collapse" title="${state.locale === "en" ? "Collapse history drawer" : "收起调试历史"}" aria-label="${state.locale === "en" ? "Collapse history drawer" : "收起调试历史"}">◀</button></div>${list || `<p class="empty-note">暂无其他调试记录。</p>`}</aside>`;
+    split.innerHTML = `<aside id="studio-run-history" class="studio-run-history" data-layout-scroll><div class="studio-run-history-head"><h2>${state.locale === "en" ? "Debug history" : "调试历史"}</h2><button type="button" class="studio-history-collapse-btn" data-history-toggle="collapse" title="${state.locale === "en" ? "Collapse history drawer" : "收起调试历史"}" aria-label="${state.locale === "en" ? "Collapse history drawer" : "收起调试历史"}">◀</button></div>${list || `<p class="empty-note">暂无其他调试记录。</p>`}</aside>`;
     split.append(detailBody);
+    const historyPanel = split.querySelector("#studio-run-history");
+    const historyRows = [...historyPanel.querySelectorAll(".studio-simulation-row")];
+    historyRows.forEach((row, index) => { row.dataset.debugId = simulationsPayload.simulations?.[index]?.simulationId || ""; });
+    const searchLabel = document.createElement("label");
+    searchLabel.className = "studio-debug-id-search";
+    searchLabel.innerHTML = `<span>${state.locale === "en" ? "Search by Debug ID" : "按调试号查询"}</span><input type="search" data-debug-history-search autocomplete="off" placeholder="${state.locale === "en" ? "Enter all or part of a Debug ID" : "输入完整或部分调试号"}">`;
+    const noMatch = document.createElement("p");
+    noMatch.className = "empty-note";
+    noMatch.dataset.debugHistoryEmpty = "";
+    noMatch.hidden = true;
+    noMatch.textContent = state.locale === "en" ? "No debug runs match this ID." : "没有匹配此调试号的记录。";
+    historyPanel.insertBefore(searchLabel, historyRows[0] || null);
+    historyPanel.insertBefore(noMatch, historyRows[0] || null);
+    bindStudioDebugIdSearch(historyPanel, noMatch);
     root.append(split);
     split.querySelectorAll(".studio-history-actions").forEach((actions) => actions.remove());
+    const historyNavToggle = $("#studio-history-nav-toggle");
+    const syncHistoryToggle = () => {
+      const collapsed = split.classList.contains("is-history-collapsed");
+      split.querySelectorAll("[data-history-toggle]").forEach((button) => button.setAttribute("aria-expanded", String(!collapsed)));
+      if (historyNavToggle) {
+        historyNavToggle.hidden = false;
+        historyNavToggle._studioHistorySplit = split;
+        historyNavToggle.setAttribute("aria-expanded", String(!collapsed));
+        historyNavToggle.setAttribute("title", collapsed
+          ? (state.locale === "en" ? "Expand debug history" : "展开调试历史")
+          : (state.locale === "en" ? "Collapse debug history" : "收起调试历史"));
+        const glyph = historyNavToggle.querySelector(".studio-history-nav-glyph");
+        if (glyph) glyph.textContent = collapsed ? "▶" : "◀";
+        syncNavigationLabels();
+      }
+    };
+    syncHistoryToggle();
     split.querySelectorAll("[data-history-toggle]").forEach((btn) => {
       btn.addEventListener("click", () => {
-        const collapsed = split.classList.toggle("is-history-collapsed");
-        split.querySelectorAll("[data-history-toggle]").forEach((b) => b.setAttribute("aria-expanded", String(!collapsed)));
+        split.classList.toggle("is-history-collapsed");
+        syncHistoryToggle();
         window.setTimeout(() => {
           historyGraph?.fitViewport?.();
           window.dispatchEvent(new Event("resize"));
         }, 240);
       });
     });
+    if (historyNavToggle) {
+      historyNavToggle.onclick = () => {
+        if (historyNavToggle._studioHistorySplit !== split) return;
+        split.classList.toggle("is-history-collapsed");
+        syncHistoryToggle();
+        window.setTimeout(() => {
+          historyGraph?.fitViewport?.();
+          window.dispatchEvent(new Event("resize"));
+        }, 240);
+      };
+    }
     bindStudioWorkspaceButtons(root);
     addStudioWorkspaceNav(root, teamVersionId, "run");
     if (isRefresh && root.dataset.template) {
@@ -4841,6 +4957,8 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
       if (!runtimeWorkbench || !runtimeGraphPanel || !runtimeDebugPanel) return;
       const runtimeControls = runtimeWorkbench?.querySelectorAll("[data-runtime-dual-controls]") || [];
       if (!active) {
+        runtimeWorkbench._studioRuntimeResizeObserver?.disconnect();
+        runtimeWorkbench._studioRuntimeResizeObserver = null;
         if (runtimeWorkbenchClassSnapshot) runtimeWorkbench.className = runtimeWorkbenchClassSnapshot;
         else runtimeWorkbench.classList.remove("studio-run-dual-core", "is-runtime-dual-core");
         if (runtimeGraphPanelClassSnapshot) runtimeGraphPanel.className = runtimeGraphPanelClassSnapshot;
@@ -4897,6 +5015,7 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
       runtimeMicroOpen = microOpen !== false;
       const activeSidePanel = runtimeSidePanel === "config" ? "config" : "debug";
       runtimeWorkbench.classList.add("studio-run-dual-core", "is-runtime-dual-core");
+      observeStudioRuntimeLayout(runtimeWorkbench);
       const assetDrawer = runtimeWorkbench.querySelector("#studio-asset-drawer");
       if (assetDrawer?.classList.contains("is-right-docked")) {
         runtimeWorkbench.studioUndockPanel?.(assetDrawer, "asset");
@@ -7591,6 +7710,7 @@ async function renderProjectRun(projectId, pageRequest = state.activeRequest) {
 
 function syncRoute() {
   disposeStudioGraphs();
+  hideStudioHistoryNavigation();
   const pageRequest = beginPageRequest();
   const currentPath = location.pathname.replace(/\/$/, "") || "/";
   const path = currentPath;
@@ -7813,6 +7933,16 @@ function syncNavigationLabels() {
     }
   });
   const shell = $("#app-shell");
+  const historyToggle = $("#studio-history-nav-toggle");
+  if (historyToggle) {
+    const expanded = historyToggle.getAttribute("aria-expanded") === "true";
+    const label = state.locale === "en"
+      ? (expanded ? "Collapse debug history" : "Expand debug history")
+      : (expanded ? "收起调试历史" : "展开调试历史");
+    historyToggle.title = label;
+    historyToggle.setAttribute("aria-label", label);
+    historyToggle.querySelector("span:last-child").textContent = state.locale === "en" ? "Debug history" : "调试历史";
+  }
   const collapsed = shell?.dataset.nav === "collapsed";
   const label = state.locale === "en"
     ? (collapsed ? "Expand sidebar" : "Collapse sidebar")
@@ -7850,6 +7980,31 @@ function initializeNavigationState() {
   navPreferenceStored = saved === "collapsed" || saved === "expanded";
   setNavCollapsed(navPreferenceStored ? saved === "collapsed" : window.innerWidth < 1200, false);
   $("#app-shell")?.setAttribute("data-mobile-nav", "closed");
+}
+function hideStudioHistoryNavigation() {
+  const button = $("#studio-history-nav-toggle");
+  if (!button) return;
+  button.hidden = true;
+  button._studioHistorySplit = null;
+  button.onclick = null;
+  button.setAttribute("aria-expanded", "false");
+}
+function normalizeStudioRuntimeSplit(container) {
+  if (!container?.isConnected) return;
+  const raw = Number.parseFloat(getComputedStyle(container).getPropertyValue("--studio-runtime-split"));
+  const next = Math.min(70, Math.max(30, Number.isFinite(raw) ? raw : 50));
+  const value = `${next}%`;
+  if (container.style.getPropertyValue("--studio-runtime-split") !== value) {
+    container.style.setProperty("--studio-runtime-split", value);
+  }
+}
+function observeStudioRuntimeLayout(container) {
+  if (!container || typeof ResizeObserver !== "function") return;
+  container._studioRuntimeResizeObserver?.disconnect();
+  const observer = new ResizeObserver(() => normalizeStudioRuntimeSplit(container));
+  observer.observe(container);
+  container._studioRuntimeResizeObserver = observer;
+  normalizeStudioRuntimeSplit(container);
 }
 function closeMobileNav() {
   const shell = $("#app-shell");
@@ -7907,7 +8062,11 @@ function bindNavigationControls() {
       const problemsDrawer = document.querySelector("#studio-problems-drawer:not([hidden])");
       if (problemsDrawer) problemsDrawer.hidden = true;
       const artifactDrawer = document.querySelector("#studio-simulation-artifact-drawer:not([hidden])");
-      if (artifactDrawer) artifactDrawer.hidden = true;
+      if (artifactDrawer) {
+        artifactDrawer.hidden = true;
+        artifactDrawer.classList.remove("is-open");
+        document.querySelector('[aria-controls="studio-simulation-artifact-drawer"]')?.setAttribute("aria-expanded", "false");
+      }
       const closeAssetBtn = document.querySelector("#studio-asset-drawer:not([aria-hidden='true']) #studio-asset-drawer-close");
       if (closeAssetBtn) closeAssetBtn.click();
       const closeDebugBtn = document.querySelector("#team-debug-dialog:not([aria-hidden='true']) [data-team-debug-close]");
@@ -7963,6 +8122,7 @@ function bindNavigationControls() {
     if (!navPreferenceStored) setNavCollapsed(window.innerWidth < 1200, false);
     if (window.innerWidth >= 768) closeMobileNav();
     if (window.innerWidth > 767) closeTopbarMore();
+    document.querySelectorAll(".studio-run-dual-core, .studio-design-workbench.is-runtime-dual-core").forEach(normalizeStudioRuntimeSplit);
   });
 }
 // Run actions are rendered with the response that created the run. Keeping the

@@ -71,6 +71,20 @@ body { min-width: 0; }
 }
 .nav-item:hover { background: var(--canvas); }
 .nav-item.active { background: var(--mint-soft); color: var(--mint-dark); }
+.studio-history-nav-toggle {
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+}
+.studio-history-nav-toggle[hidden] { display: none !important; }
+.studio-history-nav-glyph {
+  align-items: center;
+  display: inline-flex;
+  font-size: 11px;
+  justify-content: center;
+  line-height: 1;
+}
 .primary-nav .nav-item,
 .primary-nav .nav-item.nav-subitem { font-size: 13px; font-weight: 600; line-height: 1.35; min-height: 40px; padding-left: 10px; }
 .nav-icon { fill: none; flex: 0 0 18px; height: 18px; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.7; width: 18px; }
@@ -345,11 +359,8 @@ body { min-width: 0; }
 .studio-run-history-head h2, .studio-run-history h2 { font-size: 14px; margin: 0; }
 .studio-history-collapse-btn { align-items: center; background: transparent; border: 1px solid var(--line); border-radius: 4px; color: var(--muted); cursor: pointer; display: inline-flex; font-size: 11px; height: 24px; justify-content: center; padding: 0 6px; transition: background .12s ease, color .12s ease; }
 .studio-history-collapse-btn:hover { background: var(--surface-soft, rgba(0, 0, 0, 0.05)); color: var(--ink); }
-.studio-history-expand-btn { align-items: center; display: none; font-size: 12px; gap: 5px; padding: 3px 8px; }
-.studio-run-split.is-history-collapsed .studio-history-expand-btn { display: inline-flex; }
 .studio-run-history .studio-simulation-row.selected { background: var(--mint-soft); border-color: var(--mint); }
 .studio-run-split > .studio-run-evidence { grid-column: 2; min-height: 0; min-width: 0; overflow: auto; width: 100%; }
-.studio-run-split.is-history-collapsed > .studio-run-evidence { grid-column: 2; min-height: 0; min-width: 0; width: 100%; }
 .page-frame[data-template="C"] .page-frame-body { overflow: auto; }
 .page-frame-body { min-height: 0; overflow: hidden; padding-top: 4px; }
 .page-frame-body[data-layout-scroll] { overflow: auto; overscroll-behavior: contain; }
