@@ -1,6 +1,6 @@
 import { assertTaskExecutionSlot, assertTaskTransition, isTerminalTaskStatus } from "../domain/task.mjs";
 
-const reviewDecisions = new Set(["approve", "rework", "pause", "terminate", "continue", "reject"]);
+const reviewDecisions = new Set(["approve", "rework", "terminate", "continue", "reject"]);
 const activeTaskStatuses = new Set(["running", "planning", "ready", "waiting_review", "paused", "pause_requested", "cancel_requested"]);
 
 function findTask(project, taskId) {

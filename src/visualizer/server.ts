@@ -37,6 +37,7 @@ import {
   rebuildRunsIndex,
   RunRoleIoLookupError,
   recordControlPlaneAudit,
+  assertSafeHumanReviewId,
   syncProjectModels,
 } from "../runtime/project-lifecycle.js";
 import { redactUnknown } from "../runtime/redaction.js";
@@ -1658,6 +1659,11 @@ async function handleApiRunReviewDetail(
   reviewId: string,
   response: ServerResponse
 ): Promise<void> {
+  try {
+    assertSafeHumanReviewId(reviewId);
+  } catch {
+    throw new HttpError(400, "INVALID_REVIEW_ID", "reviewId must be a safe single path segment.");
+  }
   jsonResponse(response, 200, mapReviewDetailView(await inspectHumanReview(workdir, runId, reviewId)));
 }
 
@@ -2043,6 +2049,11 @@ async function handleApiRunReviewDecision(
   response: ServerResponse,
   principal: AuthenticatedControlPlaneIdentity["principal"]
 ): Promise<void> {
+  try {
+    assertSafeHumanReviewId(reviewId);
+  } catch {
+    throw new HttpError(400, "INVALID_REVIEW_ID", "reviewId must be a safe single path segment.");
+  }
   const body = await readJsonRequest(request);
   const decision = asString(body.decision);
   if (decision !== "approve" && decision !== "rework" && decision !== "terminate" && decision !== "continue" && decision !== "reject") {

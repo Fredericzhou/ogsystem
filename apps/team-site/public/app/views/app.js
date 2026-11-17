@@ -4042,14 +4042,30 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
       const controlActions = Array.isArray(roleContract.authority.controlActions)
         ? roleContract.authority.controlActions.filter((action) => typeof action === "string")
         : [];
-      const requiredActions = ["approve", "rework", role.review.timeoutAction === "terminate" ? "terminate" : "pause"];
-      roleContract.authority.controlActions = [...new Set([...controlActions, ...requiredActions])].sort((left, right) => left.localeCompare(right));
-      roleContract.contractVersion ||= 1;
+      // Human Review authority is a Role Contract business capability. Runtime
+      // timeout controls (`pause`/`terminate`) are lifecycle policy, not Role
+      // authority actions and would make this v2 contract fail closed validation.
+      const requiredActions = ["approve", "rework"];
+      roleContract.authority.controlActions = [...new Set([...controlActions, ...requiredActions])]
+        .filter((action) => ["approve", "rework", "reject"].includes(action))
+        .sort((left, right) => left.localeCompare(right));
+      roleContract.ogsContractVersion = 2;
+      roleContract.schemaVersion = 2;
+      delete roleContract.contractVersion;
       roleContract.purpose ||= `Role execution contract for ${role.roleId}`;
       roleContract.responsibility ||= { kind: "atomic", owns: [], contributes: [], doesNotOwn: [] };
       roleContract.inputs ||= { preconditions: [] };
-      roleContract.outputs ||= { events: ["READY"], postconditions: [] };
+      roleContract.outputs ||= { postconditions: [], decisionCriteria: [] };
+      if (roleContract.outputs && typeof roleContract.outputs === "object" && !Array.isArray(roleContract.outputs)) {
+        delete roleContract.outputs.events;
+        roleContract.outputs.postconditions ||= [];
+        roleContract.outputs.decisionCriteria ||= [];
+      }
       roleContract.constraints ||= { writableStateFields: [] };
+      if (roleContract.constraints && typeof roleContract.constraints === "object" && !Array.isArray(roleContract.constraints)) {
+        delete roleContract.constraints.allowedTools;
+        roleContract.constraints.writableStateFields ||= [];
+      }
       roleContract.failure ||= { retryableErrorCodes: [], terminalErrorCodes: [] };
       roleContract.audit ||= { requiredFields: [] };
       const nextJson = JSON.stringify(roleContract, null, 2);
@@ -6985,7 +7001,7 @@ async function openTaskReview(projectId, taskId, task = {}) {
       const previousDecision = decisionSelect.value;
       const focusWillBeDisabled = !allowed.length && document.activeElement === decisionSelect;
       decisionSelect.innerHTML = allowed.length
-        ? allowed.map((decision) => `<option value="${esc(decision)}">${esc(({ approve: "Approve and continue", rework: "Return for revision", pause: "Pause", terminate: "Terminate", continue: "Continue with budget", reject: "Reject and route" })[decision] || decision)}</option>`).join("")
+        ? allowed.map((decision) => `<option value="${esc(decision)}">${esc(({ approve: "Approve and continue", rework: "Return for revision", terminate: "Terminate", continue: "Continue with budget", reject: "Reject and route" })[decision] || decision)}</option>`).join("")
         : '<option value="" selected>No actions are available for this review request</option>';
       if (allowed.includes(previousDecision)) decisionSelect.value = previousDecision;
       if (recovering) {

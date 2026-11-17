@@ -322,6 +322,13 @@ paths:
               properties:
                 decision: { enum: [approve, rework, reject, continue, terminate] }
                 comment: { type: string, maxLength: 2000 }
+                targetRoleId:
+                  description: Required when the compiled loop-budget action exposes more than one declared target.
+                  type: string
+                additionalBudget:
+                  description: Additional loop rounds granted by a loop-budget continue or rework decision.
+                  type: integer
+                  minimum: 1
                 scope:
                   description: Optional assertion of the compiled terminate scope. A mismatch is rejected.
                   enum: [branch, run]

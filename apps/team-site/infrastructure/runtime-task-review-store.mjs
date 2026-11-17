@@ -33,14 +33,14 @@ async function assertReviewEvidenceSafe(project, runId, reviewId) {
   const reviewDirectory = resolve(projectOgsDir(project), ...reviewRoot);
   const entries = await readdir(reviewDirectory, { withFileTypes: true });
   for (const entry of entries) {
-    if (!entry.name.endsWith(".request.json") && !entry.name.endsWith(".decision.json")) continue;
-    const id = entry.name.replace(/\.(?:request|decision)\.json$/, "");
+    if (!entry.name.endsWith(".request.json") && !entry.name.endsWith(".decision.json") && !entry.name.endsWith(".timeout.json")) continue;
+    const id = entry.name.replace(/\.(?:request|decision|timeout)\.json$/, "");
     if (!/^[A-Za-z0-9][A-Za-z0-9._@#-]{0,127}$/.test(id)) throw new Error("RUN_EVIDENCE_PATH_INVALID: Review ID is invalid.");
     await assertSafeEvidencePath(projectOgsDir(project), [...reviewRoot, entry.name], { kind: "file", label: "Review evidence" });
   }
   if (reviewId) {
     if (!/^[A-Za-z0-9][A-Za-z0-9._@#-]{0,127}$/.test(String(reviewId))) throw new Error("RUN_EVIDENCE_PATH_INVALID: Review ID is invalid.");
-    for (const suffix of ["request", "decision"]) {
+    for (const suffix of ["request", "decision", "timeout"]) {
       const target = [...reviewRoot, `${reviewId}.${suffix}.json`];
       try { await assertSafeEvidencePath(projectOgsDir(project), target, { kind: "file", allowMissingFinal: true, label: "Review evidence" }); }
       catch (error) { if (error?.code !== "ENOENT") throw error; }

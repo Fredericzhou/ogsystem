@@ -1466,8 +1466,7 @@ function buildLoopBudgetDecisionTransition(args: ReviewDecisionTransitionInput):
   }
   if (decision === "terminate") {
     const terminateScope = resolveLoopBudgetTerminateScope({
-      loopBudget,
-      legacySpec: args.review.spec
+      loopBudget
     });
     if (!terminateScope) {
       throw new Error(`[GRAPH_REVIEW_TERMINATE_SCOPE_UNRESOLVED] Loop budget review ${args.review.reviewId} has no configured terminate scope`);

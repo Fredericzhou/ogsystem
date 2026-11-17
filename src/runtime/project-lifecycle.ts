@@ -11,7 +11,7 @@ import { randomUUID } from "node:crypto";
 import { normalizeHumanReviewComment } from "./human-review-comment.js";
 import type { Dirent } from "node:fs";
 import { createReadStream } from "node:fs";
-import { appendFile, cp, link, mkdir, open, readFile, readdir, stat, unlink, writeFile } from "node:fs/promises";
+import { appendFile, cp, link, lstat, mkdir, open, readFile, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import { basename, dirname, resolve } from "node:path";
 
@@ -61,6 +61,23 @@ const MINIMAL_HELLO_PROFILE_ID = "profile.hello.ogsystem";
 const MINIMAL_HELLO_TOOL_REF = "tool.hello.ogsystem";
 const MINIMAL_HELLO_TOOL_SCRIPT_FILE = "scripts/hello-ogsystem.mjs";
 const ROLE_IO_SCAN_BATCH_SIZE = 16;
+const HUMAN_REVIEW_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._@#-]{0,127}$/;
+const HUMAN_REVIEW_RECOVERY_LOCK_STALE_MS = 5_000;
+
+/** Review IDs become evidence filenames and must remain one safe path segment. */
+export function assertSafeHumanReviewId(reviewId: string): string {
+  if (
+    typeof reviewId !== "string" ||
+    !HUMAN_REVIEW_ID_PATTERN.test(reviewId) ||
+    reviewId.includes("..") ||
+    reviewId.includes("/") ||
+    reviewId.includes("\\") ||
+    reviewId.includes("\0")
+  ) {
+    throw new Error("RUN_EVIDENCE_PATH_INVALID: Review ID is invalid.");
+  }
+  return reviewId;
+}
 
 export type IndexedRun = {
   runId: string;
@@ -881,11 +898,9 @@ function deriveEffectiveTerminateScope(args: {
       : undefined;
     if (record.kind === "loop_budget") {
       const loopScope = loopBudget?.terminateScope;
-      const legacyScope = spec?.terminateScope;
-      if (loopScope === "branch" || loopScope === "run" || legacyScope === "branch" || legacyScope === "run") {
+      if (loopScope === "branch" || loopScope === "run") {
         return resolveLoopBudgetTerminateScope({
-          loopBudget: loopScope === "branch" || loopScope === "run" ? { terminateScope: loopScope } : undefined,
-          legacySpec: legacyScope === "branch" || legacyScope === "run" ? { terminateScope: legacyScope } : undefined
+          loopBudget: { terminateScope: loopScope }
         });
       }
     }
@@ -1767,27 +1782,158 @@ function resolveReviewsDir(runDir: string): string {
   return resolve(runDir, "control", "reviews");
 }
 
+function isPersistedHumanReviewTimeout(value: unknown, reviewId: string): boolean {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    && (value as Record<string, unknown>).kind === "human_review_timeout"
+    && (value as Record<string, unknown>).reviewId === reviewId
+    && (value as Record<string, unknown>).action === "pause"
+    && (value as Record<string, unknown>).decision === "pause"
+    && (value as Record<string, unknown>).timedOut === true;
+}
+
+/**
+ * Publish the internal timeout projection without creating a half-written file.
+ * A legacy empty/corrupt projection is quarantined before retrying; concurrent
+ * writers race through hard-link and only the complete winner is retained.
+ */
+async function persistHumanReviewTimeout(timeoutPath: string, payload: Record<string, unknown>): Promise<boolean> {
+  const reviewId = typeof payload.reviewId === "string" ? payload.reviewId : "";
+  const existing = await lstat(timeoutPath).catch(() => undefined);
+  if (existing) {
+    if (existing.isFile()) {
+      const current = await readJsonFile(timeoutPath).catch(() => undefined);
+      if (isPersistedHumanReviewTimeout(current, reviewId)) return true;
+      if (existing.size === 0) {
+        const currentStat = await lstat(timeoutPath).catch(() => undefined);
+        if (!currentStat || !currentStat.isFile() || currentStat.ino !== existing.ino || currentStat.size !== 0) return false;
+        await unlink(timeoutPath).catch(() => undefined);
+      } else {
+        const quarantinePath = `${timeoutPath}.corrupt-${randomUUID()}`;
+        try {
+          await rename(timeoutPath, quarantinePath);
+        } catch {
+          return false;
+        }
+      }
+    } else if (existing.isSymbolicLink()) {
+      // A symlink is not a recoverable projection. Leave it in place so the
+      // evidence scanner can report the boundary violation instead of
+      // replacing a potentially tampered artifact.
+      return false;
+    } else {
+      return false;
+    }
+  }
+  const temporaryPath = `${timeoutPath}.${randomUUID()}.tmp`;
+  const bytes = `${JSON.stringify(payload, null, 2)}\n`;
+  const temporaryHandle = await open(temporaryPath, "wx");
+  try {
+    try {
+      await temporaryHandle.writeFile(bytes, "utf8");
+      await temporaryHandle.sync();
+    } finally {
+      await temporaryHandle.close();
+    }
+    try {
+      await link(temporaryPath, timeoutPath);
+      return true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      const current = await readJsonFile(timeoutPath).catch(() => undefined);
+      return isPersistedHumanReviewTimeout(current, reviewId);
+    }
+  } finally {
+    await unlink(temporaryPath).catch(() => undefined);
+  }
+}
+
+type HumanReviewRecoveryLock = { lockPath: string; token: string };
+
+async function acquireHumanReviewRecoveryLock(lockPath: string): Promise<HumanReviewRecoveryLock | undefined> {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const token = randomUUID();
+    const temporaryPath = `${lockPath}.${token}.tmp`;
+    const temporaryHandle = await open(temporaryPath, "wx");
+    try {
+      try {
+        await temporaryHandle.writeFile(`${JSON.stringify({ pid: process.pid, createdAt: Date.now(), token })}\n`, "utf8");
+        await temporaryHandle.sync();
+      } finally {
+        await temporaryHandle.close();
+      }
+      try {
+        try {
+          await link(temporaryPath, lockPath);
+          return { lockPath, token };
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+        }
+        const existingStat = await stat(lockPath).catch(() => undefined);
+        const lockText = await readFile(lockPath, "utf8").catch(() => "");
+        let ownerPid: number | undefined;
+        try {
+          const parsed = JSON.parse(lockText) as Record<string, unknown>;
+          ownerPid = typeof parsed.pid === "number" ? parsed.pid : undefined;
+        } catch {
+          ownerPid = undefined;
+        }
+        // A malformed/legacy lock is only reclaimable after the short active
+        // writer window. This preserves an active old writer while allowing a
+        // crashed pre-token lock to be recovered on the next decision.
+        if (ownerPid === undefined) {
+          if (!existingStat || Date.now() - existingStat.mtimeMs < HUMAN_REVIEW_RECOVERY_LOCK_STALE_MS) return undefined;
+        }
+        if (ownerPid !== undefined) {
+          if (ownerPid === process.pid) return undefined;
+          try {
+            process.kill(ownerPid, 0);
+            return undefined;
+          } catch (probeError) {
+            if ((probeError as NodeJS.ErrnoException).code === "EPERM") return undefined;
+          }
+        }
+        const currentStat = await stat(lockPath).catch(() => undefined);
+        if (!existingStat || !currentStat || existingStat.ino !== currentStat.ino) return undefined;
+        await unlink(lockPath).catch(() => undefined);
+      } finally {
+        await unlink(temporaryPath).catch(() => undefined);
+      }
+    } catch (error) {
+      await unlink(temporaryPath).catch(() => undefined);
+      throw error;
+    }
+  }
+  return undefined;
+}
+
+async function releaseHumanReviewRecoveryLock(lock: HumanReviewRecoveryLock): Promise<void> {
+  const lockText = await readFile(lock.lockPath, "utf8").catch(() => "");
+  try {
+    const parsed = JSON.parse(lockText) as Record<string, unknown>;
+    if (parsed.token !== lock.token) return;
+  } catch {
+    return;
+  }
+  await unlink(lock.lockPath).catch(() => undefined);
+}
+
 async function createReviewDecision(path: string, decision: HumanReviewDecisionRecord): Promise<boolean> {
+  assertSafeHumanReviewId(decision.reviewId);
   await mkdir(dirname(path), { recursive: true });
   if (decision.decision === "pause") {
     const timeoutPath = resolve(dirname(path), `${decision.reviewId}.timeout.json`);
-    try {
-      await writeFile(timeoutPath, `${JSON.stringify({
-        kind: "human_review_timeout",
-        reviewId: decision.reviewId,
-        action: "pause",
-        timedOut: true,
-        expiredAt: decision.expiredAt ?? decision.decidedAt,
-        recordedAt: decision.committedAt,
-        decidedAt: decision.decidedAt,
-        committedAt: decision.committedAt,
-        decision: "pause",
-        actor: decision.actor ?? "ogs-runtime-timeout"
-      })}\n`, { encoding: "utf8", flag: "wx" });
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-    }
-    return true;
+    return persistHumanReviewTimeout(timeoutPath, {
+      kind: "human_review_timeout",
+      reviewId: decision.reviewId,
+      action: "pause",
+      timedOut: true,
+      expiredAt: decision.expiredAt ?? decision.decidedAt,
+      recordedAt: decision.committedAt,
+      decidedAt: decision.decidedAt,
+      committedAt: decision.committedAt,
+      decision: "pause",
+      actor: decision.actor ?? "ogs-runtime-timeout"
+    });
   }
   const requestPath = resolve(dirname(path), `${decision.reviewId}.request.json`);
   const request = await readJsonFile(requestPath).catch(() => undefined);
@@ -1834,47 +1980,48 @@ async function createReviewDecision(path: string, decision: HumanReviewDecisionR
   // Validate before opening the destination. A failed schema check must never leave a
   // zero-byte decision file that makes a later reconciliation look permanently complete.
   await validateV2ContractValue(persisted, path);
-  const lockPath = `${path}.lock`;
-  let lockHandle: Awaited<ReturnType<typeof open>>;
-  try {
-    lockHandle = await open(lockPath, "wx");
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "EEXIST") return false;
-    throw error;
-  }
-  try {
-    let destination = await stat(path).catch(() => undefined);
-    if (destination) {
-      // Only recover the legacy zero-byte artifact while holding the per-review
-      // lock. Current writers never publish an empty destination.
-      if (destination.size !== 0) return false;
-      await unlink(path);
-      destination = undefined;
-    }
-    const temporaryPath = `${path}.${randomUUID()}.tmp`;
+  // Publish through a unique temporary inode and an atomic hard link. A
+  // persistent sidecar lock is deliberately avoided: a process crash must not
+  // strand a lock that blocks timeout reconciliation or a later human decision.
+  // The destination link is the idempotency gate; only one writer can publish.
+  let destination = await stat(path).catch(() => undefined);
+  if (destination) {
+    // A non-empty destination is the durable CAS winner. Only the historical
+    // zero-byte artifact enters recovery, and cleanup is serialized with other
+    // zero-byte recovery attempts so a valid concurrent link is never removed.
+    if (destination.size !== 0) return false;
+    const legacyInode = destination.ino;
+    const lockPath = `${path}.lock`;
+    const lock = await acquireHumanReviewRecoveryLock(lockPath);
+    if (!lock) return false;
     try {
-      const bytes = `${JSON.stringify(persisted, null, 2)}\n`;
-      const temporaryHandle = await open(temporaryPath, "wx");
-      try {
-        await temporaryHandle.writeFile(bytes, "utf8");
-        await temporaryHandle.sync();
-      } finally {
-        await temporaryHandle.close();
-      }
-      // link() creates the destination atomically without overwriting a
-      // concurrent durable decision. The lock also makes legacy recovery safe.
-      try {
-        await link(temporaryPath, path);
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === "EEXIST") return false;
-        throw error;
-      }
+      destination = await stat(path).catch(() => undefined);
+      if (!destination || destination.size !== 0 || destination.ino !== legacyInode) return false;
+      await unlink(path).catch((error) => {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      });
     } finally {
-      await unlink(temporaryPath).catch(() => undefined);
+      await releaseHumanReviewRecoveryLock(lock);
+    }
+  }
+  const temporaryPath = `${path}.${randomUUID()}.tmp`;
+  try {
+    const bytes = `${JSON.stringify(persisted, null, 2)}\n`;
+    const temporaryHandle = await open(temporaryPath, "wx");
+    try {
+      await temporaryHandle.writeFile(bytes, "utf8");
+      await temporaryHandle.sync();
+    } finally {
+      await temporaryHandle.close();
+    }
+    try {
+      await link(temporaryPath, path);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EEXIST") return false;
+      throw error;
     }
   } finally {
-    await lockHandle.close();
-    await unlink(lockPath).catch(() => undefined);
+    await unlink(temporaryPath).catch(() => undefined);
   }
   return true;
 }
@@ -1909,6 +2056,7 @@ async function reconcileHumanReviewTimeoutsUnlocked(
   for (const entry of entries) {
     if (!entry.isFile() || !entry.name.endsWith(".request.json")) continue;
     const reviewId = entry.name.slice(0, -".request.json".length);
+    assertSafeHumanReviewId(reviewId);
     const decisionPath = resolve(reviewsDir, `${reviewId}.decision.json`);
     const existingDecision = await loadReviewRecord(decisionPath);
     if (existingDecision) {
@@ -2056,10 +2204,10 @@ export async function listHumanReviews(workdir: string, runId: string): Promise<
       continue;
     }
     if (entry.name.endsWith(".request.json")) {
-      reviewIds.add(entry.name.slice(0, -".request.json".length));
+      reviewIds.add(assertSafeHumanReviewId(entry.name.slice(0, -".request.json".length)));
     }
     if (entry.name.endsWith(".decision.json")) {
-      reviewIds.add(entry.name.slice(0, -".decision.json".length));
+      reviewIds.add(assertSafeHumanReviewId(entry.name.slice(0, -".decision.json".length)));
     }
   }
   const graphState = asGraphStateRecord(state);
@@ -2068,7 +2216,7 @@ export async function listHumanReviews(workdir: string, runId: string): Promise<
   const humanReviewContextByBranchId = getHumanReviewContextByBranchIdFromGraphState(graphState);
   const branchRecordsById = getBranchRecordsFromGraphState(graphState);
   for (const reviewId of Object.keys(pendingReviewsById)) {
-    reviewIds.add(reviewId);
+    reviewIds.add(assertSafeHumanReviewId(reviewId));
   }
 
   const reviews = await Promise.all(
@@ -2110,6 +2258,7 @@ export async function inspectHumanReview(
   runId: string,
   reviewId: string
 ): Promise<Record<string, unknown>> {
+  assertSafeHumanReviewId(reviewId);
   const runDir = resolveRunDir(workdir, runId);
   const detail = await inspectRun(workdir, runId);
   const reviewsDir = resolveReviewsDir(runDir);
@@ -2180,6 +2329,7 @@ export async function writeHumanReviewDecision(args: {
   targetRoleId?: string;
   additionalBudget?: number;
 }): Promise<Record<string, unknown>> {
+  assertSafeHumanReviewId(args.reviewId);
   // Keep the boundary defensive for JavaScript/API callers. Timeout pause is
   // an internal lifecycle action and can never be submitted as a decision.
   if ((args.decision as string) === "pause") {

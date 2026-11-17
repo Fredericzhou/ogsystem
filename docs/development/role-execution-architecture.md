@@ -455,20 +455,15 @@ type HandoffProjection = {
   targetRole: string;
   event: BusinessEventType;
   contextMap: FieldMapping[];
-  artifactMap: ArtifactMapping[];
-};
-
-type ArtifactMapping = {
-  source: { roleId: string; artifactId: string };
-  target: { artifactRef: string };
-  required: boolean;
+  artifactRefs: string[];
 };
 ```
 
-`source` identifies the declared Artifact produced by the upstream Role, `target.artifactRef`
-is the downstream reference name exposed in the HandoffProjection, and `required` determines
-whether a missing or unverifiable source blocks the handoff (`true`) or is omitted with an audit
-record (`false`). The mapping never copies file paths or raw workspace data across a Role boundary.
+`artifactRefs` contains opaque Artifact IDs authorized by the existing Flow edge. Runtime verifies
+each reference against the sealed Artifact manifest before exposing it to the downstream Role; it
+never copies file paths or raw workspace data across a Role boundary. A future structured mapping
+with explicit source, target, and required fields would be a versioned contract extension, not an
+implicit interpretation of the current string list.
 
 `HandoffProjection` is an in-memory, read-only join of the existing sources. It does not
 create `handoff-contracts.json`, a second compiler, or a second validation source. The unique
@@ -481,11 +476,11 @@ contextMap
 Flow Contract
   Existing `handoff.contracts.json` / Flow Contract compiler; it validates the payload schema
   and relation metadata. `FlowContractDefinition` is not extended with `contextMap` or
-  `artifactMap` by this proposal.
+  `artifactRefs` by this proposal.
 
-artifactMap
-  A read-only projection of declared RoleResult artifact references and the existing Artifact
-  Resolver authorization. It is not a second persisted artifact contract.
+artifactRefs
+  A read-only list of declared RoleResult artifact IDs authorized by the existing Artifact
+  Resolver. It is not a second persisted artifact contract.
 ```
 
 The view combines these sources only for execution planning and diagnostics. Any future change
@@ -516,7 +511,7 @@ default Artifact transfer
   none
 
 declared and authorized ArtifactReference
-  may cross the handoff through the compiled artifactMap and Artifact Resolver
+  may cross the handoff through the compiled artifactRefs list and Artifact Resolver
 
 missing declaration, authorization, or mapping
   reject the handoff
@@ -2066,9 +2061,9 @@ type HumanReviewDecision =
 
 The only core transitions are `pending -> resolved` after a valid decision and
 `pending -> cancelled` when the Run or review scope is cancelled. Decision application is
-idempotent and requires the current `reviewId`, `round`, `lineageId`, `branchId`, and
-`stateVersion` through CAS reconciliation. A stale, duplicate, cross-round, cross-lineage, or
-cross-branch decision is rejected and durably audited. An explicit result review blocks the
+idempotent and requires the current `reviewId`, `round`, `lineageId`, `branchId`, `loopIteration`,
+and `stateVersion` through CAS reconciliation. A stale, duplicate, cross-round, cross-lineage,
+cross-branch, or cross-iteration decision is rejected and durably audited. An explicit result review blocks the
 handoff while the request is `pending`; recovery reopens the same request and does not create a
 second review.
 
@@ -2115,8 +2110,13 @@ type HumanReviewPolicy = {
 The review policy has one compiled source in the Semantic IR/Execution Plan. Runtime creates a
 request from the explicit result gate or loop-budget binding; it does not create a second review
 model for exceptions. Every request and decision is bound to `reviewId`, `round`, `lineageId`,
-`branchId`, and `stateVersion` in the core model. Action targets and terminate scope are derived
+`branchId`, `loopIteration`, and `stateVersion` in the core model. Action targets and terminate scope are derived
 from the compiled binding, so callers cannot supply a second authority.
+
+For v2 loop-budget exception Reviews, the compiled control binding uses `terminateScope: "run"`
+as its normative default. This is a fixed loop-budget policy value, not Runtime inference from
+the current branch. A future branch-scoped loop policy must compile an explicit `"branch"` value
+into the Review request before the Run starts; callers may only assert the compiled value.
 
 ```mermaid
 flowchart LR

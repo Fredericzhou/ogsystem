@@ -1,4 +1,4 @@
-import type { HumanReviewDecision, HumanReviewSpec, LoopBudgetReview } from "./types.js";
+import type { HumanReviewDecision, LoopBudgetReview } from "./types.js";
 
 export type LoopBudgetDecision = Extract<HumanReviewDecision, "continue" | "rework" | "reject" | "terminate">;
 
@@ -12,19 +12,13 @@ export function getLoopBudgetTargetRoleIds(
   return review.targetRoleIds;
 }
 
-/**
- * Loop-budget reviews carry their control scope explicitly. The legacy spec
- * fallback keeps old request files readable while new transitions use the
- * control-plane field as the authority.
- */
+/** Loop-budget reviews carry their control scope in the compiled binding. */
 export function resolveLoopBudgetTerminateScope(args: {
   requestedScope?: "branch" | "run";
   loopBudget?: Pick<LoopBudgetReview, "terminateScope">;
-  legacySpec?: Pick<HumanReviewSpec, "terminateScope">;
 }): "branch" | "run" | undefined {
-  // The persisted loop budget or its legacy projection owns the scope. A caller
-  // supplied scope is accepted only as an assertion by transition boundaries.
-  const configuredScope = args.loopBudget?.terminateScope ?? args.legacySpec?.terminateScope;
+  // A caller supplied scope is accepted only as an assertion by transition boundaries.
+  const configuredScope = args.loopBudget?.terminateScope;
   if (args.requestedScope !== undefined && configuredScope !== undefined && args.requestedScope !== configuredScope) {
     return undefined;
   }

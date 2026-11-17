@@ -21,6 +21,18 @@ test("Domain modules depend only on domain modules", async () => {
   }
 });
 
+test("Studio Human Review authoring keeps Runtime timeout actions out of Role authority", async () => {
+  const source = await readFile(new URL("public/app/views/app.js", root), "utf8");
+  assert.match(source, /roleContract\.ogsContractVersion\s*=\s*2/);
+  assert.match(source, /roleContract\.schemaVersion\s*=\s*2/);
+  assert.match(source, /delete roleContract\.contractVersion/);
+  assert.doesNotMatch(source, /requiredActions\s*=\s*\["approve",\s*"rework"[^\]]*"(?:pause|terminate)"/);
+  assert.match(source, /\["approve",\s*"rework",\s*"reject"\]\.includes\(action\)/);
+  assert.match(source, /delete roleContract\.outputs\.events/);
+  assert.match(source, /delete roleContract\.constraints\.allowedTools/);
+  assert.doesNotMatch(source, /Approve and continue[^\n]*pause:\s*["']Pause/);
+});
+
 test("Application modules do not depend on HTTP, filesystem, or runtime adapters", async () => {
   const files = await sourceFiles("application/");
   for (const { name, source } of files) {
