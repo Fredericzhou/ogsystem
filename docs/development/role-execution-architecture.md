@@ -199,6 +199,9 @@ The following rules are fixed:
    Template; an unresolved binding is a readiness error.
 8. `Supervised`, `Auto-accept`, and `Full access` are not OGS permission modes. Backend-native
    approval modes remain Adapter internals and are never exposed as a second OGS permission model.
+   When a Backend supports non-interactive execution, its Adapter uses the most permissive native
+   approval behavior within the frozen Harness environment; for Codex, `process: allow` maps to
+   `approvalPolicy: never`. Users can narrow tools and resources in the Harness Template.
 9. A Resolved Model Role plan must contain Backend, Model, Run Capability Snapshot,
   `allowedTools`, `verifiedTools`, and EffectiveEnvironmentPolicy. Runtime computes the executable
   `allowedTools ∩ verifiedTools` set in memory. `adapterVersion` is read from the
@@ -915,24 +918,27 @@ preset:
   Optional Backend-owned defaults for native tools, environment intent, and limits.
 
 environment:
-  Optional in Studio authoring input. The authoring layer resolves an omitted value from the
-  selected Backend preset or the conservative default and writes the complete `filesystem`,
-  `process`, and `network` fields. The persisted Contract Set and direct loader input are strict
-  and must contain those fields; this is not a per-tool approval workflow.
+  Optional in Studio authoring input. A new template starts from the selected Adapter's maximum
+  enforceable resources, while the author can choose narrower values. The authoring layer resolves
+  any omitted field from the Backend preset or conservative default and writes the complete
+  `filesystem`, `process`, and `network` fields. The persisted Contract Set and direct loader input
+  are strict and must contain those fields; this is not a per-tool approval workflow.
 
 Environment resolution precedence:
   explicit Harness `environment` override
     -> Backend `preset` defaults
     -> conservative Runtime default
 
-The conservative Runtime default is filesystem read inside execution staging, with filesystem
-write, process, and network denied. A Backend preset may opt into additional resources only when
-the Adapter reports that their boundaries are enforceable. This makes an omitted environment
-deterministic and keeps `allowedTools` (tool selection) separate from resource policy.
+The conservative Runtime fallback is filesystem read inside execution staging, with filesystem
+write, process, and network denied. Studio-created Harness Templates instead start with the
+maximum resource intent the selected Adapter reports as enforceable: staged filesystem access,
+process execution, and network access where supported. Unsupported or unverified resources remain
+denied. This keeps `allowedTools` (tool selection) separate from resource policy.
 
 allowedTools in a generated template:
-  The Studio initializes this list to every verified native tool exposed by the selected Backend.
-  The list is then the template's selected tool set; Roles do not override it.
+  The Studio selects every verified native tool exposed by the selected Backend. The user can
+  remove tools from this multi-select allow-list; Roles do not override it. A Backend without
+  per-tool restriction keeps all discovered native tools available.
 
 allowedTools = []:
   Explicitly disable Backend-native tool calls for this Harness.

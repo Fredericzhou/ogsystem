@@ -31,7 +31,9 @@ test("active project templates persist complete v2 Harness bindings", async () =
     const templateId = bindings.defaults.harnessTemplate;
     assert.equal(bindings.harnessTemplates[templateId].backend, "codex");
     assert.equal(bindings.harnessTemplates[templateId].model, "gpt-6-luna");
-    assert.deepEqual(bindings.harnessTemplates[templateId].allowedTools, []);
+    assert.deepEqual(bindings.harnessTemplates[templateId].allowedTools, ["apply_patch", "exec_command"]);
+    assert.equal(bindings.harnessTemplates[templateId].environment.filesystem, "staged");
+    assert.equal(bindings.harnessTemplates[templateId].environment.process, "allow");
     assert.equal(bindings.harnessTemplates[templateId].environment.network, "deny");
     assert.ok(bindings.roles["hello-ogsystem"]);
     assert.equal(bindings.roles["hello-ogsystem"].harnessTemplate, templateId);

@@ -16,6 +16,12 @@ function resolveModel(models, requested) {
   return (models || []).find((item) => matchesModelId(item?.modelId, requested));
 }
 
+function verifiedTemplate(record) {
+  const template = normalizeTemplate(record.template);
+  const resolvedModelId = String(record.verification?.evidence?.resolvedModelId || "").trim();
+  return resolvedModelId ? { ...template, model: resolvedModelId } : template;
+}
+
 function normalizeTemplate(input) {
   const template = input?.template && typeof input.template === "object" ? input.template : input;
   if (!template || typeof template !== "object") throw error("HARNESS_TEMPLATE_INVALID");
@@ -165,6 +171,7 @@ export function createHarnessRepositoryUseCases({ repository, modelCatalog, back
       if (!model || ["unavailable", "disabled", "deprecated"].includes(String(model.status || "").toLowerCase())) {
         throw error("HARNESS_MODEL_UNAVAILABLE", `Model ${template.model} is unavailable in ${template.backend}.`);
       }
+      evidence.resolvedModelId = model.modelId;
       evidence.checks.push({ name: "backend-model", status: "passed" });
       if (template.reasoningEffort && template.reasoningEffort !== "auto") {
         const reasoning = model.reasoning;
@@ -198,12 +205,13 @@ export function createHarnessRepositoryUseCases({ repository, modelCatalog, back
       // on inference latency, credentials, and provider-side behavior.
       evidence.checks.push({ name: "model-catalog", status: "passed" });
       const verifiedAt = now();
+      const bindingTemplate = { ...template, model: model.modelId };
       const verification = {
         status: "verified",
         verifiedAt,
         verifiedTools: evidence.verifiedTools,
         evidence,
-        digest: computeDigest({ template, verifiedTools: evidence.verifiedTools, evidence })
+        digest: computeDigest({ template: bindingTemplate, verifiedTools: evidence.verifiedTools, evidence })
       };
       return repository.updateVerification(templateId, record.revision, verification);
     } catch (failure) {
@@ -221,7 +229,12 @@ export function createHarnessRepositoryUseCases({ repository, modelCatalog, back
   }
 
   return Object.freeze({
-    listTemplates: (options) => repository.list(options),
+    async listTemplates(options) {
+      return (await repository.list(options)).map((record) => ({
+        ...record,
+        ...(record.status === "verified" ? { template: verifiedTemplate(record) } : {})
+      }));
+    },
     getTemplate: (id, revision) => repository.get(id, revision),
     async saveTemplate(input) {
       const template = normalizeTemplate(input?.template || input);
@@ -241,7 +254,7 @@ export function createHarnessRepositoryUseCases({ repository, modelCatalog, back
       }
       const templateId = String(input.templateId || "").trim();
       if (!templateId) throw error("HARNESS_TEMPLATE_ID_INVALID");
-      const template = normalizeTemplate({ ...source.template, templateId });
+      const template = normalizeTemplate({ ...verifiedTemplate(source), templateId });
       try {
         await validateContract(template, `Harness template ${template.templateId}`);
       } catch (failure) {
@@ -284,7 +297,7 @@ export function createHarnessRepositoryUseCases({ repository, modelCatalog, back
       const record = await repository.get(id, revision);
       if (!record) throw error("HARNESS_TEMPLATE_NOT_FOUND");
       if (record.status !== "verified") throw error("HARNESS_TEMPLATE_NOT_VERIFIED", "HARNESS_TEMPLATE_NOT_VERIFIED: only verified templates can be bound.");
-      return { template: normalizeTemplate(record.template), revision: record.revision, digest: record.verification?.digest || record.digest, verifiedTools: record.verifiedTools || [] };
+      return { template: verifiedTemplate(record), revision: record.revision, digest: record.verification?.digest || record.digest, verifiedTools: record.verifiedTools || [] };
     }
   });
 }

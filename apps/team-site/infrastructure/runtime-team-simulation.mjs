@@ -35,7 +35,16 @@ export function createRuntimeTeamSimulation({ run = runSystemWithAdapter, getDef
         await mkdir(join(workdir, ".ogs"), { recursive: true });
         const bundle = teamPackageBundle || await exportTeamPackage(team.workdir);
         const loaded = await loadTeamPackage({ workdir, bundle });
-        if (loaded.validation?.ok === false) throw new Error("TEAM_SIMULATION_INVALID: team version failed validation.");
+        if (loaded.validation?.ok === false) {
+          const diagnostics = Array.isArray(loaded.validation.diagnostics)
+            ? loaded.validation.diagnostics
+              .map((item) => String(item?.message || "").trim())
+              .filter(Boolean)
+              .slice(0, 3)
+              .join("; ")
+            : "";
+          throw new Error(`TEAM_SIMULATION_INVALID: team version failed validation.${diagnostics ? ` ${diagnostics}` : ""}`);
+        }
         const modelConfig = await getDefaultHarnessBinding();
         const result = await run({
           systemPath: resolve(workdir, "system.mmd"),

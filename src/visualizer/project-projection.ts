@@ -46,6 +46,25 @@ import { loadSystemDesign, saveSystemDesign, systemDefinitionToDesign } from "..
 
 type JsonRecord = Record<string, unknown>;
 
+const RUNTIME_PACKAGE_KEYS = new Set([
+  "configVersion",
+  "executor",
+  "roleRepo",
+  "runsDir",
+  "sharedDir",
+  "workspace",
+  "retention",
+  "redaction",
+  "tools",
+  "opencode"
+]);
+
+function sanitizeRuntimePackageConfig(value: unknown): JsonRecord | null {
+  const record = asRecord(value);
+  if (!record) return null;
+  return Object.fromEntries(Object.entries(record).filter(([key]) => RUNTIME_PACKAGE_KEYS.has(key)));
+}
+
 type ProjectCreatePreferences = {
   authoringDefaults?: unknown;
   modelProfileStrategy?: unknown;
@@ -722,6 +741,7 @@ export async function exportTeamPackage(workdir: string): Promise<Record<string,
   const systemHash = createHash("sha256").update(systemSource).digest("hex");
   const design = await loadSystemDesign(workdir);
   const runtime = asRecord(await readOptionalJson(ogsPaths.runtimePath));
+  const packageRuntime = sanitizeRuntimePackageConfig(runtime);
   const executionBindingsPath = resolve(workdir, ".ogs", "execution-bindings.json");
   const executionBindingsFile = await lstat(executionBindingsPath).catch(() => undefined);
   const executionBindings = asRecord(await readOptionalJson(executionBindingsPath));
@@ -809,7 +829,7 @@ export async function exportTeamPackage(workdir: string): Promise<Record<string,
       systemPath: "system.mmd",
       systemSource,
       design,
-      runtime: runtime ? { ...runtime, roleRepo: "./og-roles" } : null,
+      runtime: packageRuntime ? { ...packageRuntime, roleRepo: "./og-roles" } : null,
       executionBindings,
       modelCatalog: await readOptionalJson(ogsPaths.modelCatalogPath),
       laws: await readOptionalJson(ogsPaths.lawsPath),
@@ -842,9 +862,10 @@ export async function loadTeamPackage(args: {
     throw new Error("PROJECT_PACKAGE_VERSION_UNSUPPORTED: v2 Team Package requires executionBindings with ogsContractVersion=2.");
   }
   await assertNoLegacyV1ExecutionAssets(projectRoot);
+  const packageRuntime = sanitizeRuntimePackageConfig(team.runtime);
   const writes: Array<[string, unknown, boolean]> = [
     [resolve(projectRoot, "system.mmd"), systemSource, false],
-    [ogsPaths.runtimePath, team.runtime ?? null, true],
+    [ogsPaths.runtimePath, packageRuntime, true],
     [ogsPaths.modelCatalogPath, team.modelCatalog ?? null, true],
     [ogsPaths.lawsPath, team.laws ?? null, true],
     [ogsPaths.userProfilePath, team.userProfile ?? null, true],

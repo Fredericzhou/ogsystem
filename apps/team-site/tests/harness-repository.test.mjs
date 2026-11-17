@@ -111,7 +111,12 @@ test("Harness verification resolves provider-qualified models for short template
     await useCases.saveTemplate({ template: { ...template("harness.opencode"), backend: "opencode" }, name: "OpenCode" });
     const verified = await useCases.verifyTemplate("harness.opencode");
     assert.equal(verified.status, "verified");
+    assert.equal(verified.verification.evidence.resolvedModelId, "codex-gateway/gpt-6-luna");
     assert.equal(discoveredModel, "codex-gateway/gpt-6-luna");
+    assert.equal((await useCases.listTemplates())[0].template.model, "codex-gateway/gpt-6-luna");
+    assert.equal((await useCases.bindingSnapshot("harness.opencode")).template.model, "codex-gateway/gpt-6-luna");
+    await useCases.copyTemplate("harness.opencode", { templateId: "harness.opencode.copy" });
+    assert.equal((await useCases.bindingSnapshot("harness.opencode.copy")).template.model, "codex-gateway/gpt-6-luna");
   } finally {
     await rm(root, { recursive: true, force: true });
   }

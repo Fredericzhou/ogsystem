@@ -27,10 +27,10 @@ export async function initializeV2TeamDraftAssets(project, locale = "zh-CN") {
         templateId,
         backend: "codex",
         model: "gpt-6-luna",
-        allowedTools: [],
+        allowedTools: ["apply_patch", "exec_command"],
         environment: {
-          filesystem: "none",
-          process: "deny",
+          filesystem: "staged",
+          process: "allow",
           network: "deny",
           limits: { timeoutMs: 600000, maxOutputBytes: 131072 }
         },

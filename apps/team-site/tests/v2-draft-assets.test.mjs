@@ -14,7 +14,9 @@ test("new Team drafts are initialized as loadable V2 Harness projects", async ()
     const manifest = JSON.parse(await readFile(join(workdir, "team-roles", "roles", "owner", "role.json"), "utf8"));
     assert.equal(bindings.ogsContractVersion, 2);
     assert.equal(bindings.defaults.harnessTemplate, "harness.team.factory.default");
-    assert.deepEqual(bindings.harnessTemplates[bindings.defaults.harnessTemplate].allowedTools, []);
+    assert.deepEqual(bindings.harnessTemplates[bindings.defaults.harnessTemplate].allowedTools, ["apply_patch", "exec_command"]);
+    assert.equal(bindings.harnessTemplates[bindings.defaults.harnessTemplate].environment.filesystem, "staged");
+    assert.equal(bindings.harnessTemplates[bindings.defaults.harnessTemplate].environment.process, "allow");
     assert.equal(runtime.roleRepo, "team-roles");
     assert.equal(manifest.schemaVersion, 2);
     assert.equal(manifest.outputs.events, undefined);

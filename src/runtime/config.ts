@@ -8,9 +8,6 @@
  * - No filesystem IO and no runtime execution side effects.
  */
 import type {
-  CliTool,
-  CliToolRegistry,
-  ExecutionProfile,
   LawCatalog,
   LawSpec,
   RuntimeConfig,
@@ -144,62 +141,16 @@ function assertUniqueStringKey(args: {
   args.seenByKey.set(args.key, args.index);
 }
 
-export function validateProfilesConfig(value: unknown, filePath: string): ExecutionProfile[] {
+export function validateProfilesConfig(_value: unknown, filePath: string): never {
   fail(filePath, "$", "profiles.json is not accepted by Contract Set v2");
-  const items = expectArray(value, filePath, "$");
-  const seenProfileIds = new Map<string, number>();
-  return items.map((item, index) => {
-    const fieldPath = `$[${index}]`;
-    const record = expectRecord(item, filePath, fieldPath);
-    expectNoExtraKeys(record, ["profileId", "toolRef", "timeoutMs", "maxOutputBytes"], filePath, fieldPath);
-    const profileId = expectString(record.profileId, filePath, `${fieldPath}.profileId`);
-    assertUniqueStringKey({
-      key: profileId,
-      index,
-      seenByKey: seenProfileIds,
-      filePath,
-      fieldPath: `${fieldPath}.profileId`,
-      label: "profileId"
-    });
-
-    return {
-      profileId,
-      toolRef: expectString(record.toolRef, filePath, `${fieldPath}.toolRef`),
-      timeoutMs: expectOptionalPositiveInteger(record.timeoutMs, filePath, `${fieldPath}.timeoutMs`),
-      maxOutputBytes: expectOptionalPositiveInteger(
-        record.maxOutputBytes,
-        filePath,
-        `${fieldPath}.maxOutputBytes`
-      )
-    };
-  });
 }
 
 function validateStringArray(value: unknown, filePath: string, fieldPath: string): string[] {
   return expectArray(value, filePath, fieldPath).map((item, index) => expectString(item, filePath, `${fieldPath}[${index}]`));
 }
 
-function validateTool(value: unknown, filePath: string, fieldPath: string): CliTool {
-  return fail(filePath, fieldPath, "local_shell is a v1 execution runner and is not accepted by Contract Set v2");
-}
-
-export function validateToolsConfig(value: unknown, filePath: string): CliToolRegistry {
-  const record = expectRecord(value, filePath, "$");
-  expectNoExtraKeys(record, ["tools"], filePath, "$");
-  const seenToolRefs = new Map<string, number>();
-  const tools = expectArray(record.tools, filePath, "$.tools").map((item, index) => {
-    const tool = validateTool(item, filePath, `$.tools[${index}]`);
-    assertUniqueStringKey({
-      key: tool.toolRef,
-      index,
-      seenByKey: seenToolRefs,
-      filePath,
-      fieldPath: `$.tools[${index}].toolRef`,
-      label: "toolRef"
-    });
-    return tool;
-  });
-  return { tools };
+export function validateToolsConfig(_value: unknown, filePath: string): never {
+  fail(filePath, "$", "tools.json is not accepted by Contract Set v2");
 }
 
 function validateLawSpec(value: unknown, filePath: string, fieldPath: string): LawSpec {

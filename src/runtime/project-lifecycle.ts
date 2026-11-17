@@ -501,8 +501,8 @@ function createDefaultOgsReadme(): string {
     '      "templateId": "harness.default",',
     '      "backend": "<discovered-backend>",',
     '      "model": "<discovered-model>",',
-    '      "allowedTools": [],',
-    '      "environment": { "filesystem": { "read": true, "write": true }, "process": "allow", "network": "deny" }',
+    '      "allowedTools": ["apply_patch", "exec_command"],',
+    '      "environment": { "filesystem": "staged", "process": "allow", "network": "deny" }',
     '    }',
     '  },',
     '  "roles": { "proposal-author": { "kind": "harness", "harnessTemplate": "harness.default" } }',
@@ -1182,6 +1182,7 @@ async function ensureTemplateRuntimeAssets(args: {
   }]));
   let defaultBackend = "unbound";
   let defaultModel = "unavailable";
+  let defaultAllowedTools: string[] = [];
   let defaultEnvironment: Record<string, unknown> = {
     filesystem: "none",
     process: "deny",
@@ -1193,13 +1194,20 @@ async function ensureTemplateRuntimeAssets(args: {
     if (candidate) {
       defaultBackend = candidate.backend;
       defaultModel = candidate.modelId;
-      const resources = defaultBackendRegistry.getAdapter(candidate.backend)?.getResourceCapabilities?.();
-      if (resources?.filesystem === true && resources.process === true) {
-        defaultEnvironment = {
-          filesystem: "staged",
-          process: "allow",
-          network: "deny"
-        };
+      const adapter = defaultBackendRegistry.getAdapter(candidate.backend);
+      const resources = adapter?.getResourceCapabilities?.() || { filesystem: false, process: false, network: false };
+      defaultEnvironment = {
+        filesystem: resources.filesystem === true ? "staged" : "none",
+        process: resources.process === true ? "allow" : "deny",
+        network: resources.network === true ? "allow" : "deny"
+      };
+      if (adapter?.discoverNativeTools) {
+        try {
+          const discovered = await adapter.discoverNativeTools({ modelId: candidate.modelId, workdir: args.workdir, timeoutMs: 60_000 });
+          defaultAllowedTools = [...new Set(discovered.verifiedTools)];
+        } catch {
+          // Keep the project scaffolded with verified resources but no unverified tools.
+        }
       }
     }
   } catch {
@@ -1218,9 +1226,7 @@ async function ensureTemplateRuntimeAssets(args: {
         templateId,
         backend: defaultBackend,
         model: defaultModel,
-        // Tools are enabled only after a model-specific Capability Preview has
-        // verified them. This prevents a scaffold from claiming native facts.
-        allowedTools: [],
+        allowedTools: defaultAllowedTools,
         environment: defaultEnvironment,
         preset: "default"
       }
