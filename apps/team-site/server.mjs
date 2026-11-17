@@ -585,6 +585,27 @@ async function serveStatic(pathname, request, response, { immutable = false, hea
   }
 }
 
+let draining = false;
+let activeRequests = 0;
+
+async function activeStudioExecutions() {
+  const teams = await teamCatalog.listTeamRepository({ includeUnreleased: true, includeCollaboration: true });
+  const teamVersionIds = [...new Set(teams
+    .filter((team) => !team.teamProjectId && team.projectType !== "collaboration")
+    .map((team) => team.teamVersionId || team.projectId)
+    .filter(Boolean))];
+  let count = 0;
+  for (const teamVersionId of teamVersionIds) {
+    const simulations = await studioSimulationStore.listVersionSimulations(teamVersionId);
+    count += simulations.filter((item) => ["running", "stopping"].includes(item.status)).length;
+    const batch = await studioSimulationStore.readLatestBatch?.(teamVersionId);
+    if (batch?.status === "running") count += 1;
+  }
+  const projects = await listProjects();
+  count += projects.reduce((total, project) => total + (project.taskRecords || []).filter((task) => !task.deletedAt && ACTIVE_RUN_STATUSES.has(task.status)).length, 0);
+  return count;
+}
+
 const server = createServer(async (request, response) => {
   const url = new URL(request.url || "/", `http://${host}:${port}`);
   if (request.method === "GET" && url.pathname === "/healthz") {
@@ -592,9 +613,62 @@ const server = createServer(async (request, response) => {
     return;
   }
   if (request.method === "GET" && url.pathname === "/readyz") {
-    sendJson(response, ready ? 200 : 503, { status: ready ? "ready" : "starting" });
+    sendJson(response, ready ? 200 : 503, { status: draining ? "draining" : ready ? "ready" : "starting" });
     return;
   }
+  if (request.method === "POST" && url.pathname === "/_service/drain") {
+    const remoteAddress = String(request.socket.remoteAddress || "");
+    if (!(remoteAddress === "127.0.0.1" || remoteAddress === "::1" || remoteAddress === "::ffff:127.0.0.1")) {
+      sendJson(response, 403, { error: "Local service control only." });
+      return;
+    }
+    if (draining) {
+      sendJson(response, 409, { status: "draining", error: "Service is already draining." });
+      return;
+    }
+    if (!ready) {
+      sendJson(response, 503, { status: "starting", error: "The service is still recovering persisted state." });
+      return;
+    }
+    draining = true;
+    ready = false;
+    try {
+      const deadline = Date.now() + 10 * 60 * 1000;
+      while (Date.now() < deadline) {
+        const activeExecutions = await activeStudioExecutions();
+        if (activeRequests === 0 && activeExecutions === 0) {
+          sendJson(response, 200, { status: "drained" });
+          return;
+        }
+        await new Promise((resolvePromise) => setTimeout(resolvePromise, 500));
+      }
+      draining = false;
+      ready = true;
+      sendJson(response, 409, { status: "busy", error: "Service restart cancelled because active runs did not finish within 10 minutes." });
+    } catch (error) {
+      draining = false;
+      ready = true;
+      sendJson(response, 503, { status: "busy", error: error instanceof Error ? error.message : "Unable to inspect active runs." });
+    }
+    return;
+  }
+  if (!ready) {
+    sendJson(response, 503, { status: "starting", error: "The service is still recovering persisted state." });
+    return;
+  }
+  if (draining) {
+    sendJson(response, 503, { status: "draining", error: "The service is preparing to restart. Retry shortly." });
+    return;
+  }
+  activeRequests += 1;
+  let requestReleased = false;
+  const releaseRequest = () => {
+    if (requestReleased) return;
+    requestReleased = true;
+    activeRequests = Math.max(0, activeRequests - 1);
+  };
+  response.once("finish", releaseRequest);
+  response.once("close", releaseRequest);
   if (await handlePlatformRoutes({ request, response, url, readBody, sendJson, useCases: platformUseCases, harnessUseCases })) return;
   if (await handleRoleSourceAdminRoutes({ request, response, url, readBody, sendJson, errorStatus, useCases: roleSourceCatalogUseCases, scheduler: roleSourceSyncScheduler })) return;
   if (await handleRoleSourceCatalogRoutes({ request, response, url, readBody, sendJson, errorStatus, useCases: roleSourceCatalogUseCases })) return;
@@ -691,23 +765,28 @@ const server = createServer(async (request, response) => {
 });
 
 const studioSimulationRetentionDays = Number.parseInt(process.env.OGS_STUDIO_SIMULATION_RETENTION_DAYS || "", 10);
-teamLifecycleUseCases.provisionBuiltInTeamTemplates()
-  .then(() => runRecoveryUseCases.recoverOrphanedRuns())
-  .then(() => studioSimulationUseCases.recoverInterruptedSimulations())
-  .then(() => Number.isFinite(studioSimulationRetentionDays) && studioSimulationRetentionDays > 0
-    ? studioSimulationUseCases.cleanupExpiredSimulations({ retentionDays: studioSimulationRetentionDays })
-    : undefined)
-  .then(() => roleSourceSyncScheduler.recoverInterrupted())
-  .then(() => {
-  server.listen(port, host, () => {
-    ready = true;
-    const address = server.address();
-    const boundPort = address && typeof address === "object" ? address.port : port;
-    process.stdout.write(`OGS Projects is ready at http://${host}:${boundPort}\n`);
-  });
-}).catch((error) => {
-  process.stderr.write(`Unable to initialize OGS Projects: ${error instanceof Error ? error.message : String(error)}\n`);
+server.on("error", (error) => {
+  process.stderr.write(`Unable to listen for OGS Projects on ${host}:${port}: ${error instanceof Error ? error.message : String(error)}\n`);
   process.exitCode = 1;
+});
+server.listen(port, host, () => {
+  teamLifecycleUseCases.provisionBuiltInTeamTemplates()
+    .then(() => runRecoveryUseCases.recoverOrphanedRuns())
+    .then(() => studioSimulationUseCases.recoverInterruptedSimulations())
+    .then(() => Number.isFinite(studioSimulationRetentionDays) && studioSimulationRetentionDays > 0
+      ? studioSimulationUseCases.cleanupExpiredSimulations({ retentionDays: studioSimulationRetentionDays })
+      : undefined)
+    .then(() => roleSourceSyncScheduler.recoverInterrupted())
+    .then(() => {
+      ready = true;
+      const address = server.address();
+      const boundPort = address && typeof address === "object" ? address.port : port;
+      process.stdout.write(`OGS Projects is ready at http://${host}:${boundPort}\n`);
+    })
+    .catch((error) => {
+      process.stderr.write(`Unable to initialize OGS Projects: ${error instanceof Error ? error.message : String(error)}\n`);
+      server.close(() => { process.exitCode = 1; });
+    });
 });
 
 function close() {

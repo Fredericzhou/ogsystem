@@ -125,12 +125,88 @@ export async function installService({ prepare = true, host = process.env.OGS_SI
 
 export async function stopService() {
   if (platform() !== "darwin") throw new Error("team-site service management requires macOS launchd.");
+  const serviceDetails = launchctl(["print", serviceDomain()], { allowFailure: true });
+  if (!serviceDetails) {
+    await waitForServicePortRelease(process.env.PORT || "4173");
+    return;
+  }
+  const port = serviceDetails.match(/\bPORT\s*=>\s*(\d+)/)?.[1] || "4173";
+  let response;
+  try {
+    response = await fetch(`http://127.0.0.1:${port}/_service/drain`, {
+      method: "POST",
+      signal: AbortSignal.timeout(10 * 60 * 1000 + 5000)
+    });
+  } catch (error) {
+    if (error?.cause?.code !== "ECONNREFUSED") {
+      throw new Error(`Team Site did not complete graceful shutdown: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  if (response && (response.status === 404 || response.status === 405)) {
+    await waitForLegacyServiceIdle(`http://127.0.0.1:${port}`);
+    response = undefined;
+  }
+  if (response && !response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(payload.error || `Team Site refused to stop safely (HTTP ${response.status}).`);
+  }
   launchctl(["bootout", serviceDomain()], { allowFailure: true });
   for (let attempt = 0; attempt < 50; attempt += 1) {
-    if (!launchctl(["print", serviceDomain()], { allowFailure: true })) return;
+    if (!launchctl(["print", serviceDomain()], { allowFailure: true })) {
+      await waitForServicePortRelease(port);
+      return;
+    }
     await delay(100);
   }
   throw new Error("Timed out while stopping the Team Site launchd job.");
+}
+
+async function waitForServicePortRelease(port, timeoutMs = 10000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      await fetch(`http://127.0.0.1:${port}/healthz`, { signal: AbortSignal.timeout(500) });
+    } catch (error) {
+      if (error?.cause?.code === "ECONNREFUSED") return;
+      throw new Error(`Unable to confirm that Team Site released port ${port}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    await delay(100);
+  }
+  throw new Error(`Timed out waiting for Team Site to release port ${port}.`);
+}
+
+async function readJson(url) {
+  const response = await fetch(url, { signal: AbortSignal.timeout(10000) });
+  if (!response.ok) throw new Error(`Unable to inspect active work (HTTP ${response.status}).`);
+  return response.json();
+}
+
+async function waitForLegacyServiceIdle(origin, timeoutMs = 10 * 60 * 1000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const repository = await readJson(`${origin}/api/v2/team-repository?pageSize=50&page=1`);
+    const teams = [...(repository.teams || [])];
+    for (let page = 2; page <= Number(repository.pagination?.totalPages || 1); page += 1) {
+      const next = await readJson(`${origin}/api/v2/team-repository?pageSize=50&page=${page}`);
+      teams.push(...(next.teams || []));
+    }
+    let active = false;
+    for (const team of teams) {
+      const teamId = team.teamId || team.teamRootId || team.teamVersionId || team.projectId;
+      const teamVersionId = team.teamVersionId || team.projectId;
+      if (!teamId || !teamVersionId) continue;
+      const simulations = await readJson(`${origin}/api/v2/teams/${encodeURIComponent(teamId)}/versions/${encodeURIComponent(teamVersionId)}/simulations`);
+      if ((simulations.simulations || []).some((item) => ["running", "stopping"].includes(item.status))) active = true;
+    }
+    const projectList = await readJson(`${origin}/api/v2/projects`);
+    for (const project of projectList.projects || []) {
+      const detail = await readJson(`${origin}/api/v2/projects/${encodeURIComponent(project.projectId)}`);
+      if ((detail.taskRecords || []).some((task) => ["planning", "running", "pause_requested", "cancel_requested"].includes(task.status))) active = true;
+    }
+    if (!active) return;
+    await delay(1000);
+  }
+  throw new Error("Service restart cancelled because active runs did not finish within 10 minutes.");
 }
 
 export async function probe(url = "http://127.0.0.1:4173/healthz") {

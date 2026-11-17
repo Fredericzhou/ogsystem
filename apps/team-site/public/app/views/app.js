@@ -3601,10 +3601,40 @@ async function resumeStudioProgress(teamVersionId, stage, graph, debugPanel, set
   const currentSubscription = active?.simulationId && studioProgressSubscriptions.get(active.simulationId);
   if (!active?.simulationId || active.teamVersionId !== teamVersionId || currentSubscription?.isConnected) return;
   const subscription = active.simulationId;
+  const endpoint = `/api/v2/teams/${encodeURIComponent(active.teamId)}/versions/${encodeURIComponent(teamVersionId)}/simulations/${encodeURIComponent(subscription)}`;
+  syncDebugRunButton("checking");
+  let initialDetail;
+  try {
+    const detailResponse = await pageFetch(endpoint);
+    initialDetail = await detailResponse.json();
+    if (!detailResponse.ok) {
+      clearStudioActiveRun(subscription);
+      state.studioActiveRun = null;
+      if (detailResponse.status === 404) syncDebugRunButton("idle");
+      else {
+        syncDebugRunButton("unknown");
+        setEditorState(state.locale === "en" ? "Unable to confirm the previous debug run. Refresh to retry." : "无法确认上次调试状态，请刷新页面后重试。");
+      }
+      return;
+    }
+  } catch {
+    clearStudioActiveRun(subscription);
+    state.studioActiveRun = null;
+    syncDebugRunButton("unknown");
+    setEditorState(state.locale === "en" ? "Unable to confirm the previous debug run. Refresh to retry." : "无法确认上次调试状态，请刷新页面后重试。");
+    return;
+  }
+  if (!stage.isConnected || (pageRequest && !isCurrentRequest(pageRequest))) return;
+  if (!["running", "stopping"].includes(initialDetail.simulation?.status)) {
+    clearStudioActiveRun(subscription);
+    state.studioActiveRun = null;
+    syncDebugRunButton("terminal");
+    return;
+  }
   studioProgressSubscriptions.set(subscription, stage);
   state.studioActiveRun = active;
   setDebugView("run");
-  syncDebugRunButton("running");
+  syncDebugRunButton(initialDetail.simulation.status === "stopping" ? "stopping" : "running");
   state.teamStudioDialog?.("run");
   const result = debugPanel?.querySelector("#team-simulation-result");
   if (result && !result.querySelector(".team-debug-transcript")) {
@@ -3616,12 +3646,8 @@ async function resumeStudioProgress(teamVersionId, stage, graph, debugPanel, set
   bindStudioRuntimeAuditDrawer(result, graph, roleName);
   const restoredCards = new Map();
   const pendingHandoffs = new Map();
-  const endpoint = `/api/v2/teams/${encodeURIComponent(active.teamId)}/versions/${encodeURIComponent(teamVersionId)}/simulations/${encodeURIComponent(subscription)}`;
   const connected = () => stage.isConnected;
   try {
-    const detailResponse = await pageFetch(endpoint);
-    const initialDetail = await detailResponse.json();
-    if (!detailResponse.ok) throw new Error(initialDetail.error || "Unable to load the active Studio debug run.");
     const simulationInput = debugPanel?.querySelector("#team-simulation-input");
     if (simulationInput) simulationInput.value = initialDetail.simulation?.input || "";
     appendStudioUserPrompt(transcriptList, initialDetail.simulation?.input, initialDetail.simulation?.createdAt || Date.now());
@@ -3833,9 +3859,13 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
       button.classList.toggle("danger-button", running);
       button.classList.toggle("is-stopping", status === "stopping");
       button.dataset.debugState = status;
-      button.disabled = status === "stopping";
+      button.disabled = status === "stopping" || status === "checking" || status === "unknown";
       button.textContent = status === "stopping"
         ? (state.locale === "en" ? "Stopping…" : "正在停止…")
+        : status === "checking"
+          ? (state.locale === "en" ? "Checking run…" : "正在确认运行状态…")
+          : status === "unknown"
+            ? (state.locale === "en" ? "Refresh to check status" : "刷新以确认状态")
         : running
           ? (state.locale === "en" ? "Stop" : "停止")
           : status === "terminal"
@@ -6845,9 +6875,13 @@ async function renderProjectDraft(projectId, pageRequest = state.activeRequest) 
       button.dataset.running = String(running);
       button.classList.toggle("danger-button", running);
       button.classList.toggle("is-stopping", status === "stopping");
-      button.disabled = status === "stopping";
+      button.disabled = status === "stopping" || status === "checking" || status === "unknown";
       button.textContent = status === "stopping"
         ? (state.locale === "en" ? "Stopping…" : "正在停止…")
+        : status === "checking"
+          ? (state.locale === "en" ? "Checking run…" : "正在确认运行状态…")
+          : status === "unknown"
+            ? (state.locale === "en" ? "Refresh to check status" : "刷新以确认状态")
         : running
           ? (state.locale === "en" ? "Stop" : "停止")
           : status === "terminal"
