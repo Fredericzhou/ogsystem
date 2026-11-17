@@ -1622,6 +1622,7 @@ const {
   messageSectionMarkup: studioTranscriptSectionMarkup,
   messageBodyMarkup: studioTranscriptBodyMarkup,
   bindMessageMore: bindStudioMessageMore,
+  bindTranscriptSmartScroll: bindStudioTranscriptSmartScroll,
   auditDrawerMarkup: studioRuntimeAuditDrawerMarkup,
   roleCardMarkup: studioRuntimeRoleCardMarkup,
   mergeAuditTrail: mergeStudioAuditTrail,
@@ -3607,9 +3608,10 @@ async function resumeStudioProgress(teamVersionId, stage, graph, debugPanel, set
   state.teamStudioDialog?.("run");
   const result = debugPanel?.querySelector("#team-simulation-result");
   if (result && !result.querySelector(".team-debug-transcript")) {
-    result.innerHTML = `<div class="team-simulation-result"><div class="panel-head"><strong>${state.locale === "en" ? "Debug trace" : "调试过程"}</strong><span class="status-chip running">${esc(studioSimulationStatus("running"))}</span></div><div class="team-debug-transcript-wrap"><ol class="team-debug-transcript" aria-live="polite"></ol></div><p class="form-hint">${state.locale === "en" ? "This run continues in the current tab. Use Stop to end it." : "调试会在当前标签页继续运行；点击“停止”可结束任务。"}</p>${studioRuntimeAuditDrawerMarkup(state.locale)}</div>`;
+    result.innerHTML = `<div class="team-simulation-result"><div class="panel-head"><strong>${state.locale === "en" ? "Debug trace" : "调试过程"}</strong><span class="status-chip running">${esc(studioSimulationStatus("running"))}</span></div><div class="team-debug-transcript-wrap"><ol class="team-debug-transcript" aria-live="polite"></ol><button type="button" class="team-debug-new-messages" hidden>${state.locale === "en" ? "↓ New messages" : "↓ 有新消息"}</button></div><p class="form-hint">${state.locale === "en" ? "This run continues in the current tab. Use Stop to end it." : "调试会在当前标签页继续运行；点击“停止”可结束任务。"}</p>${studioRuntimeAuditDrawerMarkup(state.locale)}</div>`;
   }
   const transcriptList = result?.querySelector(".team-debug-transcript");
+  const transcriptFollow = bindStudioTranscriptSmartScroll(result);
   const roleName = (roleId) => studioRoleDisplayName(authoring, roleId, state.locale) || roleId;
   bindStudioRuntimeAuditDrawer(result, graph, roleName);
   const restoredCards = new Map();
@@ -3682,7 +3684,10 @@ async function resumeStudioProgress(teamVersionId, stage, graph, debugPanel, set
         }
       }
       bindStudioRuntimeAuditDrawer(result, graph, roleName);
-      if (followProgress && incoming.length) transcriptList.scrollTop = transcriptList.scrollHeight;
+      if (followProgress && incoming.length) {
+        transcriptList.dataset.hasPendingMessages = "false";
+        transcriptList.scrollTop = transcriptList.scrollHeight;
+      } else if (incoming.length) transcriptFollow?.showPendingMessages();
       setEditorState(state.locale === "en" ? "Studio debug run in progress…" : "Studio 调试运行中…");
       if (payload.done) {
         const detailResponse = await pageFetch(endpoint);
@@ -5295,22 +5300,7 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
           bindStudioRuntimeAuditDrawer(result, updateStudioGraph, roleName);
           const list = panel.querySelector(".team-debug-transcript");
           const chip = panel.querySelector(".status-chip");
-          const newMessages = panel.querySelector(".team-debug-new-messages");
-          if (!list.dataset.smartScrollBound) {
-            const nearBottom = () => list.scrollHeight - list.scrollTop - list.clientHeight <= 56;
-            list.dataset.smartScrollBound = "true";
-            list.addEventListener("scroll", () => {
-              const readingBacklog = !nearBottom();
-              list.dataset.userReading = readingBacklog ? "true" : "false";
-              if (newMessages) newMessages.hidden = !readingBacklog;
-            }, { passive: true });
-            list.addEventListener("wheel", (event) => event.stopPropagation(), { passive: true });
-            newMessages?.addEventListener("click", () => {
-              list.dataset.userReading = "false";
-              list.scrollTo({ top: list.scrollHeight, behavior: "smooth" });
-              newMessages.hidden = true;
-            });
-          }
+          const transcriptFollow = bindStudioTranscriptSmartScroll(panel);
           const wasAtBottom = list.dataset.userReading !== "true" && list.scrollHeight - list.scrollTop - list.clientHeight <= 56;
           appendStudioUserPrompt(list, prompt);
           const addSection = (card, label, value, className = "") => {
@@ -5476,8 +5466,10 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
               addSection(card, state.locale === "en" ? "Failure details" : "失败诊断详情", item.errorEnvelope, "diagnostic");
             }
           }
-          if (wasAtBottom) list.scrollTo({ top: list.scrollHeight, behavior: "smooth" });
-          else if (newMessages && events.length) newMessages.hidden = false;
+          if (wasAtBottom) {
+            list.dataset.hasPendingMessages = "false";
+            list.scrollTo({ top: list.scrollHeight, behavior: "smooth" });
+          } else if (events.length) transcriptFollow?.showPendingMessages();
           if (ownsRuntimePanel()) updateStudioGraph?.setRuntimeProgress(transcript);
         };
         const endpoint = `/api/v2/teams/${encodeURIComponent(teamId)}/versions/${encodeURIComponent(teamVersionId)}/simulations`;

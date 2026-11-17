@@ -1,7 +1,8 @@
 import { state } from "../state.js";
 import { esc } from "./dom.js";
+import { renderStudioMarkdown } from "./markdown-renderer.bundle.js";
 
-export function createStudioTranscriptTools({ roleColorForId, renderRoleAvatarWithBadge, formatEventTime, formatStatus }) {
+export function createStudioTranscriptTools({ roleColorForId, renderRoleAvatarWithBadge, formatEventTime, formatStatus, renderMarkdown = renderStudioMarkdown }) {
   const fallbackEventLabels = {
     READY: { en: "Result ready", zh: "准备好了" },
     APPROVED: { en: "Approved", zh: "同意" },
@@ -21,8 +22,6 @@ export function createStudioTranscriptTools({ roleColorForId, renderRoleAvatarWi
     NEEDS_REWORK: "🔁",
     BLOCKED: "🚫"
   };
-  let messageId = 0;
-
   function eventLabel(event) {
     const key = String(event || "").trim();
     if (!key) return "";
@@ -73,16 +72,15 @@ export function createStudioTranscriptTools({ roleColorForId, renderRoleAvatarWi
 
   function messageMarkup(sectionLabel, value) {
     const presentation = messagePresentation(value);
-    const long = presentation.content.length > 280;
-    const preview = long ? `${presentation.content.slice(0, 280).trimEnd()}…` : presentation.content;
     const eventIcon = eventEmoji(presentation.event);
-    const fullId = `studio-message-full-${++messageId}`;
-    const fullText = presentation.fullText || presentation.content;
     const eventMarkup = presentation.label
       ? `<span class="studio-message-event">${eventIcon ? `<span class="studio-message-event-emoji" aria-hidden="true">${eventIcon}</span>` : ""}${esc(presentation.label)}</span>`
       : "";
-    const contentMarkup = `<div class="studio-message-content" data-studio-message-content${long ? ` data-expanded="false"` : ""}>${eventMarkup}<span class="studio-message-text studio-message-content-preview" data-studio-message-preview>${esc(preview)}</span>${long ? `<span id="${fullId}" class="studio-message-text studio-message-content-full" data-studio-message-full hidden>${esc(fullText)}</span>` : ""}</div>`;
-    return `<section class="studio-message-section" data-studio-message-section>${sectionLabel ? `<small>${esc(sectionLabel)}</small>` : ""}${contentMarkup}${long ? `<button type="button" class="studio-message-more" data-studio-message-more aria-expanded="false" aria-controls="${fullId}">${state.locale === "en" ? "More" : "更多"}</button>` : ""}</section>`;
+    const contentMarkup = `<div class="studio-message-content" data-studio-message-content>${eventMarkup}<div class="studio-message-markdown">${renderMarkdown(presentation.content)}</div><template data-studio-raw-markdown>${esc(presentation.content)}</template></div>`;
+    const moreButton = `<button type="button" class="studio-message-more" data-studio-message-more aria-expanded="false" hidden>${state.locale === "en" ? "More" : "更多"}</button>`;
+    const copyLabel = state.locale === "en" ? "Copy Markdown" : "复制 Markdown";
+    const copyButton = `<button type="button" class="studio-message-copy" data-studio-message-copy title="${copyLabel}" aria-label="${copyLabel}"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>`;
+    return `<section class="studio-message-section" data-studio-message-section>${sectionLabel ? `<small>${esc(sectionLabel)}</small>` : ""}${contentMarkup}<div class="studio-message-actions">${moreButton}${copyButton}</div></section>`;
   }
 
   function messageSectionMarkup(label, value) {
@@ -94,19 +92,119 @@ export function createStudioTranscriptTools({ roleColorForId, renderRoleAvatarWi
   }
 
   function bindMessageMore(section) {
-    section?.querySelector("[data-studio-message-more]")?.addEventListener("click", (event) => {
+    const moreButton = section?.querySelector("[data-studio-message-more]");
+    const content = section?.querySelector("[data-studio-message-content]");
+    const markdown = content?.querySelector(".studio-message-markdown");
+    if (moreButton && content && markdown && !moreButton._studioBound) {
+      moreButton._studioBound = true;
+      const syncOverflow = () => {
+        if (section.isConnected === false) {
+          section._studioMessageResizeObserver?.disconnect();
+          return;
+        }
+        const wasExpanded = moreButton.getAttribute("aria-expanded") === "true";
+        content.dataset.expanded = "false";
+        const overflowing = markdown.scrollHeight > markdown.clientHeight + 1;
+        if (overflowing) {
+          content.dataset.expanded = String(wasExpanded);
+          moreButton.hidden = false;
+          moreButton.setAttribute("aria-expanded", String(wasExpanded));
+          moreButton.textContent = wasExpanded ? (state.locale === "en" ? "Less" : "收起") : (state.locale === "en" ? "More" : "更多");
+        } else {
+          delete content.dataset.expanded;
+          moreButton.hidden = true;
+          moreButton.setAttribute("aria-expanded", "false");
+        }
+      };
+      moreButton.addEventListener("click", (event) => {
+        const button = event.currentTarget;
+        const expanded = button.getAttribute("aria-expanded") === "true";
+        const nextExpanded = !expanded;
+        content.dataset.expanded = String(nextExpanded);
+        button.setAttribute("aria-expanded", String(nextExpanded));
+        button.textContent = nextExpanded ? (state.locale === "en" ? "Less" : "收起") : (state.locale === "en" ? "More" : "更多");
+      });
+      syncOverflow();
+      if (typeof ResizeObserver !== "undefined") {
+        section._studioMessageResizeObserver = new ResizeObserver(syncOverflow);
+        section._studioMessageResizeObserver.observe(markdown);
+      }
+    }
+    section?.querySelector("[data-studio-message-copy]")?.addEventListener("click", async (event) => {
       const button = event.currentTarget;
-      const content = section.querySelector("[data-studio-message-content]");
-      const preview = section.querySelector("[data-studio-message-preview]");
-      const full = section.querySelector("[data-studio-message-full]");
-      if (!content || !preview || !full) return;
-      const expanded = button.getAttribute("aria-expanded") === "true";
-      preview.hidden = !expanded;
-      full.hidden = expanded;
-      content.dataset.expanded = String(!expanded);
-      button.setAttribute("aria-expanded", String(!expanded));
-      button.textContent = expanded ? (state.locale === "en" ? "More" : "更多") : (state.locale === "en" ? "Less" : "收起");
+      const raw = section.querySelector("[data-studio-raw-markdown]")?.content.textContent || "";
+      const originalTitle = button.title;
+      try {
+        let copied = false;
+        if (navigator.clipboard?.writeText) {
+          try {
+            await navigator.clipboard.writeText(raw);
+            copied = true;
+          } catch { /* Fall back when clipboard permission is unavailable. */ }
+        }
+        if (!copied) {
+          const field = document.createElement("textarea");
+          field.value = raw;
+          field.setAttribute("readonly", "");
+          field.style.position = "fixed";
+          field.style.opacity = "0";
+          document.body.append(field);
+          field.select();
+          copied = document.execCommand("copy");
+          field.remove();
+        }
+        if (!copied) throw new Error("copy failed");
+        button.title = state.locale === "en" ? "Markdown copied" : "Markdown 已复制";
+      } catch {
+        button.title = state.locale === "en" ? "Copy failed" : "复制失败";
+      }
+      button.setAttribute("aria-label", button.title);
+      window.setTimeout(() => {
+        if (!button.isConnected) return;
+        button.title = originalTitle;
+        button.setAttribute("aria-label", originalTitle);
+      }, 1600);
     });
+  }
+
+  function bindTranscriptSmartScroll(panel) {
+    const list = panel?.querySelector(".team-debug-transcript");
+    const button = panel?.querySelector(".team-debug-new-messages");
+    if (!list || !button) return null;
+    if (list._studioTranscriptFollowController) return list._studioTranscriptFollowController;
+    const nearBottom = () => list.scrollHeight - list.scrollTop - list.clientHeight <= 56;
+    const updateButton = (visible) => {
+      button.hidden = !visible;
+      const acknowledged = list.dataset.followAcknowledged === "true";
+      button.textContent = acknowledged
+        ? (state.locale === "en" ? "↓ Move to latest" : "↓ 移动到底部")
+        : (state.locale === "en" ? "↓ New messages" : "↓ 有新消息");
+    };
+    const controller = Object.freeze({
+      showPendingMessages() {
+        list.dataset.hasPendingMessages = "true";
+        const visible = !nearBottom();
+        if (!visible) list.dataset.hasPendingMessages = "false";
+        updateButton(visible);
+      }
+    });
+    list._studioTranscriptFollowController = controller;
+    list.dataset.smartScrollBound = "true";
+    list.addEventListener("scroll", () => {
+      const atBottom = nearBottom();
+      list.dataset.userReading = String(!atBottom);
+      if (atBottom) list.dataset.hasPendingMessages = "false";
+      updateButton(!atBottom && list.dataset.hasPendingMessages === "true");
+    }, { passive: true });
+    list.addEventListener("wheel", (event) => event.stopPropagation(), { passive: true });
+    button.addEventListener("click", () => {
+      list.dataset.followAcknowledged = "true";
+      list.dataset.userReading = "false";
+      list.dataset.hasPendingMessages = "false";
+      list.scrollTo({ top: list.scrollHeight, behavior: "smooth" });
+      updateButton(false);
+    });
+    return controller;
   }
 
   function auditDrawerMarkup(locale) {
@@ -127,7 +225,7 @@ export function createStudioTranscriptTools({ roleColorForId, renderRoleAvatarWi
     const name = roleName || roleId;
     const focusName = focusableAvatar ? ` data-focus-role="${esc(roleId)}" role="button" tabindex="0"` : "";
     const defaultAudit = `<button type="button" class="team-debug-drilldown-btn" data-runtime-audit-open title="${locale === "en" ? "View run evidence" : "查看运行证据"}">${locale === "en" ? "Evidence" : "运行证据"}</button>`;
-    return `<li class="team-debug-chat-item${extraClass ? ` ${esc(extraClass)}` : ""}" data-role-id="${esc(roleId)}" data-audit-index="${auditIndex}" data-status="${status}" tabindex="0" style="--role-accent:${esc(roleColorForId(roleId).accent)};--role-fill:${esc(roleColorForId(roleId).fill)}">${avatar}<div class="team-debug-bubble-col"><header><div class="team-debug-role"><strong class="team-debug-sender-name"${focusName}>${esc(name)}</strong>${backendTag}<span class="team-debug-time-status">${esc(statusLabel || `${formatEventTime(event)} · ${formatStatus(status)}`)}</span></div><div class="team-debug-header-meta">${auditMarkup || defaultAudit}</div></header><div class="team-debug-bubble"><div class="team-debug-bubble-body">${bodyMarkup}</div><div class="team-debug-handoff-mentions">${handoffMarkup}</div></div></div></li>`;
+    return `<li class="team-debug-chat-item${extraClass ? ` ${esc(extraClass)}` : ""}" data-role-id="${esc(roleId)}" data-audit-index="${auditIndex}" data-status="${status}" tabindex="0" style="--role-accent:${esc(roleColorForId(roleId).accent)};--role-fill:${esc(roleColorForId(roleId).fill)}">${avatar}<div class="team-debug-bubble-col"><header><div class="team-debug-role"><strong class="team-debug-sender-name" title="${esc(name)}"${focusName}>${esc(name)}</strong>${backendTag}</div><div class="team-debug-header-meta"><span class="team-debug-time-status">${esc(statusLabel || `${formatEventTime(event)} · ${formatStatus(status)}`)}</span>${auditMarkup || defaultAudit}</div></header><div class="team-debug-bubble"><div class="team-debug-bubble-body">${bodyMarkup}</div><div class="team-debug-handoff-mentions">${handoffMarkup}</div></div></div></li>`;
   }
 
   function focusRole(graph, roleId, onFocusRole) {
@@ -304,6 +402,7 @@ export function createStudioTranscriptTools({ roleColorForId, renderRoleAvatarWi
     messageSectionMarkup,
     messageBodyMarkup,
     bindMessageMore,
+    bindTranscriptSmartScroll,
     auditDrawerMarkup,
     roleCardMarkup,
     mergeAuditTrail,

@@ -30,7 +30,7 @@ test("Studio debug detail identifies a run by its unique simulation ID", async (
   const source = await readFile(appSourcePath, "utf8");
 
   assert.match(source, /const debugRunId = simulation\.simulationId \|\| simulationId/);
-  assert.match(source, /\$\{state\.locale === "en" \? "Debug ID" : "调试号"\} · \$\{esc\(debugRunId\)\}/);
+  assert.match(source, /\$\{state\.locale === "en" \? "Debug ID" : "调试号"\} · <code>\$\{esc\(debugRunId\)\}<\/code>/);
   assert.doesNotMatch(source, /\$\{esc\(simulation\.teamId \|\| teamId\)\} · \$\{esc\(simulation\.teamVersionId \|\| teamVersionId\)\}/);
 });
 

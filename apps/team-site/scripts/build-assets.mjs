@@ -8,6 +8,18 @@ const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const publicDirectory = resolve(scriptDirectory, "../public");
 
 await build({
+  entryPoints: [join(publicDirectory, "app/components/markdown-renderer.js")],
+  outfile: join(publicDirectory, "app/components/markdown-renderer.bundle.js"),
+  bundle: true,
+  format: "esm",
+  platform: "browser",
+  target: ["es2022"],
+  minify: true,
+  legalComments: "none",
+  logLevel: "silent"
+});
+
+await build({
   entryPoints: [join(publicDirectory, "styles.css")],
   outfile: join(publicDirectory, "styles.min.css"),
   bundle: false,
