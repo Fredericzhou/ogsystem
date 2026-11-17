@@ -222,6 +222,34 @@ export function createHarnessRepositoryUseCases({ repository, modelCatalog, back
       }
       return repository.save({ ...input, template, templateId: template.templateId });
     },
+    async copyTemplate(sourceId, input = {}) {
+      const source = await repository.get(sourceId);
+      if (!source) throw error("HARNESS_TEMPLATE_NOT_FOUND");
+      if (source.status !== "verified" || !source.verification) {
+        throw error("HARNESS_TEMPLATE_NOT_VERIFIED", "HARNESS_TEMPLATE_NOT_VERIFIED: only verified templates can be copied as published templates.");
+      }
+      const templateId = String(input.templateId || "").trim();
+      if (!templateId) throw error("HARNESS_TEMPLATE_ID_INVALID");
+      const template = normalizeTemplate({ ...source.template, templateId });
+      try {
+        await validateContract(template, `Harness template ${template.templateId}`);
+      } catch (failure) {
+        throw error("HARNESS_TEMPLATE_SCHEMA_INVALID", failure instanceof Error ? failure.message : String(failure));
+      }
+      const verification = {
+        ...source.verification,
+        status: "verified",
+        verifiedAt: now(),
+        digest: computeDigest({ template, verifiedTools: source.verifiedTools || source.verification.verifiedTools || [], evidence: source.verification.evidence })
+      };
+      return repository.save({
+        template,
+        templateId,
+        name: input.name || `${source.name || source.templateId} copy`,
+        description: input.description ?? source.description,
+        initialVerification: verification
+      });
+    },
     verifyTemplate: verify,
     archiveTemplate: (id) => repository.archive(id),
     async listBackends() {

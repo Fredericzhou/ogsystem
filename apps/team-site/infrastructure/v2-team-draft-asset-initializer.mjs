@@ -49,8 +49,7 @@ export async function initializeV2TeamDraftAssets(project, locale = "zh-CN") {
     roleRepo: "team-roles",
     runsDir: ".ogs/runs",
     redaction: { enabled: true },
-    tools: { environmentPolicy: "minimal", envAllowlist: [] },
-    runtime: { error_flows: { v1: false } }
+    tools: { environmentPolicy: "minimal", envAllowlist: [] }
   }, null, 2)}\n`, "utf8");
   await writeFile(join(workdir, ".ogs", "laws.json"), `${JSON.stringify({ laws: [{ lawId: "law.team.factory", constraints: { forbiddenToolRefs: [], maxTransitions: 8 } }] }, null, 2)}\n`, "utf8");
   await writeFile(join(roleRoot, "role.json"), `${JSON.stringify({

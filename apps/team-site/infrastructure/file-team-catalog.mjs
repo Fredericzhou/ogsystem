@@ -16,9 +16,7 @@ function normalizeTeamMeta(meta, projectId) {
   for (const task of meta?.taskRecords || []) {
     if (task?.teamVersionId) assertCanonicalTeamVersionId(task.teamVersionId);
   }
-  const legacyReleased = !meta?.teamProjectId && meta?.projectType !== "collaboration"
-    && meta?.projectStatus === "confirmed" && typeof meta?.projectDigest === "string" && typeof meta?.confirmedAt === "string";
-  const teamVersionStatus = meta?.teamVersionStatus || (legacyReleased ? "released" : "draft");
+  const teamVersionStatus = meta?.teamVersionStatus || "draft";
   const teamRootId = String(meta?.teamRootId || meta?.teamId || (meta?.teamProjectId || meta?.projectType === "collaboration" ? "" : projectId));
   const teamId = teamRootId;
   const teamVersionNumber = Number.isInteger(meta?.teamVersionNumber) && meta.teamVersionNumber > 0 ? meta.teamVersionNumber : 1;
@@ -41,7 +39,7 @@ function normalizeTeamMeta(meta, projectId) {
     teamVersionStatus,
     teamName: String(meta?.teamName || meta?.name || "New team"),
     parentTeamVersionId: meta?.parentTeamVersionId || undefined,
-    releasedAt: meta?.releasedAt || (legacyReleased ? meta.confirmedAt : null),
+    releasedAt: meta?.releasedAt || null,
     archivedAt: meta?.archivedAt || null,
     ...(meta?.teamProjectId ? { teamProjectId: meta.teamProjectId } : {}),
     ...(typeof meta?.workspaceDir === "string" && meta.workspaceDir.trim() ? { workspaceDir: meta.workspaceDir.trim() } : {}),

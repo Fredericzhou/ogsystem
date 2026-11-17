@@ -446,7 +446,7 @@ export async function runSystemWithAdapter(args: {
                     keepLatest: setup.runtimeConfig.retention.keepLatest
                   }
                 : undefined,
-            errorFlowRoutingEnabled: setup.runtimeConfig.runtime.error_flows.v1,
+            errorFlowRoutingEnabled: false,
             runtimeEdgeIdsByTransition: args.runtimeEdgeIdsByTransition,
             dryRunScenario: args.dryRunScenario,
             gitCollaboration: args.gitCollaboration,

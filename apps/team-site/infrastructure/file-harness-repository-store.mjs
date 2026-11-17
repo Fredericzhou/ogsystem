@@ -86,8 +86,13 @@ export function createFileHarnessRepositoryStore({ path, now = () => new Date().
           revisions: [ ...(previous?.revisions || []), {
             revision,
             template: clone(input.template),
-            status: "draft",
+            status: input.initialVerification?.status === "verified" ? "verified" : "draft",
             digest: digest(input.template),
+            ...(input.initialVerification ? {
+              verification: clone(input.initialVerification),
+              verifiedAt: input.initialVerification.verifiedAt,
+              verifiedTools: [...(input.initialVerification.verifiedTools || [])]
+            } : {}),
             createdAt: at,
             updatedAt: at
           } ]

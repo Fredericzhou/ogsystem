@@ -333,16 +333,15 @@ export function validateRuntimeConfig(value: unknown, filePath: string): Runtime
       "retention",
       "redaction",
       "tools",
-      "opencode",
-      "runtime"
+      "opencode"
     ],
     filePath,
     "$"
   );
 
   const configVersion = expectOptionalString(record.configVersion, filePath, "$.configVersion");
-  if (configVersion !== undefined && configVersion !== "1" && configVersion !== "2") {
-    fail(filePath, "$.configVersion", `unsupported config version "${configVersion}"`);
+  if (configVersion !== undefined && configVersion !== "2") {
+    fail(filePath, "$.configVersion", `unsupported config version "${configVersion}"; expected "2"`);
   }
 
   const executor = expectString(record.executor, filePath, "$.executor");
@@ -469,27 +468,8 @@ export function validateRuntimeConfig(value: unknown, filePath: string): Runtime
     enabled: expectOptionalBoolean(redactionRecord?.enabled, filePath, "$.redaction.enabled") ?? true
   };
 
-  const runtimeRecord =
-    record.runtime === undefined
-      ? undefined
-      : expectRecord(record.runtime, filePath, "$.runtime");
-  if (runtimeRecord) {
-    expectNoExtraKeys(runtimeRecord, ["error_flows"], filePath, "$.runtime");
-  }
-
-  const runtimeErrorFlowsRecord =
-    runtimeRecord?.error_flows === undefined
-      ? undefined
-      : expectRecord(runtimeRecord.error_flows, filePath, "$.runtime.error_flows");
-  if (runtimeErrorFlowsRecord) {
-    expectNoExtraKeys(runtimeErrorFlowsRecord, ["v1"], filePath, "$.runtime.error_flows");
-  }
-
-  const runtimeErrorFlowsV1 =
-    expectOptionalBoolean(runtimeErrorFlowsRecord?.v1, filePath, "$.runtime.error_flows.v1") ?? false;
-
   return {
-    configVersion: configVersion ?? "2",
+    configVersion: "2",
     executor: "opencode",
     roleRepo: expectOptionalString(record.roleRepo, filePath, "$.roleRepo") ?? "./og-roles",
     runsDir: expectOptionalString(record.runsDir, filePath, "$.runsDir") ?? ".ogs/runs",
@@ -511,13 +491,6 @@ export function validateRuntimeConfig(value: unknown, filePath: string): Runtime
       environmentPolicy: (environmentPolicy as "inherit" | "minimal" | undefined) ?? "inherit",
       envAllowlist
     },
-    opencode: {
-      baseArgs
-    },
-    runtime: {
-      error_flows: {
-        v1: runtimeErrorFlowsV1
-      }
-    }
+    opencode: { baseArgs }
   };
 }

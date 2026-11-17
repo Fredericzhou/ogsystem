@@ -114,7 +114,7 @@ export function createStudioTranscriptTools({ roleColorForId, renderRoleAvatarWi
     const labels = english
       ? { telemetry: "Telemetry", input: "Input Context", output: "Output", diagnostics: "Diagnostics", raw: "Raw JSON", close: "Close", focus: "Focus node", copy: "Copy JSON" }
       : { telemetry: "调用明细", input: "输入上下文", output: "执行交付", diagnostics: "失败诊断", raw: "原始数据", close: "关闭", focus: "定位图谱节点", copy: "复制 JSON" };
-    return `<aside class="studio-audit-drilldown-drawer" data-studio-runtime-audit-drawer aria-label="${english ? "Audit drilldown" : "审计下钻明细"}" hidden><div class="studio-audit-drawer-head"><div><span class="section-kicker">${english ? "Audit drilldown" : "深度审计下钻"}</span><h3 data-audit-drawer-title>${english ? "Role activation audit" : "角色激活审计明细"}</h3></div><button type="button" class="close-button" data-audit-drawer-close aria-label="${labels.close}">×</button></div><div class="studio-audit-drawer-tabs" role="tablist">${["telemetry", "input", "output", "diagnostics", "raw"].map((key, index) => `<button type="button" class="studio-audit-drawer-tab${index === 0 ? " is-active" : ""}" data-audit-tab="${key}" role="tab" aria-selected="${index === 0}">${labels[key]}</button>`).join("")}</div><div class="studio-audit-drawer-body" data-audit-drawer-body></div><div class="studio-audit-drawer-foot"><button type="button" class="secondary-button" data-audit-action="focus-node">${labels.focus}</button><button type="button" class="secondary-button" data-audit-action="copy-json">${labels.copy}</button><button type="button" class="primary-button" data-audit-drawer-close>${labels.close}</button></div></aside>`;
+    return `<aside class="studio-audit-drilldown-drawer" data-studio-runtime-audit-drawer aria-label="${english ? "Evidence information" : "证据信息"}" hidden><div class="studio-audit-drawer-head"><div><span class="section-kicker">${english ? "Evidence information" : "证据信息"}</span><h3 data-audit-drawer-title>${english ? "Role execution evidence" : "角色执行证据"}</h3></div><button type="button" class="close-button" data-audit-drawer-close aria-label="${labels.close}">×</button></div><div class="studio-audit-drawer-tabs" role="tablist">${["telemetry", "input", "output", "diagnostics", "raw"].map((key, index) => `<button type="button" class="studio-audit-drawer-tab${index === 0 ? " is-active" : ""}" data-audit-tab="${key}" role="tab" aria-selected="${index === 0}">${labels[key]}</button>`).join("")}</div><div class="studio-audit-drawer-body" data-audit-drawer-body></div><div class="studio-audit-drawer-foot"><button type="button" class="secondary-button" data-audit-action="focus-node">${labels.focus}</button><button type="button" class="secondary-button" data-audit-action="copy-json">${labels.copy}</button><button type="button" class="primary-button" data-audit-drawer-close>${labels.close}</button></div></aside>`;
   }
 
   function roleCardMarkup({ event, roleName, backend = "", authoring = {}, locale = state.locale, auditIndex = 0, bodyMarkup = "", handoffMarkup = "", auditMarkup = "", statusLabel = "", focusableAvatar = true, extraClass = "" }) {
@@ -126,8 +126,8 @@ export function createStudioTranscriptTools({ roleColorForId, renderRoleAvatarWi
     const backendTag = backend ? `<span class="team-debug-backend-tag" title="${esc(backend)}">${esc(backend)}</span>` : "";
     const name = roleName || roleId;
     const focusName = focusableAvatar ? ` data-focus-role="${esc(roleId)}" role="button" tabindex="0"` : "";
-    const defaultAudit = `<button type="button" class="team-debug-drilldown-btn" data-runtime-audit-open title="${locale === "en" ? "Inspect full audit trail" : "审计下钻明细"}">${locale === "en" ? "Audit" : "审计下钻"}</button>`;
-    return `<li class="team-debug-chat-item${extraClass ? ` ${esc(extraClass)}` : ""}" data-role-id="${esc(roleId)}" data-audit-index="${auditIndex}" data-status="${status}" tabindex="0" style="--role-accent:${esc(roleColorForId(roleId).accent)};--role-fill:${esc(roleColorForId(roleId).fill)}">${avatar}<div class="team-debug-bubble-col"><header><div class="team-debug-role"><strong class="team-debug-sender-name"${focusName}>${esc(name)}</strong>${backendTag}</div><div class="team-debug-header-meta"><span class="team-debug-time-status">${esc(statusLabel || `${formatEventTime(event)} · ${formatStatus(status)}`)}</span>${auditMarkup || defaultAudit}</div></header><div class="team-debug-bubble"><div class="team-debug-bubble-body">${bodyMarkup}</div><div class="team-debug-handoff-mentions">${handoffMarkup}</div></div></div></li>`;
+    const defaultAudit = `<button type="button" class="team-debug-drilldown-btn" data-runtime-audit-open title="${locale === "en" ? "View run evidence" : "查看运行证据"}">${locale === "en" ? "Evidence" : "运行证据"}</button>`;
+    return `<li class="team-debug-chat-item${extraClass ? ` ${esc(extraClass)}` : ""}" data-role-id="${esc(roleId)}" data-audit-index="${auditIndex}" data-status="${status}" tabindex="0" style="--role-accent:${esc(roleColorForId(roleId).accent)};--role-fill:${esc(roleColorForId(roleId).fill)}">${avatar}<div class="team-debug-bubble-col"><header><div class="team-debug-role"><strong class="team-debug-sender-name"${focusName}>${esc(name)}</strong>${backendTag}<span class="team-debug-time-status">${esc(statusLabel || `${formatEventTime(event)} · ${formatStatus(status)}`)}</span></div><div class="team-debug-header-meta">${auditMarkup || defaultAudit}</div></header><div class="team-debug-bubble"><div class="team-debug-bubble-body">${bodyMarkup}</div><div class="team-debug-handoff-mentions">${handoffMarkup}</div></div></div></li>`;
   }
 
   function focusRole(graph, roleId, onFocusRole) {
@@ -218,6 +218,11 @@ export function createStudioTranscriptTools({ roleColorForId, renderRoleAvatarWi
     if (!drawer || !transcript || drawer.dataset.bound === "true") return;
     drawer.dataset.bound = "true";
     let activeItem = null;
+    const formatEvidenceTime = (value) => {
+      if (!value || value === "—") return "—";
+      const date = new Date(value);
+      return Number.isNaN(date.valueOf()) ? String(value) : date.toLocaleString(state.locale === "en" ? "en-US" : "zh-CN", { dateStyle: "medium", timeStyle: "short" });
+    };
     const renderTab = (key) => {
       if (!activeItem) return;
       drawer.querySelectorAll("[data-audit-tab]").forEach((tab) => {
@@ -233,6 +238,11 @@ export function createStudioTranscriptTools({ roleColorForId, renderRoleAvatarWi
         const values = {
           status: formatStatus(activeItem.status || activeItem.type || "unknown"),
           backend: activeItem.backend || "—",
+          runId: activeItem.executionId || activeItem.sessionId || activeItem.messageId || activeItem.round || "—",
+          sessionId: activeItem.sessionId || "—",
+          stepId: activeItem.messageId || activeItem.stepId || "—",
+          startedAt: formatEvidenceTime(activeItem.startedAt || activeItem.at),
+          completedAt: formatEvidenceTime(activeItem.completedAt || activeItem.committedAt),
           durationMs: activeItem.durationMs ?? "—",
           externalDataIsolated: activeItem.externalDataIsolated === true ? (state.locale === "en" ? "Isolated" : "已分隔") : activeItem.externalDataIsolated === false ? (state.locale === "en" ? "Not isolated" : "未分隔") : "—",
           fallbackUsed: activeItem.fallbackUsed ? (state.locale === "en" ? "Yes" : "已触发") : (state.locale === "en" ? "No" : "未触发"),
@@ -241,7 +251,10 @@ export function createStudioTranscriptTools({ roleColorForId, renderRoleAvatarWi
           estimatedInputTokens: activeItem.estimatedInputTokens ?? "—",
           estimatedOutputTokens: activeItem.estimatedOutputTokens ?? "—"
         };
-        body.innerHTML = `<div class="studio-audit-section"><h4 class="studio-audit-section-title">${state.locale === "en" ? "Activation Telemetry" : "激活遥测指标"}</h4><div class="studio-audit-stat-grid">${Object.entries(values).map(([keyName, value]) => `<div class="studio-audit-stat-card"><small>${esc(keyName)}</small><strong>${esc(value)}</strong></div>`).join("")}</div></div><div class="studio-audit-section"><h4 class="studio-audit-section-title">${state.locale === "en" ? "Prompt Calls" : "模型调用记录"} (${calls.length})</h4>${callMarkup}</div>`;
+        const valueLabels = state.locale === "en"
+          ? { runId: "Round ID", sessionId: "Session ID", stepId: "Step ID", startedAt: "Started", completedAt: "Completed", durationMs: "Duration (ms)", status: "Status", backend: "Backend", externalDataIsolated: "Data isolated", fallbackUsed: "Fallback", renderedPromptChars: "Prompt chars", projectedInputChars: "Projected input", estimatedInputTokens: "Input tokens", estimatedOutputTokens: "Output tokens" }
+          : { runId: "本轮 ID", sessionId: "会话 ID", stepId: "步骤 ID", startedAt: "开始时间", completedAt: "结束时间", durationMs: "耗时（毫秒）", status: "状态", backend: "底座", externalDataIsolated: "数据分隔", fallbackUsed: "Fallback", renderedPromptChars: "提示词字符", projectedInputChars: "输入字符", estimatedInputTokens: "输入 Token", estimatedOutputTokens: "输出 Token" };
+        body.innerHTML = `<div class="studio-audit-section"><h4 class="studio-audit-section-title">${state.locale === "en" ? "Execution evidence" : "执行证据"}</h4><div class="studio-audit-stat-grid">${Object.entries(values).map(([keyName, value]) => `<div class="studio-audit-stat-card"><small>${esc(valueLabels[keyName] || keyName)}</small><strong>${esc(value)}</strong></div>`).join("")}</div></div><div class="studio-audit-section"><h4 class="studio-audit-section-title">${state.locale === "en" ? "Prompt Calls" : "模型调用记录"} (${calls.length})</h4>${callMarkup}</div>`;
         return;
       }
       const value = key === "input" ? activeItem.inputContext
@@ -261,7 +274,8 @@ export function createStudioTranscriptTools({ roleColorForId, renderRoleAvatarWi
         const card = button.closest("[data-role-id]");
         activeItem = card?._studioAuditItem || { roleId: card?.dataset.roleId, type: card?.dataset.status };
         const title = drawer.querySelector("[data-audit-drawer-title]");
-        if (title) title.textContent = `${getRoleName(activeItem.roleId || "")} (${activeItem.roleId || "—"}) · ${state.locale === "en" ? "Audit Drilldown" : "审计明细"}`;
+        const roundId = activeItem.executionId || activeItem.sessionId || activeItem.messageId || activeItem.round || activeItem.loopIteration || "—";
+        if (title) title.textContent = `${getRoleName(activeItem.roleId || "")} (${activeItem.roleId || "—"}) · ${state.locale === "en" ? `Round ID: ${roundId} (session / step)` : `本轮ID:${roundId}（本轮会话/步骤id）`}`;
         renderTab("telemetry");
         drawer.hidden = false;
         return;

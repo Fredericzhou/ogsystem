@@ -342,11 +342,6 @@ function createDefaultRuntimeConfig(): Record<string, unknown> {
     },
     opencode: {
       baseArgs: ["run"]
-    },
-    runtime: {
-      error_flows: {
-        v1: false
-      }
     }
   };
 }

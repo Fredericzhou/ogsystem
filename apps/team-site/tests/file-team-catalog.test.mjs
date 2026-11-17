@@ -36,8 +36,8 @@ test("file Team Catalog projects released teams, built-ins, factory drafts, and 
     assert.ok(!repository.some((team) => ["stale-classic-template", "unsupported-team-ir"].includes(team.projectId)));
     assert.ok(repository.some((team) => team.projectId === "released-team" && team.teamVersionId === "released-team"));
     const legacyReleasedTeam = await catalog.getTeamVersion("legacy-released-team");
-    assert.equal(legacyReleasedTeam.teamVersionStatus, "released");
-    assert.equal(legacyReleasedTeam.releasedAt, "2025-12-31");
+    assert.equal(legacyReleasedTeam.teamVersionStatus, "draft");
+    assert.equal(legacyReleasedTeam.releasedAt, null);
     const releasedTeam = await catalog.getTeamVersion("released-team");
     assert.equal(releasedTeam.teamVersionStatus, "released");
     assert.equal(Object.hasOwn(releasedTeam, "projectStatus"), false, "TeamVersion DTO must expose one lifecycle field");
@@ -50,7 +50,7 @@ test("file Team Catalog projects released teams, built-ins, factory drafts, and 
     assert.ok(!all.some((team) => ["project-workspace", "collaboration"].includes(team.projectId)));
 
     const factory = await catalog.listTeamFactory();
-    assert.deepEqual(factory.map((team) => team.projectId).sort(), ["collaboration", "draft-team"]);
+    assert.deepEqual(factory.map((team) => team.projectId).sort(), ["collaboration", "draft-team", "legacy-released-team"]);
 
     const emptyRoot = await mkdtemp(join(tmpdir(), "ogs-empty-team-catalog-"));
     try {

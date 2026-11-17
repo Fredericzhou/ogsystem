@@ -35,6 +35,7 @@ test("Harness repository API exposes V2 list/save/verify/binding routes", async 
     saveTemplate: async (input) => { calls.push(["save", input]); return template; },
     getTemplate: async () => template,
     verifyTemplate: async () => ({ ...template, status: "verified" }),
+    copyTemplate: async (_id, input) => ({ ...template, ...input, status: "verified" }),
     archiveTemplate: async () => ({ ...template, status: "archived" }),
     bindingSnapshot: async () => ({ template: { ...template, status: undefined }, revision: 1, digest: "digest", verifiedTools: [] }),
     listBackends: async () => [],
@@ -45,5 +46,6 @@ test("Harness repository API exposes V2 list/save/verify/binding routes", async 
   assert.equal((await dispatch({ ...request("POST", "/api/v2/harness/templates"), body: { template } }, useCases)).status, 201);
   assert.equal(calls[0][0], "save");
   assert.equal((await dispatch(request("POST", "/api/v2/harness/templates/harness.api/verify"), useCases)).payload.template.status, "verified");
+  assert.equal((await dispatch({ ...request("POST", "/api/v2/harness/templates/harness.api/copy"), body: { templateId: "harness.api.copy" } }, useCases)).status, 201);
   assert.equal((await dispatch(request("GET", "/api/v2/harness/templates/harness.api/binding"), useCases)).payload.digest, "digest");
 });

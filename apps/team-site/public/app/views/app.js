@@ -1208,14 +1208,26 @@ async function renderHarnessRepository() {
   const root = $("#platform-view");
   const en = state.locale === "en";
   root.dataset.template = "D";
-  root.innerHTML = `<section class="page-frame harness-repository-page" data-template="D" data-fit><header class="page-frame-header project-library-toolbar page-heading"><div class="repository-heading"><span class="section-kicker">V2 · Harness</span><h1>${en ? "Harness repository" : "Harness 仓库"}</h1><p>${en ? "Create reusable execution templates, verify native capabilities, and bind verified snapshots to team versions." : "配置可复用的执行模板，验证底座原生能力，再将已验证快照绑定到团队版本。"}</p></div><div class="project-library-filters repository-actions harness-repository-filters"><label><span class="sr-only">${en ? "Search templates" : "搜索模板"}</span><input type="search" data-harness-search placeholder="${en ? "Search templates" : "搜索模板"}"></label><label><span class="sr-only">${en ? "Filter status" : "筛选状态"}</span><select data-harness-status-filter aria-label="${en ? "Filter status" : "筛选状态"}"><option value="all">${en ? "All statuses" : "全部状态"}</option><option value="draft">${en ? "Draft" : "草稿"}</option><option value="verified">${en ? "Verified" : "已验证"}</option><option value="failed">${en ? "Failed" : "验证失败"}</option><option value="archived">${en ? "Archived" : "已归档"}</select></label><span class="form-status harness-repository-status" data-harness-status role="status" aria-live="polite"></span><button class="secondary-button platform-action-button" type="button" data-harness-refresh title="${en ? "Refresh templates" : "刷新模板"}">↻<span>${en ? "Refresh" : "刷新"}</span></button><button class="primary-button platform-action-button" type="button" data-harness-create>＋<span>${en ? "New template" : "新建模板"}</span></button></div></header><div class="page-frame-body" data-layout-scroll><section class="harness-section"><div class="harness-section-heading"><div><span class="section-kicker">${en ? "Built-in starters" : "内置模板"}</span><h2>${en ? "Verified later, reusable now" : "复制后验证，再绑定使用"}</h2></div><p class="panel-note">${en ? "Built-ins are safe starting points. Copy one as a draft, then verify it against the local CLI." : "内置模板只是安全起点；复制为草稿后，需针对本机 CLI 验证才能绑定。"}</p></div><div class="harness-template-card-grid" data-harness-builtins></div></section><section class="harness-section"><div class="harness-section-heading"><div><span class="section-kicker">${en ? "My templates" : "我的模板"}</span><h2>${en ? "Harness templates" : "Harness 模板"}</h2></div></div><div class="harness-template-card-grid" data-harness-list><p class="project-loading">${en ? "Loading Harness templates…" : "正在读取 Harness 模板…"}</p></div></section><details class="harness-reference-panel"><summary><span><span class="section-kicker">${en ? "Local reference" : "本机参考"}</span><strong>${en ? "Backend and model discovery" : "底座与模型发现"}</strong></span><span class="harness-reference-summary" data-harness-reference-summary>${en ? "Loading…" : "正在读取…"}</span></summary><div class="harness-reference-body"><div class="harness-reference-actions"><p class="panel-note">${en ? "Read-only discovery from installed local CLIs. This does not create a Runtime binding." : "只读展示本机已安装 CLI 的发现结果，不会创建 Runtime 绑定。"}</p><button type="button" class="secondary-button" data-harness-reference-refresh>↻ ${en ? "Refresh" : "刷新"}</button></div><div class="harness-reference-grid"><div><h3>${en ? "Backends" : "底座"}</h3><div class="harness-reference-list" data-harness-reference-backends><span class="empty-note">${en ? "Loading…" : "正在读取…"}</span></div></div><div><h3>${en ? "Models" : "模型"}</h3><div class="harness-reference-list" data-harness-reference-models><span class="empty-note">${en ? "Loading…" : "正在读取…"}</span></div></div></div></div></details></div></section>`;
+  root.innerHTML = `<section class="page-frame harness-repository-page" data-template="D" data-fit><header class="page-frame-header project-library-toolbar page-heading"><div class="repository-heading"><h1>${en ? "Harness repository" : "Harness 仓库"}</h1><p>${en ? "Create reusable execution templates and bind verified snapshots to team versions." : "配置可复用的执行模板，并将已验证快照绑定到团队版本。"}</p></div><div class="project-library-filters repository-actions harness-repository-filters"><label><span class="sr-only">${en ? "Search templates" : "搜索模板"}</span><input type="search" data-harness-search placeholder="${en ? "Search templates" : "搜索模板"}"></label><label><span class="sr-only">${en ? "Filter status" : "筛选状态"}</span><select data-harness-status-filter aria-label="${en ? "Filter status" : "筛选状态"}"><option value="all">${en ? "All statuses" : "全部状态"}</option><option value="draft">${en ? "Draft" : "草稿"}</option><option value="verified">${en ? "Verified" : "已验证"}</option><option value="failed">${en ? "Failed" : "验证失败"}</option><option value="archived">${en ? "Archived" : "已归档"}</select></label><span class="form-status harness-repository-status" data-harness-status role="status" aria-live="polite"></span><button class="secondary-button platform-action-button" type="button" data-harness-refresh title="${en ? "Refresh templates" : "刷新模板"}">↻<span>${en ? "Refresh" : "刷新"}</span></button><button class="primary-button platform-action-button" type="button" data-harness-create>＋<span>${en ? "New template" : "新建模板"}</span></button></div></header><div class="page-frame-body" data-layout-scroll><section class="harness-section"><div class="harness-section-heading"><div><span class="section-kicker">${en ? "Built-in starters" : "内置模板"}</span><h2>${en ? "Stable starters" : "稳定起始模板"}</h2></div><p class="panel-note">${en ? "Built-ins are stable and cannot be archived. Copy any published template when you need a variant." : "内置模板稳定可用且不可归档；需要变体时，可复制任意已发布模板。"}</p></div><div class="harness-template-card-grid" data-harness-builtins></div></section><section class="harness-section"><div class="harness-section-heading"><div><span class="section-kicker">${en ? "My templates" : "我的模板"}</span><h2>${en ? "Harness templates" : "Harness 模板"}</h2></div></div><div class="harness-template-card-grid" data-harness-list><p class="project-loading">${en ? "Loading Harness templates…" : "正在读取 Harness 模板…"}</p></div></section><details class="harness-reference-panel"><summary><span><span class="section-kicker">${en ? "Local reference" : "本机参考"}</span><strong>${en ? "Local backend and model discovery" : "本机底座和模型发现"}</strong></span><span class="harness-reference-summary" data-harness-reference-summary>${en ? "Loading…" : "正在读取…"}</span></summary><div class="harness-reference-body"><div class="harness-reference-actions"><p class="panel-note">${en ? "Read-only discovery from installed local CLIs. Template availability follows the discovered backend and model." : "只读展示本机已安装 CLI 的发现结果；模板可用性取决于对应底座和模型。"}</p><button type="button" class="secondary-button" data-harness-reference-refresh>↻ ${en ? "Refresh" : "刷新"}</button></div><div class="harness-reference-grid"><div><h3>${en ? "Backends" : "底座"}</h3><div class="harness-reference-list" data-harness-reference-backends><span class="empty-note">${en ? "Loading…" : "正在读取…"}</span></div></div><div><h3>${en ? "Models" : "模型"}</h3><div class="harness-reference-list" data-harness-reference-models><span class="empty-note">${en ? "Loading…" : "正在读取…"}</span></div></div></div></div></details></div></section>`;
 
+  const referencePanel = root.querySelector(".harness-reference-panel");
+  const referenceBody = root.querySelector(".page-frame-body");
+  if (referencePanel && referenceBody) referenceBody.insertBefore(referencePanel, referenceBody.firstElementChild);
+  const referenceActions = referencePanel?.querySelector(".harness-reference-actions");
+  if (referenceActions && !referenceActions.querySelector("[data-harness-reference-backend-filters]")) {
+    const refresh = referenceActions.querySelector("[data-harness-reference-refresh]");
+    if (refresh) refresh.classList.add("harness-reference-refresh");
+    refresh?.insertAdjacentHTML("beforebegin", `<div class="harness-reference-controls"><div class="harness-reference-filter-group" data-harness-reference-backend-filters role="group" aria-label="${en ? "Backend filter" : "底座筛选"}"><button type="button" class="filter-toggle-btn active" data-reference-backend="all">${en ? "All" : "全部"}</button></div><div class="harness-reference-filter-group" role="group" aria-label="${en ? "Model availability" : "模型可用性"}"><button type="button" class="filter-toggle-btn active" data-reference-availability="all">${en ? "All models" : "全部模型"}</button><button type="button" class="filter-toggle-btn" data-reference-availability="available">${en ? "Available" : "仅可用"}</button></div></div>`);
+  }
+  const modelHeading = referencePanel?.querySelector("[data-harness-reference-models]")?.parentElement?.querySelector("h3");
+  if (modelHeading && !modelHeading.querySelector("[data-harness-reference-model-count]")) modelHeading.insertAdjacentHTML("beforeend", ` <span class="harness-reference-count" data-harness-reference-model-count></span>`);
   const list = root.querySelector("[data-harness-list]");
   const builtinsHost = root.querySelector("[data-harness-builtins]");
   const status = root.querySelector("[data-harness-status]");
   const referenceSummary = root.querySelector("[data-harness-reference-summary]");
   const referenceBackends = root.querySelector("[data-harness-reference-backends]");
   const referenceModels = root.querySelector("[data-harness-reference-models]");
+  const referenceModelCount = root.querySelector("[data-harness-reference-model-count]");
   const builtinTemplates = [
     { templateId: "builtin.codex.gpt-6-luna", name: "Codex starter", backend: "codex", model: "gpt-6-luna", description: en ? "Codex CLI starter with no tools enabled." : "Codex CLI 起始模板，默认不开放工具。" },
     { templateId: "builtin.opencode.gpt-6-luna", name: "OpenCode starter", backend: "opencode", model: "gpt-6-luna", description: en ? "OpenCode starter with no tools enabled." : "OpenCode 起始模板，默认不开放工具。" },
@@ -1223,6 +1235,23 @@ async function renderHarnessRepository() {
   ].map((item) => ({ ...item, allowedTools: [], environment: { filesystem: "none", process: "deny", network: "deny", limits: { timeoutMs: 600000, maxOutputBytes: 131072 } } }));
   let templates = [];
   let backendSnapshot = [];
+  let referenceSnapshot = { sources: [], models: [] };
+  let referenceBackendFilter = "all";
+  let referenceAvailabilityFilter = "all";
+  let discoveryReady = false;
+  const setDiscoveryBusy = (busy) => {
+    discoveryReady = !busy;
+    root.dataset.discoveryPending = busy ? "true" : "false";
+    root.querySelectorAll("[data-harness-create], [data-harness-edit], [data-harness-verify], [data-harness-copy], [data-harness-copy-builtin], [data-harness-archive]").forEach((button) => { button.disabled = busy; });
+  };
+  const templateDependencyState = (item) => {
+    if (!discoveryReady) return { label: en ? "Checking backend and model" : "正在检查底座和模型", className: "pending" };
+    const source = referenceSnapshot.sources.find((entry) => entry.backend === item.backend);
+    const model = referenceSnapshot.models.find((entry) => entry.backend === item.backend && (entry.modelId === item.model || entry.id === item.model));
+    if (!source || ["unavailable", "not_installed", "installed_but_broken", "disabled"].includes(String(source.status || "").toLowerCase())) return { label: en ? "Backend unavailable" : "底座不可用", className: "failed" };
+    if (!model || !modelIsAvailable(model)) return { label: en ? "Model unavailable" : "模型不可用", className: "failed" };
+    return { label: en ? "Runtime available" : "运行可用", className: "confirmed" };
+  };
 
   const normalizeTemplate = (entry) => {
     const template = entry?.template && typeof entry.template === "object" ? entry.template : entry;
@@ -1231,7 +1260,7 @@ async function renderHarnessRepository() {
   const statusLabel = (value) => ({ draft: en ? "Draft" : "草稿", verified: en ? "Verified" : "已验证", failed: en ? "Failed" : "验证失败", archived: en ? "Archived" : "已归档", verifying: en ? "Verifying" : "验证中" }[value] || value || (en ? "Draft" : "草稿"));
   const statusClass = (value) => value === "verified" ? "confirmed" : value === "failed" ? "failed" : value === "archived" ? "archived" : "pending";
   const renderBuiltins = () => {
-    builtinsHost.innerHTML = builtinTemplates.map((item) => `<article class="harness-template-card harness-template-card--builtin"><div class="harness-template-card-head">${renderBackendIcon(item.backend, { size: 28, displayName: item.backend })}<div><strong>${esc(item.name)}</strong><span class="harness-template-card-subtitle">${esc(item.backend)} · ${esc(item.model)}</span></div><span class="status-chip pending">${en ? "Starter" : "起始模板"}</span></div><p>${esc(item.description)}</p><div class="harness-template-card-meta"><span>0 ${en ? "allowed tools" : "个允许工具"}</span><span>${en ? "Requires verification" : "需要验证"}</span></div><button type="button" class="secondary-button" data-harness-copy-builtin="${esc(item.templateId)}">＋ ${en ? "Copy as draft" : "复制为草稿"}</button></article>`).join("");
+    builtinsHost.innerHTML = builtinTemplates.map((item) => { const dependency = templateDependencyState(item); return `<article class="harness-template-card harness-template-card--builtin"><div class="harness-template-card-head">${renderBackendIcon(item.backend, { size: 28, displayName: item.backend })}<div><strong>${esc(item.name)}</strong><span class="harness-template-card-subtitle">${esc(item.backend)} · ${esc(item.model)}</span></div><span class="status-chip confirmed">${en ? "Stable" : "稳定模板"}</span></div><p>${esc(item.description)}</p><div class="harness-template-card-meta"><span>0 ${en ? "allowed tools" : "个允许工具"}</span><span class="harness-template-dependency ${dependency.className}">${esc(dependency.label)}</span><span>${en ? "Built-in · cannot be archived" : "内置 · 不可归档"}</span></div><button type="button" class="secondary-button" data-harness-copy-builtin="${esc(item.templateId)}">＋ ${en ? "Copy" : "复制"}</button></article>`; }).join("");
   };
   const renderList = () => {
     const query = String(root.querySelector("[data-harness-search]")?.value || "").trim().toLowerCase();
@@ -1243,25 +1272,45 @@ async function renderHarnessRepository() {
       const limits = env.limits || {};
       const verifiedTools = item.verification?.verifiedTools || item.verifiedTools || [];
       const verificationMessage = item.verification?.message || item.verification?.error?.message;
-      return `<article class="harness-template-card" data-template-id="${esc(item.templateId || "")}"><div class="harness-template-card-head">${renderBackendIcon(item.backend, { size: 28, displayName: item.backend })}<div><strong>${esc(item.name || item.templateId || "Harness")}</strong><span class="harness-template-card-subtitle">${esc(item.backend || "-")} · ${esc(item.model || "-")}</span></div><span class="status-chip ${statusClass(item.status)}">${esc(statusLabel(item.status))}</span></div><p class="harness-template-card-id"><code>${esc(item.templateId || "")}</code></p><div class="harness-template-card-meta"><span>${verifiedTools.length} ${en ? "verified tools" : "个已验证工具"}</span><span>${en ? "Reasoning" : "推理"}: ${esc(String(item.reasoningEffort || "auto"))}</span><span>${esc(String(env.filesystem || "none"))} · ${esc(String(env.process || "deny"))} · ${esc(String(env.network || "deny"))}</span>${limits.timeoutMs ? `<span>${esc(String(limits.timeoutMs))} ms</span>` : ""}</div>${verificationMessage ? `<p class="harness-template-error">${esc(verificationMessage)}</p>` : ""}<div class="harness-template-actions"><button class="text-button" type="button" data-harness-edit="${esc(item.templateId || "")}">${en ? "Edit" : "编辑"}</button><button class="text-button" type="button" data-harness-verify="${esc(item.templateId || "")}"${item.status === "archived" ? " disabled" : ""}>${en ? "Verify" : "验证"}</button></div></article>`;
+      const dependency = templateDependencyState(item);
+      return `<article class="harness-template-card" data-template-id="${esc(item.templateId || "")}"><div class="harness-template-card-head">${renderBackendIcon(item.backend, { size: 28, displayName: item.backend })}<div><strong>${esc(item.name || item.templateId || "Harness")}</strong><span class="harness-template-card-subtitle">${esc(item.backend || "-")} · ${esc(item.model || "-")}</span></div><span class="status-chip ${statusClass(item.status)}">${esc(statusLabel(item.status))}</span></div><p class="harness-template-card-id"><code>${esc(item.templateId || "")}</code></p><div class="harness-template-card-meta"><span>${verifiedTools.length} ${en ? "verified tools" : "个已验证工具"}</span><span class="harness-template-dependency ${dependency.className}">${esc(dependency.label)}</span><span>${en ? "Reasoning" : "推理"}: ${esc(String(item.reasoningEffort || "auto"))}</span><span>${esc(String(env.filesystem || "none"))} · ${esc(String(env.process || "deny"))} · ${esc(String(env.network || "deny"))}</span>${limits.timeoutMs ? `<span>${esc(String(limits.timeoutMs))} ms` : ""}</div>${verificationMessage ? `<p class="harness-template-error">${esc(verificationMessage)}</p>` : ""}<div class="harness-template-actions"><button class="text-button" type="button" data-harness-edit="${esc(item.templateId || "")}">${en ? "Edit" : "编辑"}</button><button class="text-button" type="button" data-harness-verify="${esc(item.templateId || "")}"${item.status === "archived" ? " disabled" : ""}>${en ? "Verify" : "验证"}</button>${item.status === "verified" ? `<button class="text-button" type="button" data-harness-copy="${esc(item.templateId || "")}">${en ? "Copy" : "复制"}</button>` : ""}${item.templateId?.startsWith("builtin.") ? "" : `<button class="text-button danger-button" type="button" data-harness-archive="${esc(item.templateId || "")}">${en ? "Archive" : "归档"}</button>`}</div></article>`;
     }).join("");
   };
+  const modelIsAvailable = (item) => item?.runnable === true || ["runnable", "verified", "available", "ready"].includes(String(item?.status || "").toLowerCase());
   const renderReference = (sources = [], models = []) => {
-    const runnable = sources.filter((item) => item.status === "runnable").length;
-    referenceSummary.textContent = en ? `${sources.length} backends · ${models.length} models · ${runnable} ready` : `${sources.length} 个底座 · ${models.length} 个模型 · ${runnable} 个就绪`;
-    referenceBackends.innerHTML = sources.length ? sources.map((item) => `<div class="harness-reference-row">${renderBackendIcon(item.backend, { size: 22, displayName: item.displayName || item.backend, status: item.status })}<span><strong>${esc(item.displayName || item.backend)}</strong><small>${esc(item.status || "unknown")}</small></span></div>`).join("") : `<span class="empty-note">${en ? "No local backends discovered." : "未发现本机底座。"}</span>`;
-    referenceModels.innerHTML = models.length ? models.slice(0, 30).map((item) => `<div class="harness-reference-row"><span class="harness-reference-model-mark">M</span><span><strong>${esc(item.name || item.modelId || item.id || "model")}</strong><small>${esc(item.backend || "-")} · ${esc(item.status || (item.runnable ? "runnable" : "discovered"))}</small></span></div>`).join("") : `<span class="empty-note">${en ? "No local models discovered." : "未发现本机模型。"}</span>`;
+    referenceSnapshot = { sources, models };
+    const runnable = sources.filter((item) => models.some((model) => model.backend === item.backend && modelIsAvailable(model))).length;
+    const availableModels = models.filter(modelIsAvailable);
+    const selectedSource = referenceBackendFilter === "all" ? null : sources.find((item) => item.backend === referenceBackendFilter);
+    const visibleModels = models.filter((item) => (!selectedSource || item.backend === selectedSource.backend) && (referenceAvailabilityFilter !== "available" || modelIsAvailable(item)));
+    const backendAvailability = (item) => {
+      const explicitStatus = String(item.status || "").toLowerCase();
+      if (["unavailable", "not_installed", "installed_but_broken", "disabled"].includes(explicitStatus)) return { key: "unavailable", label: en ? "unavailable" : "不可用" };
+      if (models.some((model) => model.backend === item.backend && modelIsAvailable(model))) return { key: "available", label: en ? "available" : "可用" };
+      return { key: "checking", label: en ? "checking" : "检查中" };
+    };
+    referenceSummary.innerHTML = `<span class="harness-reference-stat"><strong>${sources.length}</strong><small>${en ? "backends" : "底座"}</small></span><span class="harness-reference-stat"><strong>${models.length}</strong><small>${en ? "models" : "模型"}</small></span><span class="harness-reference-stat is-available"><strong>${availableModels.length}</strong><small>${en ? "available" : "可用"}</small></span><span class="harness-reference-stat is-ready"><strong>${runnable}</strong><small>${en ? "ready" : "就绪"}</small></span>`;
+    const backendFilters = root.querySelector("[data-harness-reference-backend-filters]");
+    if (backendFilters) {
+      backendFilters.innerHTML = `<button type="button" class="filter-toggle-btn${referenceBackendFilter === "all" ? " active" : ""}" data-reference-backend="all">${en ? "All" : "全部"}</button>${sources.map((item) => `<button type="button" class="filter-toggle-btn${referenceBackendFilter === item.backend ? " active" : ""}" data-reference-backend="${esc(item.backend)}">${esc(item.displayName || item.backend)}</button>`).join("")}`;
+    }
+    root.querySelectorAll("[data-reference-availability]").forEach((button) => button.classList.toggle("active", button.dataset.referenceAvailability === referenceAvailabilityFilter));
+    referenceBackends.innerHTML = sources.length ? sources.map((item) => { const availability = backendAvailability(item); return `<button type="button" class="harness-reference-row${referenceBackendFilter === item.backend ? " is-selected" : ""}" data-reference-backend-row="${esc(item.backend)}" aria-pressed="${referenceBackendFilter === item.backend}">${renderBackendIcon(item.backend, { size: 22, displayName: item.displayName || item.backend, status: availability.key })}<span><strong>${esc(item.displayName || item.backend)}</strong><small>${esc(availability.label)}${item.modelCount !== undefined ? ` · ${esc(item.modelCount)} ${en ? "models" : "个模型"}` : ""}</small></span></button>`; }).join("") : `<span class="empty-note">${en ? "No local backends discovered." : "未发现本机底座。"}</span>`;
+    referenceModels.innerHTML = visibleModels.length ? visibleModels.slice(0, 30).map((item) => `<div class="harness-reference-row"><span class="harness-reference-model-mark">M</span><span><strong>${esc(item.name || item.modelId || item.id || "model")}</strong><small>${esc(item.backend || "-")} · ${esc(item.status || (item.runnable ? "runnable" : "discovered"))}</small></span></div>`).join("") : `<span class="empty-note">${referenceAvailabilityFilter === "available" ? (en ? "No available models for this filter." : "当前筛选下没有可用模型。") : selectedSource ? (en ? "No models for this backend." : "该底座暂未发现模型。") : (en ? "No local models discovered." : "未发现本机模型。")}</span>`;
+    if (referenceModelCount) referenceModelCount.textContent = `(${visibleModels.length}/${availableModels.length} ${en ? "available" : "可用"})`;
   };
   const loadReference = async (forceRefresh = false) => {
+    setDiscoveryBusy(true);
     try {
       const query = forceRefresh ? "?refresh=1" : "";
-      const [backendResponse, modelResponse] = await Promise.all([pageFetch("/api/v2/platform/backends"), pageFetch(`/api/v2/platform/models${query}`)]);
-      const backendPayload = await backendResponse.json();
-      const modelPayload = await modelResponse.json();
-      if (!backendResponse.ok) throw new Error(backendPayload.error || (en ? "Unable to read local backends." : "无法读取本机底座。"));
-      if (!modelResponse.ok) throw new Error(modelPayload.error || (en ? "Unable to read local models." : "无法读取本机模型。"));
-      renderReference(backendPayload.backends || [], modelPayload.models || []);
-    } catch (error) { referenceSummary.textContent = en ? "Unavailable" : "暂不可用"; referenceBackends.innerHTML = `<span class="harness-template-error">${esc(error.message || "")}</span>`; referenceModels.innerHTML = ""; }
+      const response = await pageFetch(`/api/v2/platform/discovery${query}`);
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || (en ? "Unable to read local discovery." : "无法读取本机发现结果。"));
+      renderReference(payload.sources || [], payload.models || []);
+      setDiscoveryBusy(false);
+      renderBuiltins();
+      renderList();
+    } catch (error) { setDiscoveryBusy(false); referenceSummary.textContent = en ? "Unavailable" : "暂不可用"; referenceBackends.innerHTML = `<span class="harness-template-error">${esc(error.message || "")}</span>`; referenceModels.innerHTML = ""; renderBuiltins(); renderList(); }
   };
   const getTemplate = (id) => templates.find((item) => item.templateId === id);
   const loadBackends = async () => {
@@ -1376,6 +1425,31 @@ async function renderHarnessRepository() {
     } catch (error) { status.textContent = error.message || (en ? "Verification failed." : "验证失败。"); }
     finally { if (button) button.disabled = false; }
   };
+  const copyTemplate = async (source, button) => {
+    if (!source) return;
+    if (button) button.disabled = true;
+    try {
+      const templateId = `${source.templateId}.copy-${Date.now().toString(36)}`;
+      const response = await pageFetch(`/api/v2/harness/templates/${encodeURIComponent(source.templateId)}/copy`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ templateId, name: `${source.name || source.templateId} · ${en ? "Copy" : "副本"}`, description: source.description || "" }) });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || (en ? "Unable to copy template." : "无法复制模板。"));
+      status.textContent = en ? "Published template copied and ready to bind." : "已复制已发布模板，可直接绑定。";
+      await loadTemplates();
+    } catch (error) { status.textContent = error.message || (en ? "Unable to copy template." : "无法复制模板。"); }
+    finally { if (button) button.disabled = false; }
+  };
+  const archiveTemplate = async (id, button) => {
+    if (!id || !window.confirm(en ? "Archive this custom template?" : "归档这个自定义模板？")) return;
+    if (button) button.disabled = true;
+    try {
+      const response = await pageFetch(`/api/v2/harness/templates/${encodeURIComponent(id)}/archive`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || (en ? "Unable to archive template." : "无法归档模板。"));
+      status.textContent = en ? "Template archived." : "模板已归档。";
+      await loadTemplates();
+    } catch (error) { status.textContent = error.message || (en ? "Unable to archive template." : "无法归档模板。"); }
+    finally { if (button) button.disabled = false; }
+  };
   async function loadTemplates() {
     try {
       const response = await pageFetch("/api/v2/harness/templates");
@@ -1388,6 +1462,16 @@ async function renderHarnessRepository() {
   root.querySelector("[data-harness-create]").addEventListener("click", () => openEditor());
   root.querySelector("[data-harness-refresh]").addEventListener("click", async (event) => { const button = event.currentTarget; button.disabled = true; await Promise.all([loadTemplates(), loadBackends(), loadReference(true)]); button.disabled = false; });
   root.querySelector("[data-harness-reference-refresh]").addEventListener("click", async (event) => { const button = event.currentTarget; button.disabled = true; await loadReference(true); button.disabled = false; });
+  referencePanel?.addEventListener("click", (event) => {
+    const backendButton = event.target.closest("[data-reference-backend]");
+    const backendRow = event.target.closest("[data-reference-backend-row]");
+    const availabilityButton = event.target.closest("[data-reference-availability]");
+    if (backendButton) referenceBackendFilter = backendButton.dataset.referenceBackend || "all";
+    else if (backendRow) referenceBackendFilter = backendRow.dataset.referenceBackendRow || "all";
+    else if (availabilityButton) referenceAvailabilityFilter = availabilityButton.dataset.referenceAvailability || "all";
+    else return;
+    renderReference(referenceSnapshot.sources, referenceSnapshot.models);
+  });
   root.querySelector("[data-harness-search]").addEventListener("input", renderList);
   root.querySelector("[data-harness-status-filter]").addEventListener("change", renderList);
   builtinsHost.addEventListener("click", async (event) => {
@@ -1397,16 +1481,30 @@ async function renderHarnessRepository() {
     if (!source) return;
     button.disabled = true;
     try {
-      const draftId = `${source.templateId}.draft-${Date.now().toString(36)}`;
-      const response = await pageFetch("/api/v2/harness/templates", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...source, templateId: draftId, name: `${source.name} · ${en ? "Draft" : "草稿"}`, status: "draft" }) });
+      const dependency = templateDependencyState(source);
+      if (dependency.className !== "confirmed") throw new Error(en ? "This starter is not available on this machine." : "该起始模板在本机暂不可用。");
+      const copyId = `${source.templateId}.copy-${Date.now().toString(36)}`;
+      const response = await pageFetch("/api/v2/harness/templates", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...source, templateId: copyId, name: `${source.name} · ${en ? "Copy" : "副本"}` }) });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || (en ? "Unable to copy starter." : "无法复制内置模板。"));
-      status.textContent = en ? "Starter copied as a draft." : "已复制为草稿。";
+      const verifyResponse = await pageFetch(`/api/v2/harness/templates/${encodeURIComponent(copyId)}/verify`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+      const verifyPayload = await verifyResponse.json();
+      if (!verifyResponse.ok) throw new Error(verifyPayload.error || (en ? "Copied starter is not available on this machine." : "复制的起始模板在本机不可用。"));
+      status.textContent = en ? "Starter copied and ready to bind." : "起始模板已复制，可直接绑定。";
       await loadTemplates();
     } catch (error) { status.textContent = error.message || (en ? "Unable to copy starter." : "无法复制内置模板。"); }
     finally { button.disabled = false; }
   });
-  list.addEventListener("click", (event) => { const edit = event.target.closest("[data-harness-edit]"); const verifyButton = event.target.closest("[data-harness-verify]"); if (edit) openEditor(getTemplate(edit.dataset.harnessEdit)); if (verifyButton) verify(verifyButton.dataset.harnessVerify, verifyButton); });
+  list.addEventListener("click", (event) => {
+    const edit = event.target.closest("[data-harness-edit]");
+    const verifyButton = event.target.closest("[data-harness-verify]");
+    const copyButton = event.target.closest("[data-harness-copy]");
+    const archiveButton = event.target.closest("[data-harness-archive]");
+    if (edit) openEditor(getTemplate(edit.dataset.harnessEdit));
+    if (verifyButton) verify(verifyButton.dataset.harnessVerify, verifyButton);
+    if (copyButton) copyTemplate(getTemplate(copyButton.dataset.harnessCopy), copyButton);
+    if (archiveButton) archiveTemplate(archiveButton.dataset.harnessArchive, archiveButton);
+  });
   renderBuiltins();
   await Promise.all([loadBackends(), loadTemplates(), loadReference()]);
 }
@@ -1870,7 +1968,7 @@ async function renderStudioRunPage(teamVersionId, pageRequest = state.activeRequ
     const simulations = payload.simulations || [];
     const workspaceAvailable = Boolean(payload.workspaceAvailable || team.workspaceAvailable);
     const workspaceOpenPath = `/api/v2/teams/${encodeURIComponent(team.teamId)}/versions/${encodeURIComponent(team.teamVersionId || teamVersionId)}/workspace/open-directory`;
-    const auditLabel = english ? "Run audit" : "运行审计";
+    const auditLabel = english ? "Run evidence" : "运行证据";
     const workspaceLabel = english ? "Open workspace" : "工作目录";
     const workspaceUnavailableTitle = english ? "No workspace is bound to this TeamVersion" : "此团队版本尚未绑定工作目录";
     const history = simulations.length ? simulations.map((simulation) => {
@@ -2016,6 +2114,14 @@ async function renderStudioSimulationDetail(teamId, teamVersionId, simulationId,
     }).join("") || `<li class="empty-note">${state.locale === "en" ? "No role execution trace was collected." : "未采集到角色执行流水。"}</li>`;
     const transcriptHtml = `${userPromptCard}${transcriptItemsHtml}`;
     root.innerHTML = `<section class="page-heading"><div><a class="detail-back" href="${back}" data-route="${back}">← ${state.locale === "en" ? "Debug history" : "调试历史"}</a><div class="eyebrow">${esc(simulation.teamId || teamId)} · ${esc(simulation.teamVersionId || teamVersionId)}</div><h1>${state.locale === "en" ? "Debug run" : "调试运行"}</h1><p>${esc(simulation.createdAt || "")}</p></div><span class="status-chip ${esc(simulation.status)}">${esc(studioSimulationStatus(simulation.status))}</span></section>${runMetrics}<div class="studio-dual-core-bar"><div class="studio-dual-core-meta"><button type="button" class="secondary-button studio-history-expand-btn" data-history-toggle="expand" title="${state.locale === "en" ? "Expand history drawer" : "展开调试历史"}" aria-label="${state.locale === "en" ? "Expand history drawer" : "展开调试历史"}">▶ ${state.locale === "en" ? "History" : "历史"}</button><strong>${state.locale === "en" ? "Macro / Micro Twin Core Cockpit" : "宏微双核联动视窗"}</strong><span class="field-hint">${state.locale === "en" ? "Macro topological view & micro role chat content" : "宏观拓扑结构与微观角色对话同屏联动"}</span></div><div class="studio-layout-switcher" role="radiogroup" aria-label="${state.locale === "en" ? "Layout preference" : "宏微双核布局"}"><button type="button" class="studio-layout-switcher-btn" data-preference="structure-focus" title="${state.locale === "en" ? "Focus on Structure (60:40)" : "突出结构 (60:40)"}"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="10" height="18" rx="2"/><rect x="15" y="3" width="6" height="18" rx="2"/></svg><span>${state.locale === "en" ? "Structure" : "突出结构"}</span></button><button type="button" class="studio-layout-switcher-btn" data-preference="balanced" title="${state.locale === "en" ? "Balanced Dual-Core (50:50)" : "双核并重 (50:50)"}"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="8" height="18" rx="2"/><rect x="13" y="3" width="8" height="18" rx="2"/></svg><span>${state.locale === "en" ? "Balanced" : "双核并重"}</span></button><button type="button" class="studio-layout-switcher-btn is-active" data-preference="content-focus" title="${state.locale === "en" ? "Focus on Content (40:60)" : "突出内容 (40:60)"}"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="6" height="18" rx="2"/><rect x="11" y="3" width="10" height="18" rx="2"/></svg><span>${state.locale === "en" ? "Content" : "突出内容"}</span></button></div></div><div class="studio-run-dual-core" data-layout-preference="content-focus"><section class="studio-run-macro-panel detail-graph-section project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Macro view" : "宏观拓扑"}</span><h2>${state.locale === "en" ? "Read-only execution view" : "只读运行视图"}</h2></div><div class="panel-head-actions"><span class="status-chip">${state.locale === "en" ? "Read-only" : "只读"}</span><button type="button" class="studio-panel-maximize-btn" data-panel-maximize="macro" title="${state.locale === "en" ? "Maximize Macro Graph" : "最大化宏观图谱"}" aria-label="${state.locale === "en" ? "Maximize Macro Graph" : "最大化宏观图谱"}"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg></button></div></div><div id="studio-run-graph-stage" class="graph-stage studio-run-graph-stage" role="application" aria-label="${state.locale === "en" ? "Historical runtime graph" : "历史运行图谱"}"></div></section><section class="studio-run-micro-panel project-panel studio-debug-detail"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Micro view" : "微观内容"}</span><h2>${state.locale === "en" ? "Role execution trace" : "角色执行过程"}</h2></div><div class="panel-head-actions"><span class="count-badge">${auditTrail.length}</span><button type="button" class="studio-panel-maximize-btn" data-panel-maximize="micro" title="${state.locale === "en" ? "Maximize Micro Chat" : "最大化微观群聊"}" aria-label="${state.locale === "en" ? "Maximize Micro Chat" : "最大化微观群聊"}"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg></button></div></div><div class="team-debug-transcript-wrap"><ol class="team-debug-transcript">${transcriptHtml}</ol></div></section></div><section class="project-grid"><article class="project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Input" : "输入"}</span><h2>${state.locale === "en" ? "Debug request" : "调试任务"}</h2></div></div><pre>${esc(simulation.input || "")}</pre></article><article class="project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Result" : "结果"}</span><h2>${state.locale === "en" ? "Final outputs" : "最终结果"}</h2></div></div><pre>${esc(evidenceText || studioSimulationErrorText(stateData.error || simulation.failureSummary || ""))}</pre></article></section><section class="project-panel"><div class="panel-head"><div><span class="section-kicker">${state.locale === "en" ? "Events" : "事件"}</span><h2>${state.locale === "en" ? "Simulation events" : "调试事件"}</h2></div><span class="count-badge">${(eventPayload.events || []).length}</span></div><ol class="studio-event-list">${(eventPayload.events || []).map((event) => `<li data-role-id="${esc(event.roleId || "")}" data-edge-id="${esc(event.edgeId || event.flowId || "")}"><time>${esc(studioSimulationEventTime(event))}</time><strong>${esc(event.type || "event")}${event.status ? ` · ${esc(studioSimulationStatus(event.status))}` : ""}</strong>${event.roleId ? `<span>${esc(roleLabel(event.roleId))}</span>` : ""}${event.failure ? `<span>${esc(studioSimulationErrorText(event.failure))}</span>` : ""}</li>`).join("")}</ol></section><p class="form-hint">${state.locale === "en" ? "Studio debug runs are isolated from Project Runs. Evidence is read-only." : "Studio 调试与项目运行隔离保存，证据为只读。"}</p><aside id="studio-audit-drilldown-drawer" class="studio-audit-drilldown-drawer" aria-label="${state.locale === "en" ? "Audit Drilldown" : "审计下钻明细"}" hidden><div class="studio-audit-drawer-head"><div><span class="section-kicker">${state.locale === "en" ? "Audit drilldown" : "深度审计下钻"}</span><h3 data-audit-drawer-title>${state.locale === "en" ? "Role Activation Audit" : "角色激活审计明细"}</h3></div><button type="button" class="close-button" data-audit-drawer-close aria-label="${state.locale === "en" ? "Close" : "关闭"}">×</button></div><div class="studio-audit-drawer-tabs" role="tablist"><button type="button" class="studio-audit-drawer-tab is-active" data-audit-tab="telemetry" role="tab" aria-selected="true"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg><span>${state.locale === "en" ? "Telemetry" : "调用明细"}</span></button><button type="button" class="studio-audit-drawer-tab" data-audit-tab="input" role="tab" aria-selected="false"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg><span>${state.locale === "en" ? "Input Context" : "输入上下文"}</span></button><button type="button" class="studio-audit-drawer-tab" data-audit-tab="output" role="tab" aria-selected="false"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg><span>${state.locale === "en" ? "Output" : "执行交付"}</span></button><button type="button" class="studio-audit-drawer-tab" data-audit-tab="diagnostics" role="tab" aria-selected="false"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><span>${state.locale === "en" ? "Diagnostics" : "失败诊断"}</span></button><button type="button" class="studio-audit-drawer-tab" data-audit-tab="raw" role="tab" aria-selected="false"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg><span>${state.locale === "en" ? "Raw JSON" : "原始数据"}</span></button></div><div class="studio-audit-drawer-body" data-audit-drawer-body></div><div class="studio-audit-drawer-foot"><button type="button" class="secondary-button" data-audit-action="focus-node"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="8"/></svg><span>${state.locale === "en" ? "Focus Node" : "定位图谱节点"}</span></button><button type="button" class="secondary-button" data-audit-action="copy-json"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><span>${state.locale === "en" ? "Copy JSON" : "复制 JSON"}</span></button><button type="button" class="primary-button" data-audit-drawer-close>${state.locale === "en" ? "Close" : "关闭"}</button></div></aside>`;
+    const evidenceDrawer = root.querySelector("#studio-audit-drilldown-drawer");
+    if (evidenceDrawer) {
+      evidenceDrawer.setAttribute("aria-label", state.locale === "en" ? "Evidence information" : "证据信息");
+      const drawerKicker = evidenceDrawer.querySelector(".section-kicker");
+      const drawerTitle = evidenceDrawer.querySelector("[data-audit-drawer-title]");
+      if (drawerKicker) drawerKicker.textContent = state.locale === "en" ? "Evidence information" : "证据信息";
+      if (drawerTitle) drawerTitle.textContent = state.locale === "en" ? "Role execution evidence" : "角色执行证据";
+    }
     root.querySelector(".studio-run-metrics > .field-hint")?.remove();
     root.querySelector(".studio-dual-core-meta > strong")?.remove();
     root.querySelector(".studio-dual-core-meta > .field-hint")?.remove();
@@ -2192,7 +2298,7 @@ async function renderStudioSimulationDetail(teamId, teamVersionId, simulationId,
 
     const workspaceAvailable = Boolean(simulationsPayload.workspaceAvailable || simulation.workspaceAvailable);
     const workspaceLabel = state.locale === "en" ? "Open workspace" : "工作目录";
-    const auditLabel = state.locale === "en" ? "Run audit" : "运行审计";
+    const auditLabel = state.locale === "en" ? "Run evidence" : "运行证据";
     const workspaceUnavailableTitle = state.locale === "en" ? "No workspace is bound to this TeamVersion" : "此团队版本尚未绑定工作目录";
     const workspaceOpenPath = `/api/v2/teams/${encodeURIComponent(teamId)}/versions/${encodeURIComponent(teamVersionId)}/workspace/open-directory`;
     const heading = root.querySelector(".page-heading");
@@ -2211,7 +2317,7 @@ async function renderStudioSimulationDetail(teamId, teamVersionId, simulationId,
       actions.append(openDrawerButton);
       const artifactsLink = document.createElement("a");
       artifactsLink.className = "secondary-button studio-run-action studio-run-action-secondary";
-      artifactsLink.title = state.locale === "en" ? "Open the complete read-only run audit" : "打开完整的只读运行审计";
+      artifactsLink.title = state.locale === "en" ? "Open the complete read-only run evidence" : "打开完整的只读运行证据";
       artifactsLink.href = studioArtifactsBrowserUrl(teamVersionId, simulationId, simulation.teamId);
       artifactsLink.target = "_blank";
       artifactsLink.rel = "noreferrer";

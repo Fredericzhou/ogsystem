@@ -42,11 +42,6 @@ export async function loadRuntimeConfig(
     opencode: {
       baseArgs: ["run"]
     },
-    runtime: {
-      error_flows: {
-        v1: false
-      }
-    }
   };
 
   const globalRuntimePath = resolve(homedir(), ".ogs", "runtime.json");
@@ -118,18 +113,6 @@ export async function loadRuntimeConfig(
         overlayRecord.opencode &&
         !Array.isArray(overlayRecord.opencode)
           ? (overlayRecord.opencode as Record<string, unknown>)
-          : {})
-      },
-      runtime: {
-        ...(typeof merged.runtime === "object" &&
-        merged.runtime &&
-        !Array.isArray(merged.runtime)
-          ? (merged.runtime as Record<string, unknown>)
-          : {}),
-        ...(typeof overlayRecord.runtime === "object" &&
-        overlayRecord.runtime &&
-        !Array.isArray(overlayRecord.runtime)
-          ? (overlayRecord.runtime as Record<string, unknown>)
           : {})
       }
     };

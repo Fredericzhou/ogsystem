@@ -89,6 +89,27 @@ test("Harness verification checks the discovered tool set without invoking a mod
   }
 });
 
+test("Harness copies retain the published verification snapshot", async () => {
+  const root = await mkdtemp(join(tmpdir(), "ogs-harness-repository-"));
+  try {
+    const repository = createFileHarnessRepositoryStore({ path: join(root, "harness-repository.json") });
+    const modelCatalog = { discoverBackend: async () => ({ source: { backend: "codex", status: "runnable" }, models: [{ modelId: "gpt-6-luna", status: "active" }] }) };
+    const backendRegistry = { getAdapter: () => ({ getResourceCapabilities: () => ({ filesystem: true, process: true, network: true }) }), listDescriptors: () => [] };
+    const useCases = createHarnessRepositoryUseCases({ repository, modelCatalog, backendRegistry, computeDigest: (value) => JSON.stringify(value), validateContract: async () => undefined, workdir: root, now: () => "2026-11-17T00:00:00.000Z" });
+    await useCases.saveTemplate({ template: template(), name: "Published source" });
+    await repository.updateVerification("harness.test", 1, { status: "verified", verifiedAt: "2026-11-16T00:00:00.000Z", verifiedTools: [], evidence: { checks: [{ name: "backend-model", status: "passed" }] }, digest: "source-digest" });
+    const copied = await useCases.copyTemplate("harness.test", { templateId: "harness.test.copy", name: "Published copy" });
+    assert.equal(copied.status, "verified");
+    assert.equal(copied.name, "Published copy");
+    assert.equal(copied.template.templateId, "harness.test.copy");
+    assert.equal(copied.verification.status, "verified");
+    assert.notEqual(copied.verification.digest, "source-digest");
+    assert.equal((await useCases.bindingSnapshot("harness.test.copy")).template.templateId, "harness.test.copy");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("Harness discovery distinguishes tool visibility from tool restriction", async () => {
   const root = await mkdtemp(join(tmpdir(), "ogs-harness-repository-"));
   try {

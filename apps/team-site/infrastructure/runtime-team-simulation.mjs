@@ -98,6 +98,8 @@ export function createRuntimeTeamSimulation({ run = runSystemWithAdapter, getDef
             modelId: item.modelId,
             profileId: item.profileId,
             toolRef: item.toolRef,
+            sessionId: item.sessionId,
+            messageId: item.messageId,
             promptCalls: item.promptCalls,
             projectedInputChars: item.projectedInputChars,
             renderedPromptChars: item.renderedPromptChars,

@@ -327,8 +327,7 @@ async function writeCaseProject(caseSpec, workdir, prompt, mode, locale = "zh-CN
     roleRepo: "team-roles",
     runsDir: ".ogs/runs",
     redaction: { enabled: true },
-    tools: { environmentPolicy: "minimal", envAllowlist: [] },
-    runtime: { error_flows: { v1: false } }
+    tools: { environmentPolicy: "minimal", envAllowlist: [] }
   }, null, 2)}\n`);
   const modelTimeoutMs = Number(process.env.OGS_CASE_MODEL_TIMEOUT_MS || DEFAULT_DEMO_MODEL_TIMEOUT_MS);
   if (!Number.isFinite(modelTimeoutMs) || modelTimeoutMs <= 0) {

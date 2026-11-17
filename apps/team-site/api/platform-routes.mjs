@@ -7,7 +7,7 @@ export async function handlePlatformRoutes({
   useCases,
   harnessUseCases = useCases
 }) {
-  const harnessMatch = url.pathname.match(/^\/api\/v2\/harness\/templates\/([^/]+)(?:\/(binding|verify|archive))?$/);
+  const harnessMatch = url.pathname.match(/^\/api\/v2\/harness\/templates\/([^/]+)(?:\/(binding|verify|archive|copy))?$/);
   if (request.method === "GET" && url.pathname === "/api/v2/harness/templates") {
     try { sendJson(response, 200, { templates: await harnessUseCases.listTemplates({ includeArchived: url.searchParams.get("includeArchived") === "1" }) }); }
     catch (error) { sendJson(response, 500, { error: error instanceof Error ? error.message : "Unable to list Harness templates." }); }
@@ -32,6 +32,8 @@ export async function handlePlatformRoutes({
         sendJson(response, 200, { template: await harnessUseCases.saveTemplate({ ...(await readBody(request)), templateId }) });
       } else if (request.method === "POST" && action === "verify") {
         sendJson(response, 200, { template: await harnessUseCases.verifyTemplate(templateId, url.searchParams.get("revision")) });
+      } else if (request.method === "POST" && action === "copy") {
+        sendJson(response, 201, { template: await harnessUseCases.copyTemplate(templateId, await readBody(request)) });
       } else if (request.method === "POST" && action === "archive") {
         sendJson(response, 200, { template: await harnessUseCases.archiveTemplate(templateId) });
       } else {
@@ -77,7 +79,7 @@ export async function handlePlatformRoutes({
 
   if ((request.method === "GET" || request.method === "POST") && url.pathname === "/api/v2/platform/discovery") {
     try {
-      sendJson(response, 200, await useCases.getPlatformDiscovery(request.method === "POST"));
+      sendJson(response, 200, await useCases.getPlatformDiscovery(request.method === "POST" || url.searchParams.get("refresh") === "1"));
     } catch (error) {
       sendJson(response, 503, { error: error instanceof Error ? error.message : "Unable to discover platform tools." });
     }

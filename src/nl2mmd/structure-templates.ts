@@ -198,7 +198,7 @@ const TEMPLATES: readonly Nl2MmdStructureTemplate[] = [
       slot("recovery", "Declare compensating roles or fallback sink.", ["recovery --> output"])
     ],
     optionalSlots: [
-      slot("feature-flag", "Document the project runtime config for feature-gated rollout conditions.", [".ogs/runtime.json: runtime.error_flows.v1=false"], false)
+      slot("feature-flag", "Document the project runtime config for feature-gated rollout conditions.", [".ogs/runtime.json: configVersion=2"], false)
     ],
     skeleton: [
       "flowchart TD",

@@ -466,7 +466,7 @@ export type RuntimeToolEnvironmentConfig = {
 };
 
 export type RuntimeConfig = {
-  configVersion?: string;
+  configVersion: "2";
   executor: "opencode";
   roleRepo: string;
   runsDir: string;
@@ -477,11 +477,6 @@ export type RuntimeConfig = {
   tools: RuntimeToolEnvironmentConfig;
   opencode?: {
     baseArgs?: string[];
-  };
-  runtime: {
-    error_flows: {
-      v1: boolean;
-    };
   };
 };
 
