@@ -57,6 +57,10 @@ for (const item of cases) {
       const verification = evidence?.verification;
       const declaredFiles = Array.isArray(manifest?.files) ? manifest.files : [];
       const deliveredFiles = Array.isArray(evidence?.files) ? evidence.files : [];
+      const fileDetails = Array.isArray(evidence?.fileDetails) ? evidence.fileDetails : [];
+      const nonEmptyFiles = fileDetails.filter((entry) => Number(entry?.sizeBytes) > 0);
+      const sourceFiles = declaredFiles.filter((entry) => String(entry?.mediaType || "").startsWith("text/") || /\.(?:md|json|csv|txt|ts|js)$/i.test(String(entry?.path || "")));
+      const mediaFiles = declaredFiles.filter((entry) => /^(?:image|audio|video)\//i.test(String(entry?.mediaType || "")));
       const requiredPaths = item.id === "structured-debate"
         ? ["debate-brief.md"]
         : item.id === "management-consulting"
@@ -72,12 +76,14 @@ for (const item of cases) {
         verification?.status !== "verified" ||
         verification?.passed !== true ||
         !declaredFiles.every((entry) => typeof entry?.path === "string" && deliveredFiles.includes(entry.path)) ||
+        nonEmptyFiles.length !== declaredFiles.length ||
+        sourceFiles.length === 0 ||
         !requiredPaths.every((requiredPath) => declaredFiles.some((entry) => entry?.path === requiredPath) && deliveredFiles.includes(requiredPath)) ||
         !evidence?.artifactRef?.artifactId
       ) {
-        throw new Error("Artifact delivery evidence is incomplete: expected declarations, generated files, verified manifest, sealed manifest, and a deliverable artifact reference.");
+        throw new Error("Artifact delivery evidence is incomplete: expected non-empty source files, declarations, verified manifest, sealed manifest, and a deliverable artifact reference.");
       }
-      process.stdout.write(`[artifacts] passed; files=${declaredFiles.length}; manifest=${manifest.manifestSha256}\n`);
+      process.stdout.write(`[artifacts] passed; files=${declaredFiles.length}; source=${sourceFiles.length}; media=${mediaFiles.length}; manifest=${manifest.manifestSha256}\n`);
     }
     const bindings = [...new Set(successfulEntries.map((entry) => entry.profileId
       ? `profile:${entry.profileId}`

@@ -9,8 +9,8 @@ auditable executions.
 
 ## Contract Set Version
 
-This proposal describes **OGS Contract Set v2**. The eventual cutover is breaking and does not
-retain runtime compatibility with Contract Set v1. In the target model, every persisted Role
+This document defines **OGS Contract Set v2**. The cutover is breaking and does not retain runtime
+compatibility with Contract Set v1. Every persisted Role
 Contract, Semantic IR, Execution Binding, Review Request, Evidence Event, and Run snapshot must
 identify:
 
@@ -2309,21 +2309,18 @@ identity, native tool selection, and EnvironmentIntent are stored only in the v2
 binding. Capability discovery may update a read-only Capability Preview, but it never creates a
 second execution configuration or a compatibility file.
 
-The cleanup below is the final Cutover Gate. It runs only after the v2 acceptance matrix, release
-UAT checklist, browser evidence, and required sign-offs are complete; it is not an early P0
-implementation prerequisite.
+The active v2 distribution already applies this direct switch. Release acceptance remains a
+separate gate for the v2 acceptance matrix, release UAT checklist, browser evidence, and required
+sign-offs.
 
-After the final Cutover Gate:
+Historical v1 material is kept outside the active distribution:
 
 ```text
 v1 schemas, parsers, runtime branches, and Studio inputs
-  -> remove
+  -> archived or rejected as non-v2 input
 
-v1 fixtures, examples, and tests
-  -> replace with v2-only content
-
-v1 active authoring and execution documentation
-  -> remove from the active v2 distribution or move to the archive
+v1 fixtures, examples, tests, and active authoring documentation
+  -> archived and excluded from the active v2 distribution
 
 v1 Run data and released Team data
   -> remain outside v2; no conversion, import, or compatibility read
@@ -2334,8 +2331,8 @@ Contract Set v2. A new v2 project or TeamVersion starts from v2 schemas and v2 H
 
 ## 18. Implementation Order
 
-> **Target implementation sequence — not the active backlog.** This sequence describes the
-> proposed v2 cutover order. The active release evidence is tracked by
+> **Implementation sequence — not the active backlog.** This sequence records the v2 delivery
+> order. The active release evidence is tracked by
 > [`v2-validation-and-acceptance.md`](v2-validation-and-acceptance.md).
 
 ### P0: Contract and boundary cutover
@@ -2349,8 +2346,7 @@ Contract Set v2. A new v2 project or TeamVersion starts from v2 schemas and v2 H
 5. Remove Supervised/Auto-accept/Full access permission modes and technical Permission Review.
 6. Add `execution-bindings.json` with Harness Template references and materialized tool selections.
 7. Make Harness resolution mandatory for every executable Role and reject missing or stale bindings.
-8. Keep v1 parsers, schemas, fixtures, examples, and Runtime branches isolated until the final
-   Cutover Gate; do not migrate or import v1 data before that gate.
+8. Keep historical v1 material outside active v2 inputs; do not migrate or import v1 data.
 
 ### P1: Backend capabilities
 
@@ -2389,12 +2385,12 @@ Contract Set v2. A new v2 project or TeamVersion starts from v2 schemas and v2 H
 4. Add optional advanced `allowedTools` settings.
 5. Display capability degradation and readiness failures.
 
-### Final Cutover Gate
+### Release Gate
 
 1. Confirm every v2 acceptance and UAT row is `Pass` with final-code evidence and required
    operator, product-owner, and platform sign-offs.
-2. Remove the isolated v1 parsers, schemas, fixtures, examples, and Runtime branches in one
-   release commit. Do not migrate or import v1 data.
+2. Keep the active distribution v2-only; historical v1 parsers, schemas, fixtures, and examples
+   remain archived and are not runtime inputs.
 
 ## 19. Acceptance Criteria
 

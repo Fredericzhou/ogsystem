@@ -122,6 +122,9 @@ function isStudioArtifactEntryVisible(entry) {
     || /^roles\/[^/]+\/(?:outbox\.md|result\.json)$/.test(path)
     || /^roles\/[^/]+\/executions\/[^/]+\/execution-outcome\.json$/.test(path);
 }
+function studioArtifactVisibility(entry) {
+  return entry?.sealed === true || String(entry?.path || "").startsWith("sealed/") ? "shared" : "private";
+}
 function studioArtifactIsText(entry) {
   const mediaType = String(entry?.mediaType || "").toLowerCase();
   if (mediaType.startsWith("text/") || /^(application\/json|application\/xml|application\/javascript|application\/graphql)/.test(mediaType)) return true;
@@ -1244,10 +1247,15 @@ async function renderHarnessRepository() {
     root.dataset.discoveryPending = busy ? "true" : "false";
     root.querySelectorAll("[data-harness-create], [data-harness-edit], [data-harness-verify], [data-harness-copy], [data-harness-copy-builtin], [data-harness-archive]").forEach((button) => { button.disabled = busy; });
   };
+  const modelMatches = (candidate, requested) => {
+    const actual = String(candidate?.modelId || candidate?.id || "").trim();
+    const expected = String(requested || "").trim();
+    return Boolean(actual && expected) && (actual === expected || (!expected.includes("/") && actual.endsWith(`/${expected}`)));
+  };
   const templateDependencyState = (item) => {
     if (!discoveryReady) return { label: en ? "Checking backend and model" : "正在检查底座和模型", className: "pending" };
     const source = referenceSnapshot.sources.find((entry) => entry.backend === item.backend);
-    const model = referenceSnapshot.models.find((entry) => entry.backend === item.backend && (entry.modelId === item.model || entry.id === item.model));
+    const model = referenceSnapshot.models.find((entry) => entry.backend === item.backend && modelMatches(entry, item.model));
     if (!source || ["unavailable", "not_installed", "installed_but_broken", "disabled"].includes(String(source.status || "").toLowerCase())) return { label: en ? "Backend unavailable" : "底座不可用", className: "failed" };
     if (!model || !modelIsAvailable(model)) return { label: en ? "Model unavailable" : "模型不可用", className: "failed" };
     return { label: en ? "Runtime available" : "运行可用", className: "confirmed" };
@@ -2357,7 +2365,7 @@ async function renderStudioSimulationDetail(teamId, teamVersionId, simulationId,
               listContainer.innerHTML = `<p class="empty-note">${state.locale === "en" ? "No artifacts found." : "本次运行暂无可展示产物。"}</p>`;
               return;
             }
-            listContainer.innerHTML = entries.map((entry, idx) => `<button type="button" class="studio-artifact-drawer-entry${idx === 0 ? " selected" : ""}" data-artifact-path="${esc(entry.path)}"><strong>${esc(entry.path)}</strong><span>${Number(entry.size || 0).toLocaleString()} bytes</span></button>`).join("");
+            let artifactScope = "all";
             const selectEntry = async (entry, btn) => {
               listContainer.querySelectorAll(".studio-artifact-drawer-entry").forEach((b) => b.classList.toggle("selected", b === btn));
               titleEl.textContent = entry.path;
@@ -2374,9 +2382,21 @@ async function renderStudioSimulationDetail(teamId, teamVersionId, simulationId,
                 contentEl.textContent = err.message || "无法读取该文件。";
               }
             };
-            const btns = [...listContainer.querySelectorAll("[data-artifact-path]")];
-            btns.forEach((btn, idx) => btn.addEventListener("click", () => selectEntry(entries[idx], btn)));
-            if (entries[0]) await selectEntry(entries[0], btns[0]);
+            const renderEntries = async () => {
+              const visibleEntries = artifactScope === "all" ? entries : entries.filter((entry) => studioArtifactVisibility(entry) === artifactScope);
+              const scopeLabel = (entry) => studioArtifactVisibility(entry) === "shared"
+                ? (state.locale === "en" ? "Shared" : "共享")
+                : (state.locale === "en" ? "Private" : "私有");
+              listContainer.innerHTML = `<div class="studio-artifact-drawer-scope" role="group" aria-label="${state.locale === "en" ? "File scope" : "文件范围"}"><button type="button" class="filter-toggle-btn${artifactScope === "all" ? " active" : ""}" data-artifact-scope="all">${state.locale === "en" ? "All" : "全部"}</button><button type="button" class="filter-toggle-btn${artifactScope === "private" ? " active" : ""}" data-artifact-scope="private">${state.locale === "en" ? "Private" : "私有文件"}</button><button type="button" class="filter-toggle-btn${artifactScope === "shared" ? " active" : ""}" data-artifact-scope="shared">${state.locale === "en" ? "Shared" : "共享文件"}</button></div>${visibleEntries.length ? visibleEntries.map((entry, idx) => `<button type="button" class="studio-artifact-drawer-entry${idx === 0 ? " selected" : ""}" data-artifact-path="${esc(entry.path)}"><strong>${esc(entry.path)}</strong><span>${scopeLabel(entry)} · ${Number(entry.size || 0).toLocaleString()} bytes</span></button>`).join("") : `<p class="empty-note">${state.locale === "en" ? "No files in this scope." : "当前范围暂无文件。"}</p>`}`;
+              listContainer.querySelectorAll("[data-artifact-scope]").forEach((button) => button.addEventListener("click", async () => {
+                artifactScope = button.dataset.artifactScope || "all";
+                await renderEntries();
+              }));
+              const btns = [...listContainer.querySelectorAll("[data-artifact-path]")];
+              btns.forEach((btn) => btn.addEventListener("click", () => selectEntry(visibleEntries.find((entry) => entry.path === btn.dataset.artifactPath), btn)));
+              if (visibleEntries[0]) await selectEntry(visibleEntries[0], btns[0]);
+            };
+            await renderEntries();
           } catch (err) {
             listContainer.innerHTML = `<p class="run-error">${esc(err.message || "无法读取产物")}</p>`;
           }

@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -421,6 +421,7 @@ async function collectArtifactEvidence(workdir, runId, result) {
   const seal = await readJsonIf(join(sharedDir, "seal-manifest.json"));
   const verification = await readJsonIf(join(sharedDir, "verification.json"));
   const files = await listRelativeFiles(join(sharedDir, "artifacts"));
+  const fileDetails = await Promise.all(files.map(async (path) => ({ path, sizeBytes: (await stat(join(sharedDir, "artifacts", path))).size })));
   const finalOutputs = result?.finalOutputsByRoleId;
   const publisherOutput = finalOutputs && typeof finalOutputs === "object"
     ? finalOutputs["document-publisher"]
@@ -442,7 +443,8 @@ async function collectArtifactEvidence(workdir, runId, result) {
     manifest,
     seal,
     verification,
-    files
+    files,
+    fileDetails
   };
 }
 

@@ -6,6 +6,16 @@ function error(code, message = code) {
   return failure;
 }
 
+function matchesModelId(candidate, requested) {
+  const actual = String(candidate || "").trim();
+  const expected = String(requested || "").trim();
+  return Boolean(actual && expected) && (actual === expected || (!expected.includes("/") && actual.endsWith(`/${expected}`)));
+}
+
+function resolveModel(models, requested) {
+  return (models || []).find((item) => matchesModelId(item?.modelId, requested));
+}
+
 function normalizeTemplate(input) {
   const template = input?.template && typeof input.template === "object" ? input.template : input;
   if (!template || typeof template !== "object") throw error("HARNESS_TEMPLATE_INVALID");
@@ -108,7 +118,8 @@ export function createHarnessRepositoryUseCases({ repository, modelCatalog, back
         resources: adapter?.getResourceCapabilities?.() || {}
       };
     }
-    const modelId = String(requestedModel || discovery?.models?.find((item) => item.runnable || item.status === "active")?.modelId || "gpt-6-luna").trim();
+    const selectedModel = resolveModel(discovery?.models, requestedModel);
+    const modelId = String(selectedModel?.modelId || requestedModel || discovery?.models?.find((item) => item.runnable || item.status === "active")?.modelId || "gpt-6-luna").trim();
     try {
       const native = await bounded(() => adapter.discoverNativeTools({ modelId, workdir, timeoutMs: discoveryTimeoutMs }));
       return {
@@ -147,7 +158,7 @@ export function createHarnessRepositoryUseCases({ repository, modelCatalog, back
     try {
       const discovery = await discover(template.backend, true, template.model);
       const source = discovery?.source || discovery?.sources?.find((item) => item.backend === template.backend);
-      const model = (discovery?.models || []).find((item) => item.modelId === template.model);
+      const model = resolveModel(discovery?.models, template.model);
       if (!source || ["unavailable", "not_installed", "installed_but_broken"].includes(String(source.status || "").toLowerCase())) {
         throw error("HARNESS_BACKEND_UNAVAILABLE", source?.detail || `Backend ${template.backend} is unavailable.`);
       }
@@ -173,7 +184,7 @@ export function createHarnessRepositoryUseCases({ repository, modelCatalog, back
         if (!adapter || typeof adapter.discoverNativeTools !== "function") throw error("HARNESS_CAPABILITY_DISCOVERY_UNAVAILABLE", `Backend ${template.backend} cannot discover native tools.`);
         const native = discovery?.nativeTools?.status === "ready"
           ? discovery.nativeTools
-          : await adapter.discoverNativeTools({ modelId: template.model, workdir, timeoutMs: template.environment.limits?.timeoutMs || 120000 });
+          : await adapter.discoverNativeTools({ modelId: model?.modelId || template.model, workdir, timeoutMs: template.environment.limits?.timeoutMs || 120000 });
         evidence.verifiedTools = [...new Set(native?.verifiedTools || [])];
         const missing = template.allowedTools.filter((tool) => !evidence.verifiedTools.includes(tool));
         if (missing.length) throw error("HARNESS_ALLOWED_TOOLS_UNVERIFIED", `Unverified tools: ${missing.join(", ")}`);

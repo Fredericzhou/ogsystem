@@ -89,6 +89,34 @@ test("Harness verification checks the discovered tool set without invoking a mod
   }
 });
 
+test("Harness verification resolves provider-qualified models for short template IDs", async () => {
+  const root = await mkdtemp(join(tmpdir(), "ogs-harness-repository-"));
+  try {
+    const repository = createFileHarnessRepositoryStore({ path: join(root, "harness-repository.json") });
+    const modelCatalog = {
+      discoverBackend: async () => ({
+        source: { backend: "opencode", status: "runnable" },
+        models: [{ backend: "opencode", modelId: "codex-gateway/gpt-6-luna", status: "active" }]
+      })
+    };
+    let discoveredModel;
+    const backendRegistry = {
+      getAdapter: () => ({
+        getResourceCapabilities: () => ({ filesystem: true, process: true, network: true }),
+        discoverNativeTools: async ({ modelId }) => { discoveredModel = modelId; return { verifiedTools: [] }; }
+      }),
+      listDescriptors: () => []
+    };
+    const useCases = createHarnessRepositoryUseCases({ repository, modelCatalog, backendRegistry, computeDigest: (value) => JSON.stringify(value), validateContract: async () => undefined, workdir: root });
+    await useCases.saveTemplate({ template: { ...template("harness.opencode"), backend: "opencode" }, name: "OpenCode" });
+    const verified = await useCases.verifyTemplate("harness.opencode");
+    assert.equal(verified.status, "verified");
+    assert.equal(discoveredModel, "codex-gateway/gpt-6-luna");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("Harness copies retain the published verification snapshot", async () => {
   const root = await mkdtemp(join(tmpdir(), "ogs-harness-repository-"));
   try {
