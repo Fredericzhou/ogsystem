@@ -98,7 +98,7 @@ verified production Backend until its complete staging, resource, tool, permissi
 evidence is recorded. Earlier failed Codex/OpenCode attempts remain failure evidence and are not
 hidden by the latest successful Codex/OpenCode run.
 
-The latest engineering regression baseline is `pnpm test`: 449 passed and 1 skipped;
+The latest engineering regression baseline is `pnpm test`: 450 passed and 1 skipped;
 Team Site tests: 35 passed; `pnpm build` and `git diff --check` also pass. These are code-quality
 signals only. They do not replace the immutable Run evidence above or the required human release
 signatures.

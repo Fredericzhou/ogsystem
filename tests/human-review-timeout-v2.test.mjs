@@ -206,6 +206,23 @@ test("a corrupt legacy decision lock is reclaimed only after the active writer w
   assert.equal(decision.decision.action, "approve");
 });
 
+test("an expired recovery lock does not remain blocked by a reused live PID", async () => {
+  const context = await createTimedOutRun("pause");
+  const decisionPath = path.resolve(context.reviewsDir, `${context.reviewId}.decision.json`);
+  const lockPath = `${decisionPath}.lock`;
+  await writeFile(lockPath, JSON.stringify({ pid: process.ppid, createdAt: 0, token: "reused-pid" }));
+  await utimes(lockPath, new Date(0), new Date(0));
+  await writeHumanReviewDecision({
+    workdir: context.workdir,
+    runId: context.runId,
+    reviewId: context.reviewId,
+    decision: "approve",
+    principal: { id: "local:test-reviewer", issuer: "ogs:local", displayName: "Test reviewer" }
+  });
+  const decision = JSON.parse(await readFile(decisionPath, "utf8"));
+  assert.equal(decision.decision.action, "approve");
+});
+
 test("loop budget continue is rejected before a decision file is persisted without a budget", async () => {
   const context = await createTimedOutRun("pause");
   const requestPath = path.resolve(context.reviewsDir, `${context.reviewId}.request.json`);

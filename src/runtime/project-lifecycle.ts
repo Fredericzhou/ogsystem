@@ -1869,6 +1869,7 @@ async function acquireHumanReviewRecoveryLock(lockPath: string): Promise<HumanRe
           if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
         }
         const existingStat = await stat(lockPath).catch(() => undefined);
+        const lockIsStale = Boolean(existingStat && Date.now() - existingStat.mtimeMs >= HUMAN_REVIEW_RECOVERY_LOCK_STALE_MS);
         const lockText = await readFile(lockPath, "utf8").catch(() => "");
         let ownerPid: number | undefined;
         try {
@@ -1884,10 +1885,10 @@ async function acquireHumanReviewRecoveryLock(lockPath: string): Promise<HumanRe
           if (!existingStat || Date.now() - existingStat.mtimeMs < HUMAN_REVIEW_RECOVERY_LOCK_STALE_MS) return undefined;
         }
         if (ownerPid !== undefined) {
-          if (ownerPid === process.pid) return undefined;
+          if (ownerPid === process.pid && !lockIsStale) return undefined;
           try {
             process.kill(ownerPid, 0);
-            return undefined;
+            if (!lockIsStale) return undefined;
           } catch (probeError) {
             if ((probeError as NodeJS.ErrnoException).code === "EPERM") return undefined;
           }
