@@ -1652,6 +1652,13 @@ function studioArtifactsBrowserUrl(teamVersionId, simulationId, teamId = teamVer
   return `/studio/teams/${encodeURIComponent(teamVersionId)}/run/${encodeURIComponent(simulationId)}/artifacts?teamId=${encodeURIComponent(teamId)}`;
 }
 
+function studioCollaborationSummaryMarkup({ input, participantCount, transitionCount, output, artifactEntries, artifactsHref, statusLabel, statusClass }) {
+  const fileMarkup = artifactEntries.length
+    ? `<ul class="studio-collaboration-files">${artifactEntries.map((entry) => `<li>${esc(entry.path)}</li>`).join("")}</ul>`
+    : `<p class="empty-note">${state.locale === "en" ? "No output files were recorded." : "本次运行暂无输出文件。"}</p>`;
+  return `<li class="team-debug-collaboration-summary"><article class="studio-collaboration-card"><header><strong>${state.locale === "en" ? "Collaboration summary" : "协作总结"}</strong><span class="status-chip ${esc(statusClass)}">${esc(statusLabel)}</span></header><section class="studio-collaboration-row"><small>${state.locale === "en" ? "Input" : "输入"}</small><p>${esc(input || "—")}</p></section><section class="studio-collaboration-row"><small>${state.locale === "en" ? "Participants · Transitions" : "参与人数 · 流转次数"}</small><p class="studio-collaboration-counts"><strong>${participantCount}</strong><span>${state.locale === "en" ? "participants" : "人"}</span><span class="studio-collaboration-divider">|</span><strong>${transitionCount}</strong><span>${state.locale === "en" ? "transitions" : "次"}</span></p></section><section class="studio-collaboration-row"><small>${state.locale === "en" ? "Output" : "输出"}</small><div class="studio-collaboration-output">${studioTranscriptBodyMarkup({ content: output || "—" })}</div>${fileMarkup}<a class="studio-collaboration-artifacts" href="${esc(artifactsHref)}" target="_blank" rel="noreferrer">${state.locale === "en" ? `Open artifact directory (${artifactEntries.length})` : `打开产物目录（${artifactEntries.length}）`}</a></section></article></li>`;
+}
+
 function bindStudioWorkspaceButtons(root) {
   root.querySelectorAll("[data-open-workspace]").forEach((button) => {
     button.addEventListener("click", async () => {
@@ -3730,11 +3737,34 @@ async function resumeStudioProgress(teamVersionId, stage, graph, debugPanel, set
           statusChip.className = `status-chip ${esc(status)}`;
           statusChip.textContent = studioSimulationStatus(status);
         }
-        if (result) {
-          const final = document.createElement("pre");
-          final.textContent = output || (state.locale === "en" ? "No final output was produced." : "没有生成最终结果。");
-          result.querySelector(".team-simulation-result")?.append(final);
+        result?.querySelector(".team-simulation-result > .form-hint")?.remove();
+        let artifactEntries = [];
+        try {
+          const artifactsResponse = await pageFetch(`${endpoint}/artifacts`);
+          if (artifactsResponse.ok) {
+            const artifactsPayload = await artifactsResponse.json();
+            artifactEntries = (Array.isArray(artifactsPayload.entries) ? artifactsPayload.entries : []).filter(isStudioArtifactEntryVisible);
+          }
+        } catch {
+          // Keep the restored transcript summary available when artifact listing fails.
         }
+        const auditTrail = finalState.auditTrail || [];
+        const participantCount = new Set(auditTrail
+          .filter((item) => item.roleId && String(item.status || "").toLowerCase() !== "noop")
+          .map((item) => item.roleId)).size;
+        transcriptList?.insertAdjacentHTML("beforeend", studioCollaborationSummaryMarkup({
+          input: initialDetail.simulation?.input || "",
+          participantCount,
+          transitionCount: transcript.filter((item) => item.type === "flow.activated").length,
+          output: output || (state.locale === "en" ? "No final output was produced." : "没有生成最终结果。"),
+          artifactEntries,
+          artifactsHref: studioArtifactsBrowserUrl(teamVersionId, subscription, active.teamId),
+          statusLabel: studioSimulationStatus(status),
+          statusClass: status === "completed" && output ? "completed" : "warning"
+        }));
+        const summary = transcriptList?.lastElementChild;
+        bindStudioMessageMore(summary);
+        if (transcriptList) transcriptList.scrollTo({ top: transcriptList.scrollHeight, behavior: "smooth" });
         clearStudioActiveRun(subscription);
         state.studioActiveRun = null;
         syncDebugRunButton("terminal");
@@ -5532,13 +5562,6 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
           : "";
         const hasOutput = typeof output === "string" && Boolean(output.trim());
         const succeeded = !stopped && !failed && hasOutput;
-        const roleRows = auditTrail.map((item) => {
-          const status = String(item.status || "").toLowerCase();
-          const label = status === "noop"
-            ? (state.locale === "en" ? "Not run: no model or execution profile" : "未执行：未配置模型或执行配置")
-            : (item.status || (state.locale === "en" ? "Executed" : "已执行"));
-          return `<li><strong>${esc(item.roleId || (state.locale === "en" ? "Role" : "角色"))}</strong><span>${esc(label)}${item.failure ? ` · ${esc(item.failure)}` : ""}</span></li>`;
-        }).join("");
         const statusLabel = stopped
           ? (state.locale === "en" ? (simulation.status === "stopping" ? "Stopping" : "Stopped") : (simulation.status === "stopping" ? "正在停止" : "已停止"))
           : failed
@@ -5548,10 +5571,17 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
             : noopRoles.length
               ? (state.locale === "en" ? "Partial result" : "部分完成")
               : (state.locale === "en" ? "Debug run complete" : "调试完成");
-        const historyHref = `/studio/teams/${encodeURIComponent(teamVersionId)}/run`;
-        const detailHref = `/studio/teams/${encodeURIComponent(teamVersionId)}/run/${encodeURIComponent(simulation.simulationId || "")}`;
         const artifactsHref = studioArtifactsBrowserUrl(teamVersionId, simulation.simulationId || "", simulation.teamId);
-        const persistenceLabel = state.locale === "en" ? "Saved as isolated Studio evidence · not a Project Run" : "已保存为独立 Studio 证据 · 不属于项目 Run";
+        let artifactEntries = [];
+        try {
+          const artifactsResponse = await pageFetch(`${endpoint}/${encodeURIComponent(simulation.simulationId || "")}/artifacts`, { signal: abortController.signal });
+          if (artifactsResponse.ok) {
+            const artifactsPayload = await artifactsResponse.json();
+            artifactEntries = (Array.isArray(artifactsPayload.entries) ? artifactsPayload.entries : []).filter(isStudioArtifactEntryVisible);
+          }
+        } catch (artifactError) {
+          if (isAbort(artifactError)) throw artifactError;
+        }
         const emptyMessage = noopRoles.length
           ? (state.locale === "en" ? "No result was produced because one or more roles have no execution binding. Configure a model or execution profile for the listed roles, then retry." : "角色尚未配置执行绑定，因此没有生成结果。请为上方角色配置模型或执行配置后重试。")
           : (state.locale === "en" ? "The debug run returned no final result." : "调试未返回最终结果。");
@@ -5559,7 +5589,25 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
         const displayedFailure = studioSimulationErrorText(simulationState.error || simulation.failureSummary || terminalFailure?.error || emptyMessage);
         if (result && ownsRuntimePanel()) {
           drawTranscript();
-        result.insertAdjacentHTML("beforeend", `<div class="team-simulation-result"><div class="panel-head"><strong>${state.locale === "en" ? "Final result" : "最终结果"}</strong><span class="status-chip${succeeded && !noopRoles.length ? "" : " warning"}">${statusLabel}</span></div><p class="form-hint">${persistenceLabel}</p>${roleRows ? `<ul class="team-simulation-roles">${roleRows}</ul>` : ""}<pre>${esc(hasOutput ? output : displayedFailure)}</pre><div class="form-actions"><a class="secondary-button" href="${detailHref}" data-route="${detailHref}">${state.locale === "en" ? "Open run details" : "查看运行详情"}</a><a class="secondary-button" href="${artifactsHref}" target="_blank" rel="noreferrer">${state.locale === "en" ? "View run evidence" : "查看运行证据"}</a><a class="text-button" href="${historyHref}" data-route="${historyHref}">${state.locale === "en" ? "Debug history" : "调试历史"}</a></div></div>`);
+          result.querySelector(".team-simulation-result > .form-hint")?.remove();
+          const transcriptList = result.querySelector(".team-debug-transcript");
+          const participantCount = new Set(auditTrail
+            .filter((item) => item.roleId && String(item.status || "").toLowerCase() !== "noop")
+            .map((item) => item.roleId)).size;
+          const transitionCount = transcript.filter((item) => item.type === "flow.activated").length;
+          transcriptList?.insertAdjacentHTML("beforeend", studioCollaborationSummaryMarkup({
+            input: prompt,
+            participantCount,
+            transitionCount,
+            output: hasOutput ? output : displayedFailure,
+            artifactEntries,
+            artifactsHref,
+            statusLabel,
+            statusClass: succeeded && !noopRoles.length ? "completed" : "warning"
+          }));
+          const summary = transcriptList?.lastElementChild;
+          bindStudioMessageMore(summary);
+          transcriptList?.scrollTo({ top: transcriptList.scrollHeight, behavior: "smooth" });
         }
         if (ownsRuntimePanel()) setEditorState(stopped
           ? (state.locale === "en" ? (simulation.status === "stopping" ? "Stop requested; the debug run is finishing its current operation." : "Debug run stopped before completion.") : (simulation.status === "stopping" ? "已请求停止；当前操作完成后将结束调试。" : "调试运行已停止，未完成全部流程。"))
@@ -5569,33 +5617,22 @@ async function renderProjectGraph(projectId, stageId = "project-graph-stage", re
             ? emptyMessage
             : noopRoles.length
               ? (state.locale === "en" ? "A partial result was produced; some roles were not run." : "已生成部分结果；仍有角色未执行。")
-              : (state.locale === "en" ? "Debug run completed and saved as Studio evidence." : "调试完成，已保存为 Studio 证据。"));
+          : (state.locale === "en" ? "Debug run completed." : "调试完成。"));
         return succeeded;
       } catch (error) {
         if (isAbort(error)) return false;
         const message = studioSimulationErrorText(error.message);
         if (ownsRuntimePanel()) {
-          if (result) {
-            const panel = result.querySelector(".team-simulation-result");
-            if (panel) {
-              const statusChip = panel.querySelector(".panel-head .status-chip");
-              if (statusChip) {
-                statusChip.className = "status-chip failed";
-                statusChip.textContent = studioSimulationStatus("failed");
-              }
-              const failure = document.createElement("p");
-              failure.className = "run-error runtime-failure-summary";
-              failure.setAttribute("role", "alert");
-              failure.textContent = message;
-              panel.append(failure);
-              const raw = document.createElement("details");
-              raw.open = true;
-              raw.innerHTML = `<summary>${state.locale === "en" ? "Failure details" : "失败诊断详情"}</summary><pre></pre>`;
-              raw.querySelector("pre").textContent = error?.stack || error?.message || String(error);
-              panel.append(raw);
-            } else {
-              result.innerHTML = `<div class="team-simulation-result"><p class="run-error" role="alert">${esc(message)}</p><details open><summary>${state.locale === "en" ? "Failure details" : "失败诊断详情"}</summary><pre>${esc(error?.stack || error?.message || String(error))}</pre></details></div>`;
-            }
+          const list = result?.querySelector(".team-debug-transcript");
+          if (list) {
+            const failure = document.createElement("li");
+            failure.className = "team-debug-event team-debug-event-failure run-error";
+            failure.setAttribute("role", "alert");
+            failure.textContent = message;
+            list.append(failure);
+            list.scrollTo({ top: list.scrollHeight, behavior: "smooth" });
+          } else if (result) {
+            result.innerHTML = `<p class="run-error" role="alert">${esc(message)}</p>`;
           }
           setEditorState(message);
         }

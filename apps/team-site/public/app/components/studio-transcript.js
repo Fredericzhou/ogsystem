@@ -224,7 +224,7 @@ export function createStudioTranscriptTools({ roleColorForId, renderRoleAvatarWi
     const backendTag = backend ? `<span class="team-debug-backend-tag" title="${esc(backend)}">${esc(backend)}</span>` : "";
     const name = roleName || roleId;
     const focusName = focusableAvatar ? ` data-focus-role="${esc(roleId)}" role="button" tabindex="0"` : "";
-    const defaultAudit = `<button type="button" class="team-debug-drilldown-btn" data-runtime-audit-open title="${locale === "en" ? "View run evidence" : "查看运行证据"}">${locale === "en" ? "Evidence" : "运行证据"}</button>`;
+    const defaultAudit = `<button type="button" class="team-debug-drilldown-btn" data-runtime-audit-open title="${locale === "en" ? "View work log" : "查看工作记录"}">${locale === "en" ? "Work log" : "工作记录"}</button>`;
     return `<li class="team-debug-chat-item${extraClass ? ` ${esc(extraClass)}` : ""}" data-role-id="${esc(roleId)}" data-audit-index="${auditIndex}" data-status="${status}" tabindex="0" style="--role-accent:${esc(roleColorForId(roleId).accent)};--role-fill:${esc(roleColorForId(roleId).fill)}">${avatar}<div class="team-debug-bubble-col"><header><div class="team-debug-role"><strong class="team-debug-sender-name" title="${esc(name)}"${focusName}>${esc(name)}</strong>${backendTag}</div><div class="team-debug-header-meta"><span class="team-debug-time-status">${esc(statusLabel || `${formatEventTime(event)} · ${formatStatus(status)}`)}</span>${auditMarkup || defaultAudit}</div></header><div class="team-debug-bubble"><div class="team-debug-bubble-body">${bodyMarkup}</div><div class="team-debug-handoff-mentions">${handoffMarkup}</div></div></div></li>`;
   }
 
