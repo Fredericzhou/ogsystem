@@ -39,6 +39,7 @@ export class CodexAppServerClient {
   private readonly pending = new Map<string, PendingRequest>();
   private readonly waiters = new Set<(message: JsonRecord) => void>();
   private readonly completionFailures = new Set<CompletionFailure>();
+  private readonly threadApprovalPolicies = new Map<string, "never" | "untrusted">();
   private nextId = 0;
   private stderr = "";
   private closed = false;
@@ -123,6 +124,22 @@ export class CodexAppServerClient {
     }
     for (const waiter of this.waiters) waiter(message);
     if (message.id !== undefined && typeof message.method === "string") {
+      const approvalMethod = message.method === "item/commandExecution/requestApproval"
+        || message.method === "item/fileChange/requestApproval";
+      if (approvalMethod) {
+        const params = message.params && typeof message.params === "object"
+          ? message.params as JsonRecord
+          : {};
+        const threadId = typeof params.threadId === "string" ? params.threadId : undefined;
+        // A `never` approval policy is only installed after the Runtime has
+        // authorized command/workspace tools for this thread. Other threads
+        // fail closed rather than granting an unsolicited tool request.
+        const decision = threadId && this.threadApprovalPolicies.get(threadId) === "never"
+          ? "accept"
+          : "decline";
+        this.send({ jsonrpc: "2.0", id: message.id, result: { decision } });
+        return;
+      }
       this.send({ jsonrpc: "2.0", id: message.id, error: { code: -32601, message: `OGS does not support server request ${message.method}` } });
     }
   }
@@ -193,6 +210,7 @@ export class CodexAppServerClient {
     const threadRecord = (thread.thread ?? thread) as JsonRecord;
     const sessionId = String(threadRecord.id ?? threadId ?? "");
     if (!sessionId) throw new Error("Codex app-server did not return a thread id");
+    this.threadApprovalPolicies.set(sessionId, approvalPolicy);
 
     let finishCompleted: ((error?: Error, value?: JsonRecord) => void) | undefined;
     const completed = new Promise<JsonRecord>((resolve, reject) => {
@@ -246,13 +264,19 @@ export class CodexAppServerClient {
       });
     } catch (error) {
       const failure = error instanceof Error ? error : new Error(String(error));
+      this.threadApprovalPolicies.delete(sessionId);
       finishCompleted?.(failure);
       // Consume the waiter rejection because this path does not reach the
       // normal `await completed` below.
       await completed.catch(() => undefined);
       throw failure;
     }
-    const turn = await completed;
+    let turn: JsonRecord;
+    try {
+      turn = await completed;
+    } finally {
+      this.threadApprovalPolicies.delete(sessionId);
+    }
     if (turn.status !== "completed") {
       throw new Error(`Codex turn ended with status ${String(turn.status ?? "unknown")}${turn.error ? `: ${JSON.stringify(turn.error)}` : ""}`);
     }

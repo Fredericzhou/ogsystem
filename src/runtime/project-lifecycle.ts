@@ -11,7 +11,7 @@ import { randomUUID } from "node:crypto";
 import { normalizeHumanReviewComment } from "./human-review-comment.js";
 import type { Dirent } from "node:fs";
 import { createReadStream } from "node:fs";
-import { appendFile, cp, mkdir, open, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { appendFile, cp, link, mkdir, open, readFile, readdir, stat, unlink, writeFile } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import { basename, dirname, resolve } from "node:path";
 
@@ -1778,7 +1778,11 @@ async function createReviewDecision(path: string, decision: HumanReviewDecisionR
         action: "pause",
         timedOut: true,
         expiredAt: decision.expiredAt ?? decision.decidedAt,
-        recordedAt: decision.committedAt
+        recordedAt: decision.committedAt,
+        decidedAt: decision.decidedAt,
+        committedAt: decision.committedAt,
+        decision: "pause",
+        actor: decision.actor ?? "ogs-runtime-timeout"
       })}\n`, { encoding: "utf8", flag: "wx" });
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
@@ -1787,56 +1791,90 @@ async function createReviewDecision(path: string, decision: HumanReviewDecisionR
   }
   const requestPath = resolve(dirname(path), `${decision.reviewId}.request.json`);
   const request = await readJsonFile(requestPath).catch(() => undefined);
-  const trigger = request && typeof request === "object" && !Array.isArray(request) && (request as Record<string, unknown>).trigger === "exception"
+  const trigger = decision.timedOut && decision.decision === "terminate"
+    ? "exception"
+    : request && typeof request === "object" && !Array.isArray(request) && (request as Record<string, unknown>).trigger === "exception"
     ? "exception"
     : "explicit";
-  let handle: Awaited<ReturnType<typeof open>>;
-  try {
-    handle = await open(path, "wx");
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "EEXIST") return false;
-    throw error;
-  }
-  try {
-    const runId = basename(dirname(dirname(dirname(path))));
-    const persisted = {
-      ogsContractVersion: 2,
-      schemaVersion: 1,
-      reviewId: decision.reviewId,
-      runId,
+  const runId = basename(dirname(dirname(dirname(path))));
+  const persisted = {
+    ogsContractVersion: 2,
+    schemaVersion: 1,
+    reviewId: decision.reviewId,
+    runId,
+    round: decision.round,
+    lineageId: decision.lineageId,
+    branchId: decision.branchId,
+    loopIteration: decision.loopIteration,
+    stateVersion: decision.stateVersion,
+    trigger,
+    ...(trigger === "exception" && decision.timedOut ? { exceptionContext: { code: "human_review_timeout" } } : {}),
+    status: "resolved" as const,
+    decision: {
+      action: decision.decision,
+      actor: decision.actor ?? "unknown",
+      decidedAt: decision.decidedAt,
       round: decision.round,
       lineageId: decision.lineageId,
       branchId: decision.branchId,
       loopIteration: decision.loopIteration,
       stateVersion: decision.stateVersion,
-      trigger,
-      status: "resolved" as const,
-      decision: {
-        action: decision.decision,
-        actor: decision.actor ?? "unknown",
-        decidedAt: decision.decidedAt,
-        round: decision.round,
-        lineageId: decision.lineageId,
-        branchId: decision.branchId,
-        loopIteration: decision.loopIteration,
-        stateVersion: decision.stateVersion,
-        ...(decision.comment ? { comment: decision.comment } : {}),
-        ...(decision.targetRoleId ? { targetRoleId: decision.targetRoleId } : {}),
-        ...(decision.scope ? { scope: decision.scope } : {}),
-        ...(decision.additionalBudget !== undefined ? { additionalBudget: decision.additionalBudget } : {})
-      },
-      payload: {
-        committedAt: decision.committedAt,
-        ...(decision.timedOut ? { timedOut: true } : {}),
-        ...(decision.expiredAt ? { expiredAt: decision.expiredAt } : {}),
-        ...(decision.principal ? { principal: decision.principal } : {})
+      ...(decision.comment ? { comment: decision.comment } : {}),
+      ...(decision.targetRoleId ? { targetRoleId: decision.targetRoleId } : {}),
+      ...(decision.scope ? { scope: decision.scope } : {}),
+      ...(decision.additionalBudget !== undefined ? { additionalBudget: decision.additionalBudget } : {})
+    },
+    payload: {
+      committedAt: decision.committedAt,
+      ...(decision.timedOut ? { timedOut: true } : {}),
+      ...(decision.expiredAt ? { expiredAt: decision.expiredAt } : {}),
+      ...(decision.principal ? { principal: decision.principal } : {})
+    }
+  };
+  // Validate before opening the destination. A failed schema check must never leave a
+  // zero-byte decision file that makes a later reconciliation look permanently complete.
+  await validateV2ContractValue(persisted, path);
+  const lockPath = `${path}.lock`;
+  let lockHandle: Awaited<ReturnType<typeof open>>;
+  try {
+    lockHandle = await open(lockPath, "wx");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") return false;
+    throw error;
+  }
+  try {
+    let destination = await stat(path).catch(() => undefined);
+    if (destination) {
+      // Only recover the legacy zero-byte artifact while holding the per-review
+      // lock. Current writers never publish an empty destination.
+      if (destination.size !== 0) return false;
+      await unlink(path);
+      destination = undefined;
+    }
+    const temporaryPath = `${path}.${randomUUID()}.tmp`;
+    try {
+      const bytes = `${JSON.stringify(persisted, null, 2)}\n`;
+      const temporaryHandle = await open(temporaryPath, "wx");
+      try {
+        await temporaryHandle.writeFile(bytes, "utf8");
+        await temporaryHandle.sync();
+      } finally {
+        await temporaryHandle.close();
       }
-    };
-    await validateV2ContractValue(persisted, path);
-    await handle.writeFile(`${JSON.stringify(persisted, null, 2)}\n`, "utf8");
-    await handle.sync();
+      // link() creates the destination atomically without overwriting a
+      // concurrent durable decision. The lock also makes legacy recovery safe.
+      try {
+        await link(temporaryPath, path);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "EEXIST") return false;
+        throw error;
+      }
+    } finally {
+      await unlink(temporaryPath).catch(() => undefined);
+    }
   } finally {
-    await handle.close();
+    await lockHandle.close();
+    await unlink(lockPath).catch(() => undefined);
   }
   return true;
 }
@@ -2035,9 +2073,10 @@ export async function listHumanReviews(workdir: string, runId: string): Promise<
 
   const reviews = await Promise.all(
     [...reviewIds].sort((left, right) => left.localeCompare(right)).map(async (reviewId) => {
-      const [requestSnapshot, decisionSnapshot] = await Promise.all([
+      const [requestSnapshot, decisionSnapshot, timeoutSnapshot] = await Promise.all([
         loadReviewRecord(resolve(reviewsDir, `${reviewId}.request.json`)),
-        loadReviewRecord(resolve(reviewsDir, `${reviewId}.decision.json`))
+        loadReviewRecord(resolve(reviewsDir, `${reviewId}.decision.json`)),
+        loadReviewRecord(resolve(reviewsDir, `${reviewId}.timeout.json`))
       ]);
       const currentState = pendingReviewsById[reviewId];
       const source =
@@ -2050,7 +2089,7 @@ export async function listHumanReviews(workdir: string, runId: string): Promise<
       return normalizeReviewProjection({
         reviewId,
         requestSnapshot,
-        decisionSnapshot,
+        decisionSnapshot: decisionSnapshot ?? timeoutSnapshot,
         currentState,
         branchRecord: branchId ? branchRecordsById[branchId] : undefined,
         history: branchId ? reviewHistoryByBranchId[branchId] : undefined,
@@ -2074,9 +2113,10 @@ export async function inspectHumanReview(
   const runDir = resolveRunDir(workdir, runId);
   const detail = await inspectRun(workdir, runId);
   const reviewsDir = resolveReviewsDir(runDir);
-  const [requestSnapshot, decisionSnapshot] = await Promise.all([
+  const [requestSnapshot, decisionSnapshot, timeoutSnapshot] = await Promise.all([
     loadReviewRecord(resolve(reviewsDir, `${reviewId}.request.json`)),
-    loadReviewRecord(resolve(reviewsDir, `${reviewId}.decision.json`))
+    loadReviewRecord(resolve(reviewsDir, `${reviewId}.decision.json`)),
+    loadReviewRecord(resolve(reviewsDir, `${reviewId}.timeout.json`))
   ]);
   const graphState = asGraphStateRecord(detail.state) ?? {};
   const currentState =
@@ -2101,7 +2141,7 @@ export async function inspectHumanReview(
     ...normalizeReviewProjection({
       reviewId,
       requestSnapshot,
-      decisionSnapshot,
+      decisionSnapshot: decisionSnapshot ?? timeoutSnapshot,
       currentState,
       branchRecord: branchId ? branchRecordsById[branchId] : undefined,
       history: branchId ? historyByBranchId[branchId] : undefined,
@@ -2163,6 +2203,7 @@ export async function writeHumanReviewDecision(args: {
   }
   const priorDecision =
     typeof currentReview.decisionSnapshot === "object" && currentReview.decisionSnapshot !== null && !Array.isArray(currentReview.decisionSnapshot)
+      && !(currentReview.timedOut === true && currentReview.decision === "pause")
       ? currentReview.decisionSnapshot as Record<string, unknown>
       : undefined;
   if (priorDecision) {
@@ -2205,8 +2246,32 @@ export async function writeHumanReviewDecision(args: {
       `Review "${args.reviewId}" does not expose a valid terminate scope; expected "branch" or "run".`
     );
   }
+  if (args.decision === "terminate" && args.scope !== undefined) {
+    const configuredScope = deriveEffectiveTerminateScope({
+      requestSnapshot: currentReview.requestSnapshot,
+      currentState: currentReview.currentState
+    });
+    if (configuredScope === undefined || args.scope !== configuredScope) {
+      throw new Error(
+        `Review "${args.reviewId}" terminate scope mismatch: requested "${args.scope}", configured "${configuredScope ?? "unresolved"}".`
+      );
+    }
+  }
   if (isLoopBudgetReview && args.decision !== "terminate") {
     const loopBudget = asRecord(reviewSnapshot.loopBudget) ?? {};
+    const maxAdditionalRounds = typeof loopBudget.maxAdditionalRounds === "number"
+      ? loopBudget.maxAdditionalRounds
+      : undefined;
+    if ((args.decision === "continue" || args.decision === "rework")
+      && (!Number.isInteger(args.additionalBudget)
+        || (args.additionalBudget as number) <= 0
+        || maxAdditionalRounds === undefined
+        || (args.additionalBudget as number) > maxAdditionalRounds)) {
+      throw new Error(`[GRAPH_LOOP_BUDGET_AUTHORIZATION_INVALID] Decision ${args.decision} must grant 1..${maxAdditionalRounds ?? "configured"} additional rounds.`);
+    }
+    if (args.decision === "reject" && args.additionalBudget !== undefined) {
+      throw new Error("[GRAPH_LOOP_BUDGET_AUTHORIZATION_INVALID] Reject decisions cannot grant additional rounds.");
+    }
     const allowedTargets = getLoopBudgetTargetRoleIds({
       targetRoleIds: Array.isArray(loopBudget.targetRoleIds) ? loopBudget.targetRoleIds.filter((value): value is string => typeof value === "string") : [],
       reworkTargetRoleIds: Array.isArray(loopBudget.reworkTargetRoleIds) ? loopBudget.reworkTargetRoleIds.filter((value): value is string => typeof value === "string") : [],

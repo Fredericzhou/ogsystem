@@ -320,9 +320,11 @@ paths:
               type: object
               required: [decision]
               properties:
-                decision: { enum: [approve, rework, reject, continue, retry, terminate] }
+                decision: { enum: [approve, rework, reject, continue, terminate] }
                 comment: { type: string, maxLength: 2000 }
-                scope: { enum: [branch, run] }
+                scope:
+                  description: Optional assertion of the compiled terminate scope. A mismatch is rejected.
+                  enum: [branch, run]
       responses:
         "200":
           description: Durable review decision and reconcile state.

@@ -1466,10 +1466,15 @@ function buildLoopBudgetDecisionTransition(args: ReviewDecisionTransitionInput):
   }
   if (decision === "terminate") {
     const terminateScope = resolveLoopBudgetTerminateScope({
-      requestedScope: args.decision.scope,
       loopBudget,
       legacySpec: args.review.spec
     });
+    if (!terminateScope) {
+      throw new Error(`[GRAPH_REVIEW_TERMINATE_SCOPE_UNRESOLVED] Loop budget review ${args.review.reviewId} has no configured terminate scope`);
+    }
+    if (args.decision.scope !== undefined && args.decision.scope !== terminateScope) {
+      throw new Error(`[GRAPH_REVIEW_TERMINATE_SCOPE_MISMATCH] Loop budget review ${args.review.reviewId} terminate scope does not match its configured scope`);
+    }
     const base = {
       ...args.review,
       status: "resolved" as const
@@ -1690,7 +1695,9 @@ export function planHumanReviewDecisionTransition(args: ReviewDecisionTransition
   if (args.review.kind === "loop_budget") {
     return buildLoopBudgetDecisionTransition(args);
   }
-  if (args.decision.decision === "retry") {
+  // Keep a defensive runtime guard for JavaScript/API callers carrying a stale action,
+  // while `retry` remains outside the V2 Human Review action union.
+  if ((args.decision.decision as string) === "retry") {
     throw new Error(`[GRAPH_REVIEW_RETRY_UNAVAILABLE] Human review ${args.review.reviewId} has no retry grant or exception policy binding`);
   }
   const node = getExecutionPlanNode(args.plan, args.review.roleId);
@@ -1762,10 +1769,17 @@ export function planHumanReviewDecisionTransition(args: ReviewDecisionTransition
   }
 
   if (args.decision.decision === "terminate") {
+    const configuredScope = args.review.spec?.terminateScope;
+    if (configuredScope !== "branch" && configuredScope !== "run") {
+      throw new Error(`[GRAPH_REVIEW_TERMINATE_SCOPE_UNRESOLVED] Human review ${args.review.reviewId} has no configured terminate scope`);
+    }
+    if (args.decision.scope !== undefined && args.decision.scope !== configuredScope) {
+      throw new Error(`[GRAPH_REVIEW_TERMINATE_SCOPE_MISMATCH] Human review ${args.review.reviewId} terminate scope does not match its configured scope`);
+    }
     return {
       update: {
-        status: args.decision.scope === "run" ? "stopped" : undefined,
-        error: args.decision.scope === "run" ? "human_review_terminate_run" : "",
+        status: configuredScope === "run" ? "stopped" : undefined,
+        error: configuredScope === "run" ? "human_review_terminate_run" : "",
         pendingReviewsById: {
           [args.review.reviewId]: {
             ...args.review,
@@ -1806,7 +1820,7 @@ export function planHumanReviewDecisionTransition(args: ReviewDecisionTransition
             expiredAt: args.decision.expiredAt ?? args.decision.decidedAt,
             timedOut: true,
             action: "terminate",
-            scope: args.decision.scope ?? args.review.spec.terminateScope
+            scope: configuredScope
           }]
         : [{
             type: "human_review_terminated",
@@ -1817,7 +1831,7 @@ export function planHumanReviewDecisionTransition(args: ReviewDecisionTransition
             loopIteration: args.review.loopIteration,
             reviewId: args.review.reviewId,
             decidedAt: args.decision.decidedAt,
-            scope: args.decision.scope ?? args.review.spec.terminateScope
+            scope: configuredScope
           }]
     };
   }

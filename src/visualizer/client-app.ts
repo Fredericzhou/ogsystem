@@ -4289,8 +4289,14 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             .filter((flow) => kind === "start" ? flow.fromRoleId === STUDIO_SYSTEM_START_ROLE_ID : flow.toRoleId === STUDIO_SYSTEM_END_ROLE_ID)
             .map((flow) => String(kind === "start" ? flow.toRoleId : flow.fromRoleId || "").trim())
             .filter(Boolean)));
-          const mode = String(root.querySelector('[data-boundary-setting="' + (kind === "start" ? "startMode" : "endMode") + '"]')?.value || (kind === "start" ? "all" : "all_of"));
-          const rawCount = Number(root.querySelector('[data-boundary-setting="' + (kind === "start" ? "startCount" : "endMin") + '"]')?.value || 1);
+          // The graph selection panel can be rebuilt while a native input is being edited.
+          // Prefer the captured draft from the input handlers so a redraw cannot replace a
+          // valid count with the last committed value before the save click is processed.
+          const boundaryDraft = state.studioBoundaryConfigDraft?.kind === kind
+            ? state.studioBoundaryConfigDraft
+            : undefined;
+          const mode = String(boundaryDraft?.mode || root.querySelector('[data-boundary-setting="' + (kind === "start" ? "startMode" : "endMode") + '"]')?.value || (kind === "start" ? "all" : "all_of"));
+          const rawCount = Number(boundaryDraft?.count ?? root.querySelector('[data-boundary-setting="' + (kind === "start" ? "startCount" : "endMin") + '"]')?.value ?? 1);
           if (!connectedIds.length || ((kind === "start" && mode === "random_n") || (kind === "end" && mode === "quorum_of")) && (!Number.isInteger(rawCount) || rawCount < 1 || rawCount > connectedIds.length)) {
             setFlash("error", t("studio.boundaryCountInvalid", { count: String(connectedIds.length) }, "The configured count must be between 1 and the {count} connected roles."));
             return;

@@ -29,7 +29,7 @@ Verify that the Business Layer remains deterministic and explicit:
 - Flow is the only source of routable transitions and registered Business Events.
 - HandoffProjection transfers only declared context mappings, Flow Contract payloads, and authorized ArtifactReferences.
 - No prompt history, workspace path, raw tool output, or implicit shared memory crosses a Role boundary.
-- Branch, Join, quorum, Loop, retry, rework, rejection, termination, and recovery preserve lineage and state versions.
+- Branch, Join, quorum, Loop, automatic retry, rework, rejection, termination, and recovery preserve lineage and state versions.
 - `round`, `loopIteration`, `lineageId`, `branchId`, and `stateVersion` remain distinguishable in Review evidence.
 - Ambiguous routes, missing mappings, missing required Artifacts, and stale decisions fail closed.
 
@@ -98,8 +98,8 @@ verified production Backend until its complete staging, resource, tool, permissi
 evidence is recorded. Earlier failed Codex/OpenCode attempts remain failure evidence and are not
 hidden by the latest successful Codex/OpenCode run.
 
-The latest checked-in engineering regression baseline is `pnpm test`: 436 passed and 1 skipped;
-Team Site tests: 30 passed; `pnpm build` and `git diff --check` also pass. These are code-quality
+The latest engineering regression baseline is `pnpm test`: 444 passed and 1 skipped;
+Team Site tests: 34 passed; `pnpm build` and `git diff --check` also pass. These are code-quality
 signals only. They do not replace the immutable Run evidence above or the required human release
 signatures.
 
@@ -118,9 +118,9 @@ the fixture is immutable and its digest is recorded.
 | S6 | All-of Join | All required source outcomes are durable; late, skipped, or failed sources follow the declared Join policy. |
 | S7 | Quorum Join | The threshold is reached exactly once and late arrivals remain evidence without changing the committed result. |
 | S8 | Loop budget | `loop_exhausted` enters Review; `continue` obeys loopBudget; rework, reject, and terminate use declared targets and scope. |
-| S9 | Retry exhaustion | `retry` is shown only with a valid grant or remaining budget; otherwise it is absent and the remaining policy applies. |
+| S9 | Automatic retry exhaustion | Runtime automatic retries honor the compiled retry policy; Human Review never exposes `retry`, and the remaining exception policy applies after exhaustion. |
 | S10 | Explicit Review | Approve, rework, and reject block or route the declared handoff; duplicate and stale decisions are rejected. |
-| S11 | Exception Review | Exception action subsets and targets are derived from exception policy and Runtime scope; terminate resolves to branch or run. |
+| S11 | Loop-budget Exception Review | `loop_exhausted` exposes only its declared continue, rework, reject, and terminate actions; targets and terminate scope come from the compiled binding. Other exception Review triggers remain Deferred. |
 | S12 | Cross-Backend handoff | Two verified Backends execute different Roles in one Flow without Backend-specific fields entering Business or Semantic IR. |
 | S13 | Capability readiness | Missing Model, missing tool, unsupported resource boundary, or invalid Harness binding prevents Backend startup. |
 | S14 | Run freeze and recovery | Crash/restart resumes from the original Snapshot, policy, staging identity, and Review scope. |

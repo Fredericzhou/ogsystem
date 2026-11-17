@@ -21,7 +21,13 @@ export function resolveLoopBudgetTerminateScope(args: {
   requestedScope?: "branch" | "run";
   loopBudget?: Pick<LoopBudgetReview, "terminateScope">;
   legacySpec?: Pick<HumanReviewSpec, "terminateScope">;
-}): "branch" | "run" {
-  return args.requestedScope ?? args.loopBudget?.terminateScope ?? args.legacySpec?.terminateScope ?? "run";
+}): "branch" | "run" | undefined {
+  // The persisted loop budget or its legacy projection owns the scope. A caller
+  // supplied scope is accepted only as an assertion by transition boundaries.
+  const configuredScope = args.loopBudget?.terminateScope ?? args.legacySpec?.terminateScope;
+  if (args.requestedScope !== undefined && configuredScope !== undefined && args.requestedScope !== configuredScope) {
+    return undefined;
+  }
+  return configuredScope;
 }
 

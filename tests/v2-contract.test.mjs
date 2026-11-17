@@ -104,7 +104,7 @@ test("v2 Human Review schema uses one action contract with CAS scope", async () 
     exceptionContext: { code: "loop_exhausted" },
     status: "resolved",
     decision: {
-      action: "retry",
+      action: "continue",
       actor: "operator",
       decidedAt: "2026-11-16T00:00:00.000Z",
       round: 1,
@@ -140,7 +140,7 @@ test("v2 Human Review schema uses one action contract with CAS scope", async () 
       loopIteration: 0
     }
   }), "utf8");
-  await assert.rejects(loadV2ContractFile(invalid), /stateVersion/);
+  await assert.rejects(loadV2ContractFile(invalid), /must be equal to one of the allowed values/);
 
   const explicit = join(root, "explicit-review.json");
   await writeFile(explicit, JSON.stringify({

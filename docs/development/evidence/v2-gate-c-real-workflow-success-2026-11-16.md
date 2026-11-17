@@ -104,9 +104,9 @@ Both workflows used the real Codex Backend Adapter, the only locally available m
   unavailable for production claims because its current cwd boundary does not prove staging
   isolation; explicit resource tools are rejected fail-closed.
 - Final browser regression after layout and boundary-input race fixes: `17 passed`, `2 skipped`;
-  Build layout regression: `4 passed`. The current full Node regression is `436 passed`,
-  `1 skipped`, `0 failed` across `437` tests (`pnpm test`, 2026-11-16); Team Site tests are
-  `30 passed`. Earlier counts from
+  Build layout regression: `4 passed`. The current full Node regression is `444 passed`,
+  `1 skipped`, `0 failed` across `445` tests (`pnpm test`, 2026-11-17); Team Site tests are
+  `34 passed`. Earlier counts from
   pre-cutover test enumeration are historical and are not used as the current release total.
 - Tarball installation smoke passed through both npm and pnpm. The smoke now verifies the v2
   Role Package/project layout and dry-run entrypoint; it no longer expects the removed v1
@@ -131,3 +131,15 @@ workflow-operator sign-off required by the release UAT governance document remai
 release approval record; this evidence does not claim that human signature.
 The later bounded Python-team retry is recorded separately as a real Backend/model hang and does
 not claim repeatability beyond the successful Run records above.
+
+## 2026-11-17 Team Site real-case verification
+
+`pnpm --dir apps/team-site verify:cases` completed with all four model cases passing against the
+same final worktree: `cross-backend-review-loop`, `management-consulting`, `software-team`, and
+`structured-debate`. The runs used real Codex `gpt-6-luna` execution; no dry-run result was used.
+The management case completed 9/9 Roles and verified 1 declared/delivered Artifact (manifest
+`04861d3028a2bd1e588c2ddb1b19435154511c2e2dd96138dec190d74ca125f9`). The structured debate case
+completed 5/5 Roles and verified 5 declared/delivered Artifacts including `debate-brief.md`
+(manifest `9ceef6fa874189c6d0fd29d60c3c6056a1b05d52d2d5f2392f314cc0ea1a030`). The verifier now
+prints the Run ID and Artifact manifest digest on every passing case so the next evidence capture
+can attach immutable identities before temporary workspaces are removed.

@@ -182,6 +182,21 @@ export function createTaskLifecycleUseCases({ projectStore, runControlStore, rev
           : actionableReviews(snapshot)[0];
         if (!selected?.reviewId) throw new Error("TASK_REVIEW_NOT_ALLOWED: no active review request exists for this Run.");
 
+        if (selected.kind === "loop_budget") {
+          const loopBudget = selected.loopBudget || selected.spec?.loopBudget || {};
+          const maxAdditionalRounds = Number(loopBudget.maxAdditionalRounds);
+          if ((decision === "continue" || decision === "rework")
+            && (!Number.isInteger(normalizedAdditionalBudget)
+              || normalizedAdditionalBudget <= 0
+              || !Number.isInteger(maxAdditionalRounds)
+              || normalizedAdditionalBudget > maxAdditionalRounds)) {
+            throw new Error(`TASK_REVIEW_INVALID: ${decision} requires additionalBudget between 1 and ${Number.isInteger(maxAdditionalRounds) ? maxAdditionalRounds : "the configured maximum"}.`);
+          }
+          if (decision === "reject" && normalizedAdditionalBudget !== undefined) {
+            throw new Error("TASK_REVIEW_INVALID: reject cannot grant additionalBudget.");
+          }
+        }
+
         const alreadyCommitted = reviewIsCommitted(selected, decision);
         if (!alreadyCommitted) {
           if (!["pending", "paused"].includes(selected.currentStatus)) {

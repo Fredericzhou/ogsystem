@@ -734,7 +734,8 @@ export const codexBackendAdapter: BackendAdapter = {
       cwd: args.targetDir,
       env: {
         OGSYSTEM_RUN_DIR: args.runContext.runDir,
-        OGSYSTEM_SHARED_DIR: args.runContext.sharedDir
+        OGSYSTEM_SHARED_DIR: args.runContext.sharedDir,
+        OGSYSTEM_TARGET_DIR: args.targetDir
       }
     });
     await filesystemArtifactStore.appendEvent(args.runContext, {

@@ -1890,8 +1890,14 @@ export async function persistHumanReviewDecision(args: {
   let trigger: "explicit" | "exception" = "explicit";
   const requestPath = buildHumanReviewRequestPath(args.context, args.decision.reviewId);
   const request = await readJsonFile(requestPath).catch(() => undefined);
-  if (request && typeof request === "object" && !Array.isArray(request) && (request as Record<string, unknown>).trigger === "exception") trigger = "exception";
-  const exceptionActions = new Set(["continue", "retry", "rework", "reject", "terminate"]);
+  const decisionPath = buildHumanReviewDecisionPath(args.context, args.decision.reviewId);
+  const existingDecision = await readJsonFile(decisionPath).catch(() => undefined);
+  if (
+    args.decision.timedOut && action === "terminate" ||
+    existingDecision && typeof existingDecision === "object" && !Array.isArray(existingDecision) && (existingDecision as Record<string, unknown>).trigger === "exception" ||
+    request && typeof request === "object" && !Array.isArray(request) && (request as Record<string, unknown>).trigger === "exception"
+  ) trigger = "exception";
+  const exceptionActions = new Set(["continue", "rework", "reject", "terminate"]);
   const businessActions = new Set(["approve", "rework", "reject"]);
   if (!(trigger === "explicit" ? businessActions : exceptionActions).has(action)) {
     throw new Error(`V2_REVIEW_ACTION_INVALID: ${trigger} review cannot persist action "${action}"`);
@@ -1934,7 +1940,7 @@ export async function persistHumanReviewDecision(args: {
     }
   };
   await validateV2ContractValue(decision, `human review decision ${args.decision.reviewId}`);
-  await writeAtomicFile(buildHumanReviewDecisionPath(args.context, args.decision.reviewId), stringifyJson(decision));
+  await writeAtomicFile(decisionPath, stringifyJson(decision));
 }
 
 function decisionFromV2(value: unknown, path: string): HumanReviewDecisionRecord {
@@ -1946,7 +1952,7 @@ function decisionFromV2(value: unknown, path: string): HumanReviewDecisionRecord
   const payload = asPersistedReviewPayload(root.payload);
   if (typeof root.reviewId !== "string" || typeof root.runId !== "string" || typeof root.lineageId !== "string" || typeof root.branchId !== "string" || typeof root.round !== "number" || typeof root.loopIteration !== "number" || typeof root.stateVersion !== "number") throw new Error(`Invalid human review decision binding: ${path}`);
   const action = decision.action;
-  if (!["approve", "rework", "reject", "continue", "retry", "terminate"].includes(String(action))) throw new Error(`Invalid human review decision action: ${path}`);
+  if (!["approve", "rework", "reject", "continue", "terminate"].includes(String(action))) throw new Error(`Invalid human review decision action: ${path}`);
   if (typeof decision.actor !== "string" || typeof decision.decidedAt !== "string") throw new Error(`Invalid human review decision metadata: ${path}`);
   return {
     reviewId: root.reviewId,

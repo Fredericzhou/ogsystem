@@ -98,7 +98,7 @@ export type FlowContractPlan = {
 export type ContextMapByRoleId = Record<string, Record<string, string>>;
 
 /** Decisions accepted from the control plane. Runtime timeout pause is internal-only. */
-export type HumanReviewDecision = "approve" | "rework" | "terminate" | "continue" | "retry" | "reject";
+export type HumanReviewDecision = "approve" | "rework" | "terminate" | "continue" | "reject";
 export type RuntimeReviewTimeoutAction = "pause" | "terminate";
 
 export type HumanReviewSpec = {

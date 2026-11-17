@@ -347,7 +347,7 @@ test("Build workbench keeps view toggles in footer and aligns graph with docked 
     await page.locator('[data-studio-side-tab="debug"]').click();
     await expect(debugPanel).toBeVisible();
     await expect(debugPanel.locator("#workbench-run-input")).toBeVisible();
-    await expect(debugPanel).toContainText(/execution config|执行配置/);
+    await expect(debugPanel).toContainText(/Structured trace|结构化追踪/);
     await expectDockedSelectionAligned(page);
     await expectBuildCanvasIdentityStable(page);
 

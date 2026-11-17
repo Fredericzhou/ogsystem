@@ -47,7 +47,7 @@ export type RoleContractV2 = ContractRoot & {
 export type BusinessReviewAction = "approve" | "rework" | "reject";
 
 /** Runtime exception controls are a separate action contract from business review. */
-export type ExceptionReviewAction = "continue" | "retry" | "rework" | "reject" | "terminate";
+export type ExceptionReviewAction = "continue" | "rework" | "reject" | "terminate";
 
 /** Persisted Human Review decisions never include the internal timeout pause state. */
 export type HumanReviewAction = BusinessReviewAction | ExceptionReviewAction;
@@ -173,6 +173,8 @@ export type HumanReviewRequestV2 = ContractRoot & {
   trigger: "explicit" | "exception";
   exceptionContext?: { code: string; details?: Record<string, unknown> };
   status: "pending" | "resolved" | "cancelled";
+  /** Runtime-only projection used to reconstruct the pending review and audit state. */
+  payload?: Record<string, unknown>;
   decision?: {
     action: HumanReviewAction;
     actor: string;

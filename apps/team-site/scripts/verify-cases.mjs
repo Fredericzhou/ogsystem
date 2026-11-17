@@ -50,10 +50,42 @@ for (const item of cases) {
         : result.error;
       throw new Error(`Run status ${result.status}; missing successful roles: ${missing.join(", ") || "none"}; backend/model mismatches: ${wrongBindings.length}; actual=${actual || "no successful audit entries"}${runError ? `; run-error=${runError}` : ""}${failures ? `; role-errors=${failures}` : ""}`);
     }
+    if (item.roles.some((role) => role.id === "document-publisher")) {
+      const evidence = result.artifactEvidence;
+      const manifest = evidence?.manifest;
+      const seal = evidence?.seal;
+      const verification = evidence?.verification;
+      const declaredFiles = Array.isArray(manifest?.files) ? manifest.files : [];
+      const deliveredFiles = Array.isArray(evidence?.files) ? evidence.files : [];
+      const requiredPaths = item.id === "structured-debate"
+        ? ["debate-brief.md"]
+        : item.id === "management-consulting"
+          ? ["executive-brief.md"]
+          : [];
+      if (
+        manifest?.status !== "verified" ||
+        manifest.producerRoleId !== "document-publisher" ||
+        typeof manifest.manifestSha256 !== "string" ||
+        declaredFiles.length === 0 ||
+        seal?.status !== "sealed" ||
+        seal.manifestSha256 !== manifest.manifestSha256 ||
+        verification?.status !== "verified" ||
+        verification?.passed !== true ||
+        !declaredFiles.every((entry) => typeof entry?.path === "string" && deliveredFiles.includes(entry.path)) ||
+        !requiredPaths.every((requiredPath) => declaredFiles.some((entry) => entry?.path === requiredPath) && deliveredFiles.includes(requiredPath)) ||
+        !evidence?.artifactRef?.artifactId
+      ) {
+        throw new Error("Artifact delivery evidence is incomplete: expected declarations, generated files, verified manifest, sealed manifest, and a deliverable artifact reference.");
+      }
+      process.stdout.write(`[artifacts] passed; files=${declaredFiles.length}; manifest=${manifest.manifestSha256}\n`);
+    }
     const bindings = [...new Set(successfulEntries.map((entry) => entry.profileId
       ? `profile:${entry.profileId}`
       : `${entry.backend}/${entry.modelId}`))].join(", ");
-    process.stdout.write(`[model-run] passed in ${result.durationMs} ms; roles=${completedRoles.size}; transitions=${result.summary.totalTransitions}; audit=${bindings}\n`);
+    const artifactSummary = result.artifactEvidence?.manifest
+      ? `; artifacts=${Array.isArray(result.artifactEvidence.manifest.files) ? result.artifactEvidence.manifest.files.length : 0}; manifest=${result.artifactEvidence.manifest.manifestSha256 || "unknown"}`
+      : "";
+    process.stdout.write(`[model-run] passed; run=${result.runId || "unknown"}; duration=${result.durationMs} ms; roles=${completedRoles.size}; transitions=${result.summary.totalTransitions}; audit=${bindings}${artifactSummary}\n`);
   } catch (error) {
     failures.push({ caseId: item.id, message: error instanceof Error ? error.message : String(error) });
     process.stderr.write(`[failed] ${item.id}: ${failures.at(-1).message}\n`);

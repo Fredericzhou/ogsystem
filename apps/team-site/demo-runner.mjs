@@ -54,27 +54,50 @@ const makeXlsx = async (path) => {
   await writeFile(join(dir, "xl", "worksheets", "sheet1.xml"), "<?xml version=\"1.0\"?><worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><sheetData><row r=\"1\"><c r=\"A1\" t=\"inlineStr\"><is><t>Metric</t></is></c><c r=\"B1\" t=\"inlineStr\"><is><t>Value</t></is></c></row><row r=\"2\"><c r=\"A2\" t=\"inlineStr\"><is><t>Task</t></is></c><c r=\"B2\" t=\"inlineStr\"><is><t>" + xml(task) + "</t></is></c></row></sheetData></worksheet>");
   execFileSync("zip", ["-q", "-r", join(root, path), "."], { cwd: dir });
 };
+const tryMakeXlsx = async (path) => {
+  try {
+    await makeXlsx(path);
+    return true;
+  } catch {
+    return false;
+  }
+};
 const run = (command, args) => execFileSync(command, args, { cwd: root, stdio: ["ignore", "ignore", "pipe"] });
+const tryRun = (command, args) => {
+  try {
+    run(command, args);
+    return true;
+  } catch {
+    return false;
+  }
+};
 try {
   if (format === "consulting") {
     const brief = { executiveSummary: "Evidence-aware market entry brief.", recommendations: ["Validate the highest-impact assumption before commitment."], implementationPlan: ["Confirm evidence", "Pilot the smallest reversible step"], risks: ["Evidence is limited to the supplied brief."], assumptions: ["The supplied task is representative."], openQuestions: ["Which metric determines the go or no-go decision?"] };
     await add("executive-brief.md", "business_document", "text/markdown", "# Executive brief\n\nTask: " + task + "\n\n" + brief.executiveSummary + "\n");
     await add("executive-brief.json", "business_data", "application/json", JSON.stringify(brief, null, 2) + "\n");
     await add("executive-brief.csv", "business_data", "text/csv", "field,value\nexecutiveSummary,\"" + brief.executiveSummary + "\"\nrecommendation,\"" + brief.recommendations[0] + "\"\n");
-    await makeXlsx("executive-brief.xlsx");
-    files.push({ artifactId: "executive-brief-xlsx", kind: "business_data", path: "executive-brief.xlsx", mediaType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", encoding: "binary" });
-    run("pandoc", ["executive-brief.md", "-o", "executive-brief.docx"]);
-    files.push({ artifactId: "executive-brief-docx", kind: "business_document", path: "executive-brief.docx", mediaType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", encoding: "binary" });
-    run("pandoc", ["executive-brief.md", "-o", "executive-brief.pdf", "--pdf-engine=xelatex"]);
-    files.push({ artifactId: "executive-brief-pdf", kind: "business_document", path: "executive-brief.pdf", mediaType: "application/pdf", encoding: "binary" });
+    if (await tryMakeXlsx("executive-brief.xlsx")) {
+      files.push({ artifactId: "executive-brief-xlsx", kind: "business_data", path: "executive-brief.xlsx", mediaType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", encoding: "binary" });
+    }
+    if (tryRun("pandoc", ["executive-brief.md", "-o", "executive-brief.docx"])) {
+      files.push({ artifactId: "executive-brief-docx", kind: "business_document", path: "executive-brief.docx", mediaType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", encoding: "binary" });
+    }
+    if (tryRun("pandoc", ["executive-brief.md", "-o", "executive-brief.pdf", "--pdf-engine=xelatex"])) {
+      files.push({ artifactId: "executive-brief-pdf", kind: "business_document", path: "executive-brief.pdf", mediaType: "application/pdf", encoding: "binary" });
+    }
   } else if (format === "debate") {
+    await add("debate-brief.md", "business_document", "text/markdown", "# Debate brief\n\nTopic: " + task + "\n\nThe structured debate result and follow-up questions are recorded in the accompanying summary.\n");
     await add("debate-summary.json", "business_data", "application/json", JSON.stringify({ topic: task, status: "reviewed", uncertainty: ["Evidence is bounded by the supplied brief."] }, null, 2) + "\n");
-    run("ffmpeg", ["-y", "-f", "lavfi", "-i", "color=c=royalblue:s=960x540", "-frames:v", "1", "debate.png"]);
-    files.push({ artifactId: "debate-png", kind: "technical_artifact", path: "debate.png", mediaType: "image/png", encoding: "binary" });
-    run("ffmpeg", ["-y", "-f", "lavfi", "-i", "color=c=royalblue:s=960x540", "-t", "1", "-pix_fmt", "yuv420p", "debate.mp4"]);
-    files.push({ artifactId: "debate-mp4", kind: "technical_artifact", path: "debate.mp4", mediaType: "video/mp4", encoding: "binary" });
-    run("ffmpeg", ["-y", "-f", "lavfi", "-i", "sine=frequency=880:duration=1", "-q:a", "4", "debate.mp3"]);
-    files.push({ artifactId: "debate-mp3", kind: "technical_artifact", path: "debate.mp3", mediaType: "audio/mpeg", encoding: "binary" });
+    if (tryRun("ffmpeg", ["-y", "-f", "lavfi", "-i", "color=c=royalblue:s=960x540", "-frames:v", "1", "debate.png"])) {
+      files.push({ artifactId: "debate-png", kind: "technical_artifact", path: "debate.png", mediaType: "image/png", encoding: "binary" });
+    }
+    if (tryRun("ffmpeg", ["-y", "-f", "lavfi", "-i", "color=c=royalblue:s=960x540", "-t", "1", "-pix_fmt", "yuv420p", "debate.mp4"])) {
+      files.push({ artifactId: "debate-mp4", kind: "technical_artifact", path: "debate.mp4", mediaType: "video/mp4", encoding: "binary" });
+    }
+    if (tryRun("ffmpeg", ["-y", "-f", "lavfi", "-i", "sine=frequency=880:duration=1", "-q:a", "4", "debate.mp3"])) {
+      files.push({ artifactId: "debate-mp3", kind: "technical_artifact", path: "debate.mp3", mediaType: "audio/mpeg", encoding: "binary" });
+    }
   } else throw new Error("unknown publisher format: " + format);
   process.stdout.write(JSON.stringify({ event: "READY", content: "Published " + files.length + " verified files.", artifacts: files }));
 } catch (error) {
@@ -232,7 +255,7 @@ async function writeCaseProject(caseSpec, workdir, prompt, mode, locale = "zh-CN
           required: ["artifactId", "kind", "path", "mediaType"],
           properties: {
             artifactId: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
-            kind: { enum: ["business_document", "business_data", "text"] },
+            kind: { enum: ["text", "source", "business_document", "business_data", "technical_artifact"] },
             path: { type: "string", pattern: "^(?![./])(?!.*(?:^|/)[.][.]?(?:/|$))(?!.*(?:^|/)[.][^/]*)(?!.*\\\\).+$" },
             mediaType: { type: "string", minLength: 1 },
             encoding: { enum: ["utf-8", "binary"] },
@@ -244,7 +267,7 @@ async function writeCaseProject(caseSpec, workdir, prompt, mode, locale = "zh-CN
       }
     } : {};
     const artifactInstruction = role.id === "document-publisher"
-      ? "- When the Harness exposes write-capable staging and the task requests a document, create the document in the execution workspace and declare it in artifacts."
+      ? `- When the Harness exposes write-capable staging, use exactly the native exec_command/process tool (do not use apply_patch or edit) to execute node "$OGSYSTEM_TARGET_DIR/publish-artifacts.mjs" ${caseSpec.id === "management-consulting" ? "consulting" : "debate"} before returning. Declare every generated deliverable in artifacts.`
       : "- This Role does not publish files. Do not create files or declare artifacts, even when the user task mentions document delivery; return only this Role's business result in content.";
     await writeFile(join(roleDir, "prompt.md"), `{{agent}}\n\nAllowed events:\n{{allowed_events}}\n\nUser preferences:\n{{user_preferences}}\n\nTask:\n{{task}}\n\nInput:\n{{input}}\n\nOutput requirements:\n- Return exactly one schema-compliant JSON object and no Markdown.\n- event must be one of allowed_events.\n- Put the useful role result in content.\n${artifactInstruction}\n`);
     await writeFile(join(roleDir, "output.schema.json"), `${JSON.stringify({
@@ -322,6 +345,7 @@ async function writeCaseProject(caseSpec, workdir, prompt, mode, locale = "zh-CN
     const resolved = resolveCaseRoleModel(caseSpec, role, process.env);
     const adapterResources = defaultBackendRegistry.getAdapter(resolved.backend)?.getResourceCapabilities?.() || {};
     const canUseWorkspaceTools = adapterResources.filesystem === true && adapterResources.process === true;
+    const roleNeedsWorkspaceTools = role.id === "document-publisher";
     const templateId = `harness.site.${caseSpec.id}.${role.id}`;
     harnessTemplates[templateId] = {
       ogsContractVersion: 2,
@@ -332,10 +356,10 @@ async function writeCaseProject(caseSpec, workdir, prompt, mode, locale = "zh-CN
       model: resolved.modelId,
       // Cross-backend evidence validates business handoff and adapter identity;
       // it does not claim filesystem/process capabilities for OpenCode.
-      allowedTools: textOnlySimulation || textOnlyCrossBackend || !canUseWorkspaceTools ? [] : ["apply_patch", "exec_command"],
+      allowedTools: textOnlySimulation || textOnlyCrossBackend || !canUseWorkspaceTools || !roleNeedsWorkspaceTools ? [] : ["apply_patch", "exec_command"],
       environment: {
-        filesystem: textOnlySimulation || textOnlyCrossBackend || !canUseWorkspaceTools ? "none" : { read: true, write: true },
-        process: textOnlySimulation || textOnlyCrossBackend || !canUseWorkspaceTools ? "deny" : "allow",
+        filesystem: textOnlySimulation || textOnlyCrossBackend || !canUseWorkspaceTools || !roleNeedsWorkspaceTools ? "none" : { read: true, write: true },
+        process: textOnlySimulation || textOnlyCrossBackend || !canUseWorkspaceTools || !roleNeedsWorkspaceTools ? "deny" : "allow",
         network: "deny",
         limits: { timeoutMs: role.execution?.timeoutMs ?? modelTimeoutMs, maxOutputBytes: role.execution?.maxOutputBytes ?? 65536 }
       },
@@ -358,6 +382,7 @@ async function writeCaseProject(caseSpec, workdir, prompt, mode, locale = "zh-CN
     outputLength: "short"
   }, null, 2)}\n`);
   await writeFile(join(workdir, "request.md"), prompt);
+  await writeFile(join(workdir, "publish-artifacts.mjs"), PUBLISH_ARTIFACTS_SCRIPT);
   await writeFile(join(workdir, "run-mode.txt"), mode);
 }
 
@@ -369,6 +394,57 @@ function parseJsonTail(output) {
     } catch {}
   }
   throw new Error("OGSystem CLI did not return a JSON run summary.");
+}
+
+async function readJsonIf(path) {
+  try {
+    return JSON.parse(await readFile(path, "utf8"));
+  } catch {
+    return undefined;
+  }
+}
+
+async function listRelativeFiles(root, prefix = "") {
+  const entries = await readdir(join(root, prefix), { withFileTypes: true }).catch(() => []);
+  const files = [];
+  for (const entry of entries) {
+    const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) files.push(...await listRelativeFiles(root, relative));
+    else if (entry.isFile()) files.push(relative);
+  }
+  return files;
+}
+
+async function collectArtifactEvidence(workdir, runId, result) {
+  if (!runId) return undefined;
+  const sharedDir = join(workdir, ".ogs", "runs", runId, "shared");
+  const manifest = await readJsonIf(join(sharedDir, "artifact-manifest.json"));
+  const seal = await readJsonIf(join(sharedDir, "seal-manifest.json"));
+  const verification = await readJsonIf(join(sharedDir, "verification.json"));
+  const files = await listRelativeFiles(join(sharedDir, "artifacts"));
+  const finalOutputs = result?.finalOutputsByRoleId;
+  const publisherOutput = finalOutputs && typeof finalOutputs === "object"
+    ? finalOutputs["document-publisher"]
+    : undefined;
+  // finalOutputsByRoleId is intentionally a business-only projection. The
+  // canonical manifest is the durable source for the opaque artifact identity
+  // used by downstream delivery checks.
+  const manifestArtifactRef = manifest && typeof manifest.artifactId === "string" && typeof manifest.runId === "string"
+    ? {
+        artifactId: manifest.artifactId,
+        runId: manifest.runId,
+        ...(Array.isArray(manifest.files) && typeof manifest.files[0]?.mediaType === "string"
+          ? { mediaType: manifest.files[0].mediaType }
+          : {})
+      }
+    : undefined;
+  return {
+    artifactRef: publisherOutput?.artifactRef ?? manifestArtifactRef,
+    manifest,
+    seal,
+    verification,
+    files
+  };
 }
 
 function runCli(args, options) {
@@ -433,9 +509,13 @@ export async function runCase({ caseId, prompt, mode = "simulation", locale = "z
     if (mode === "simulation") args.push("--dry-run");
     const execution = await runCli(args, { cwd: workdir, timeoutMs: timeoutMs ?? (mode === "model" ? DEFAULT_DEMO_RUN_TIMEOUT_MS : 30000) });
     const result = parseJsonTail(execution.stdout);
+    const runEntries = await readdir(join(workdir, ".ogs", "runs"), { withFileTypes: true }).catch(() => []);
+    const runId = runEntries.find((entry) => entry.isDirectory())?.name;
+    const artifactEvidence = await collectArtifactEvidence(workdir, runId, result);
     return {
       caseId,
       mode,
+      runId,
       status: result.status,
       error: result.error,
       errorEnvelope: result.errorEnvelope,
@@ -455,6 +535,7 @@ export async function runCase({ caseId, prompt, mode = "simulation", locale = "z
         failure: item.error
       })) : [],
       summary: result.runSummary ?? {},
+      artifactEvidence,
       durationMs: Date.now() - start
     };
   } finally {

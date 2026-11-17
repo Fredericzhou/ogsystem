@@ -30,7 +30,9 @@ Version ownership is split explicitly:
 | `SemanticIR.version` | Semantic IR schema version |
 | `BusinessEventProtocol.version` | Shared business event protocol version |
 | `FlowContractFile.version` | Flow Contract file format version |
-| `schemaVersion` | Input, output, or business-state schema version |
+| `RoleContract.schemaVersion` | Role Contract object schema version; current v2 is `2` |
+| `HarnessTemplate.schemaVersion` | Harness Template object schema version; current v2 is `1` |
+| `schemaVersion` on other contract objects | The named input, output, or business-state object schema version |
 | `RuntimeEventEnvelope.schemaVersion` | Runtime evidence event format version |
 | `adapterVersion` | Backend Adapter implementation version |
 
@@ -111,8 +113,9 @@ Evidence / Review Records
 The v2 core does not add Service Agent, Human Agent, Remote Agent, API/Cmd Role, Profile,
 Tool, or `local_shell` objects. Fixed commands must be exposed as verified Backend-native
 capabilities. Capability matrices, Studio tool-directory UX, Backend-specific permission protocol
-variants, full exception-review workflows, timeout and notification policy, and alternate Artifact
-stores are Deferred RFCs. v1 data is not migrated into v2.
+variants, extended exception-review workflows, notification policy, and alternate Artifact stores
+are Deferred RFCs. V2 currently implements only the loop-budget exception Review path; v1 data is
+not migrated into v2.
 
 ### Deferred RFC boundary
 
@@ -454,7 +457,18 @@ type HandoffProjection = {
   contextMap: FieldMapping[];
   artifactMap: ArtifactMapping[];
 };
+
+type ArtifactMapping = {
+  source: { roleId: string; artifactId: string };
+  target: { artifactRef: string };
+  required: boolean;
+};
 ```
+
+`source` identifies the declared Artifact produced by the upstream Role, `target.artifactRef`
+is the downstream reference name exposed in the HandoffProjection, and `required` determines
+whether a missing or unverifiable source blocks the handoff (`true`) or is omitted with an audit
+record (`false`). The mapping never copies file paths or raw workspace data across a Role boundary.
 
 `HandoffProjection` is an in-memory, read-only join of the existing sources. It does not
 create `handoff-contracts.json`, a second compiler, or a second validation source. The unique
@@ -703,7 +717,7 @@ flowchart TB
 | Capability Preview / Readiness | Execution | refresh discovery and readiness checks | verified models, native tool IDs, adapter readiness, preview time and digest |
 | Runtime Policy / Diagnostics | Execution | normally none; technical overrides are edited in Technical Binding | effective tools, staging root, Law, quota, degradation, allow/deny reasons |
 | Adapter / Backend Diagnostics | Execution | normally none | native permission mapping, adapter version, unsupported policy fields, native tool events |
-| Run / Evidence / Review | Evidence | Human Review decision, rework, retry, terminate | tool calls, permission decisions, artifacts, errors, recovery history |
+| Run / Evidence / Review | Evidence | Human Review decision, rework, terminate; automatic retry history | tool calls, permission decisions, artifacts, errors, recovery history |
 
 The normal user workflow is:
 
@@ -906,7 +920,10 @@ preset:
   Optional Backend-owned defaults for native tools, environment intent, and limits.
 
 environment:
-  Optional resource policy intent. It is not a per-tool approval workflow.
+  Optional in Studio authoring input. The authoring layer resolves an omitted value from the
+  selected Backend preset or the conservative default and writes the complete `filesystem`,
+  `process`, and `network` fields. The persisted Contract Set and direct loader input are strict
+  and must contain those fields; this is not a per-tool approval workflow.
 
 Environment resolution precedence:
   explicit Harness `environment` override
@@ -1181,9 +1198,10 @@ Runtime exception:
 ```
 
 Explicit result review actions are business decisions about the Role's durable result and
-declared handoff. Runtime exception review actions are Execution control decisions about
-continuation, retry, declared rework/reject routes, and termination. Budget, pause, timeout, and
-escalation extensions are Deferred RFCs. Both use the same request, action enum,
+declared handoff. V2 exception Review currently covers loop-budget exhaustion and its declared
+continuation, rework, reject, and termination controls. Automatic retry remains an internal
+Runtime policy. Join timeout, Artifact verification failure, notification, and other exception
+Review matrices are Deferred RFCs. Both implemented triggers use the same request, action enum,
 decision payload, and Evidence schema. Neither class approves or rejects an individual Backend
 tool call.
 
@@ -1330,7 +1348,7 @@ Human Review panel
 
 The Human Review panel is shown when an explicit result review or configured Runtime exception
 creates a `HumanReviewRequest`. It displays the scenario-specific subset of the core actions
-`approve`, `continue`, `rework`, `retry`, `reject`, and `terminate`. Native tool Permission
+`approve`, `continue`, `rework`, `reject`, and `terminate`. Native tool Permission
 Decisions remain in the audit timeline and are not presented as user approval tasks.
 
 #### Progressive disclosure rules
@@ -1485,7 +1503,7 @@ The business Role Contract does not contain Backend or tool configuration:
 
 `authority.controlActions` describes the allowed business subset of the canonical
 `HumanReviewAction` enum. It does not declare whether Human Review is required, and it does not
-define Runtime exception actions such as `retry` or budget `continue`. The review requirement has
+define Runtime exception actions such as automatic retry or budget `continue`. The review requirement has
 one source in the Semantic IR or graph definition; `ExecutionPlanNode.review` is only its compiled
 read-only projection.
 
@@ -1906,8 +1924,9 @@ explicit
   The Role produced a durable result and the configured review gate is before handoff.
 
 exception
-  Runtime produced a configured reviewable exception, such as loop budget exhaustion,
-  retry exhaustion, Join timeout, or Artifact verification failure.
+  Runtime produced the currently supported reviewable exception: loop budget exhaustion.
+  Retry exhaustion, Join timeout, Artifact verification failure, and other exception Review
+  triggers remain Deferred RFCs.
 ```
 
 The persisted action set is intentionally small and excludes the internal timeout state:
@@ -1918,11 +1937,10 @@ type HumanReviewAction =
   | "rework"
   | "reject"
   | "continue"
-  | "retry"
   | "terminate";
 
 type BusinessReviewAction = "approve" | "rework" | "reject";
-type ExceptionReviewAction = "continue" | "retry" | "rework" | "reject" | "terminate";
+type ExceptionReviewAction = "continue" | "rework" | "reject" | "terminate";
 ```
 
 For `trigger: "explicit"`, `decision.action` must be a `BusinessReviewAction`. For
@@ -1937,7 +1955,6 @@ approve   Accept the business result and continue the declared handoff.
 continue  Resume the current control scope only within the exception policy and any declared
           loopBudget authorization.
 rework    Route to the declared rework target.
-retry     Repeat the current Role attempt or failed execution.
 reject    Produce the declared business rejection outcome or route.
 terminate End the explicitly resolved `branch` or `run` scope.
 ```
@@ -1973,18 +1990,13 @@ loop_exhausted
   continue is valid only through the declared loopBudget binding and its target/grant constraints
   terminate must resolve to branch or run through the exception policy
 
-retry_exhausted
-  retry is available only when the exception policy provides a valid retry grant or remaining
-  budget; otherwise retry is excluded
-  any remaining action, such as terminate or a declared rework/reject route, comes from the
-  exception policy; terminate must resolve to branch or run
-
 other exception
-  actions declared by that exception's policy; undeclared actions are unavailable, and any
-  terminate action must resolve to branch or run
+  Runtime automatic retry, Join timeout, Artifact verification failure, and other exception
+  Review action matrices are Deferred RFCs. They must not create a V2 exception Review until a
+  versioned policy and action subset are implemented.
 ```
 
-The Flow, Role `authority.controlActions`, exception-specific policy, and compiled Runtime scope
+The Flow, Role `authority.controlActions`, loop-budget binding, and compiled Runtime scope
 must resolve each displayed action to exactly one target. A static ambiguity is a readiness error.
 A runtime ambiguity causes the decision to be rejected and audited; Runtime must not guess a
 branch, retry attempt, budget, or termination scope. `continue` never means arbitrary budget
@@ -2010,12 +2022,46 @@ type HumanReviewRequest = {
     details?: Record<string, unknown>;
   };
   status: "pending" | "resolved" | "cancelled";
+  /** Internal Runtime projection; it is not business input or a second authority. */
+  payload?: RuntimeReviewProjection;
   decision?: HumanReviewDecision;
 };
 
+type RuntimeReviewProjection = {
+  roleId?: string;
+  executionId?: string;
+  requestedAt?: string;
+  requestedByExecutionId?: string;
+  draftResult?: Record<string, unknown>;
+  spec?: Record<string, unknown>;
+  timedOut?: boolean;
+  expiredAt?: string;
+  committedAt?: string;
+};
+
 type HumanReviewDecision =
-  | { action: BusinessReviewAction; actor: string; comment?: string; decidedAt: string }
-  | { action: ExceptionReviewAction; actor: string; comment?: string; decidedAt: string };
+  | {
+      action: BusinessReviewAction;
+      actor: string;
+      comment?: string;
+      decidedAt: string;
+      round: number;
+      lineageId: string;
+      branchId: string;
+      loopIteration: number;
+      stateVersion: number;
+    }
+  | {
+      action: ExceptionReviewAction;
+      actor: string;
+      comment?: string;
+      decidedAt: string;
+      round: number;
+      lineageId: string;
+      branchId: string;
+      loopIteration: number;
+      stateVersion: number;
+    };
 ```
 
 The only core transitions are `pending -> resolved` after a valid decision and
@@ -2026,8 +2072,9 @@ cross-branch decision is rejected and durably audited. An explicit result review
 handoff while the request is `pending`; recovery reopens the same request and does not create a
 second review.
 
-The request identity also locates its context without adding result or evidence payloads to the
-core schema:
+The request identity also locates its context. Runtime stores a bounded `payload` projection beside
+the core binding so it can reconstruct the pending Review and audit state after restart; this
+projection is an internal Runtime record, not a new business contract:
 
 ```text
 reviewId + runId + stateVersion
@@ -2050,30 +2097,26 @@ when that scope enters a new review cycle. `loopIteration` identifies the graph 
 iteration and may advance without creating a review, or remain unchanged across a review decision;
 the two counters must never be substituted for one another.
 
-The following are Deferred RFC fields and policies: `expiresAt`, `timeoutPolicy`, `paused`,
-`requestedAt`, detailed evidence/result references, action-specific payloads such as retry attempt
-or additional budget, escalation/notification rules, and exception matrices beyond the core
-derivation rules above. An exception review may use only `trigger: "exception"` and
-`exceptionContext` until those extensions are approved.
+The following remain Deferred RFC fields and policies: `expiresAt`, detailed evidence/result
+references, escalation/notification rules, action-specific payloads beyond the Runtime projection,
+and exception matrices beyond loop-budget exhaustion. `requestedAt`, timeout metadata, draft
+result, and the compiled review `spec` may appear only under the internal Runtime `payload`.
 
 The compiled review policy is one object for both trigger kinds:
 
 ```ts
 type HumanReviewPolicy = {
   afterRoleResult: boolean;
-  exceptionCodes: string[];
-  // Compiled from each exception's existing Runtime policy; not a separate action registry.
-  exceptionActionsByCode?: Record<string, ExceptionReviewAction[]>;
+  // V2 currently compiles only loop-budget exhaustion into an exception Review.
+  loopBudget?: LoopBudgetReview;
 };
 ```
 
-The review policy has one compiled source in the Semantic IR/Execution Plan. It may declare
-`after_role_result` and configured Runtime exception codes in the same policy. Runtime creates a
-request from that policy; it does not create a second review model for exceptions. Every request
-and decision is bound to `reviewId`, `round`, `lineageId`, `branchId`, and `stateVersion` in the
-core model. `exceptionActionsByCode` is a compiled projection of existing exception policies; it
-does not create a second action registry. The action target is derived using the rules above, so no
-action-specific payload is required in v2 core.
+The review policy has one compiled source in the Semantic IR/Execution Plan. Runtime creates a
+request from the explicit result gate or loop-budget binding; it does not create a second review
+model for exceptions. Every request and decision is bound to `reviewId`, `round`, `lineageId`,
+`branchId`, and `stateVersion` in the core model. Action targets and terminate scope are derived
+from the compiled binding, so callers cannot supply a second authority.
 
 ```mermaid
 flowchart LR
@@ -2266,7 +2309,11 @@ identity, native tool selection, and EnvironmentIntent are stored only in the v2
 binding. Capability discovery may update a read-only Capability Preview, but it never creates a
 second execution configuration or a compatibility file.
 
-Before the v2 release is published:
+The cleanup below is the final Cutover Gate. It runs only after the v2 acceptance matrix, release
+UAT checklist, browser evidence, and required sign-offs are complete; it is not an early P0
+implementation prerequisite.
+
+After the final Cutover Gate:
 
 ```text
 v1 schemas, parsers, runtime branches, and Studio inputs
@@ -2302,8 +2349,8 @@ Contract Set v2. A new v2 project or TeamVersion starts from v2 schemas and v2 H
 5. Remove Supervised/Auto-accept/Full access permission modes and technical Permission Review.
 6. Add `execution-bindings.json` with Harness Template references and materialized tool selections.
 7. Make Harness resolution mandatory for every executable Role and reject missing or stale bindings.
-8. Delete v1 parsers, schemas, fixtures, examples, and Runtime branches before release; do not
-   migrate or import v1 data.
+8. Keep v1 parsers, schemas, fixtures, examples, and Runtime branches isolated until the final
+   Cutover Gate; do not migrate or import v1 data before that gate.
 
 ### P1: Backend capabilities
 
@@ -2311,8 +2358,9 @@ Contract Set v2. A new v2 project or TeamVersion starts from v2 schemas and v2 H
 2. Add Capability Preview and Run Capability Snapshot.
 3. Add EnvironmentPolicyResolver.
 4. Freeze the snapshot and resolved policy per Run.
-5. Generate default Harness Templates with an explicit discovered Backend/Model; keep
-   `allowedTools` empty until a model-specific Capability Preview verifies native tools.
+5. Generate default Harness Templates with an explicit discovered Backend/Model. If Capability
+   Preview is incomplete, do not generate an executable Binding; once Preview verifies native
+   tools, persist the selected `allowedTools` and expose the same preview to Studio, CLI, and Readiness.
 6. Persist Capability Preview per project and expose the same preview to Studio, CLI, and Readiness.
 
 ### P2: Adapter mapping
@@ -2341,6 +2389,13 @@ Contract Set v2. A new v2 project or TeamVersion starts from v2 schemas and v2 H
 4. Add optional advanced `allowedTools` settings.
 5. Display capability degradation and readiness failures.
 
+### Final Cutover Gate
+
+1. Confirm every v2 acceptance and UAT row is `Pass` with final-code evidence and required
+   operator, product-owner, and platform sign-offs.
+2. Remove the isolated v1 parsers, schemas, fixtures, examples, and Runtime branches in one
+   release commit. Do not migrate or import v1 data.
+
 ## 19. Acceptance Criteria
 
 1. Role Contract contains no Backend, native tool, or environment permission fields.
@@ -2361,14 +2416,14 @@ Contract Set v2. A new v2 project or TeamVersion starts from v2 schemas and v2 H
 13. Access outside execution staging always fails.
 14. Permission decisions are only `allow` or `deny`; Backend protocol variants remain Adapter
     implementation details and Deferred RFCs.
-15. Explicit Human Review occurs after a durable Role result and before handoff; exception-triggered
-    Review occurs at the configured Runtime control boundary.
+15. Explicit Human Review occurs after a durable Role result and before handoff; the implemented
+    exception-triggered Review is the loop-budget control boundary.
 16. Recovery reuses the original Run Capability Snapshot and EffectiveEnvironmentPolicy.
 17. Every native tool invocation produces an audit event.
 18. Every Role handoff uses declared event, data, and Artifact mappings.
-19. Active and exception-triggered Human Review use the same request schema and action enum.
+19. Explicit and loop-budget exception Human Review use the same request schema and action enum.
 20. Core Review requests and decisions are bound to `reviewId`, `round`, `lineageId`, `branchId`,
-    and `stateVersion`; action-specific payloads are Deferred RFC extensions.
+    and `stateVersion`; Runtime projection fields live under the declared internal `payload`.
 21. No `noop` execution or three-mode technical permission remains in Contract Set v2.
 22. Legacy fields and v1 data produce schema errors; no migration or compatibility read exists.
 23. Run readiness preflights every `allowedTools` entry before adding it to the in-memory executable set; invocation
@@ -2380,8 +2435,8 @@ Contract Set v2. A new v2 project or TeamVersion starts from v2 schemas and v2 H
 26. An explicit `allowedTools` entry that is missing or unenforceable fails readiness; the
     Backend is not started and the Graph does not advance.
 27. Review action subsets and targets are uniquely derived from the Flow, Role
-    `authority.controlActions`, exception-specific compiled policy, and Runtime scope; ambiguous
-    static targets fail readiness and ambiguous runtime decisions are rejected and audited.
+    `authority.controlActions`, loop-budget binding, and Runtime scope; ambiguous static targets
+    fail readiness and ambiguous runtime decisions are rejected and audited.
 28. A Model Role cannot commit a successful result or advance a handoff until output
     postconditions, acceptance criteria, and declared Artifact verification pass.
 29. Every allowed `terminate` action resolves explicitly to `branch` or `run`; an ambiguous scope
@@ -2390,7 +2445,7 @@ Contract Set v2. A new v2 project or TeamVersion starts from v2 schemas and v2 H
     required artifacts prevent handoff and Graph advancement.
 31. `round` starts at 1 and is distinct from `loopIteration`; both are preserved when required to
     validate Review identity and Runtime scope.
-32. `exceptionActionsByCode` is a read-only compiled projection; users do not maintain it as a
-    separate configuration object.
+32. Loop-budget exception actions and terminate scope are read-only compiled projections; users do
+    not maintain a second exception action registry.
 33. The v2 validation baseline covers semantic scenarios, technical readiness/recovery, verified
     cross-Backend collaboration, and real software and documentation production workflows.

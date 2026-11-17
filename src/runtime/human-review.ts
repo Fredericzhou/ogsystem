@@ -60,7 +60,6 @@ export function isHumanReviewDecisionRecord(
       (value as HumanReviewDecisionRecord).decision === "pause" ||
       (value as HumanReviewDecisionRecord).decision === "terminate" ||
       (value as HumanReviewDecisionRecord).decision === "continue" ||
-      (value as HumanReviewDecisionRecord).decision === "retry" ||
       (value as HumanReviewDecisionRecord).decision === "reject")
   );
 }

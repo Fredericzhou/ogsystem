@@ -72,4 +72,49 @@ rejected[Role:rejected] -->|DONE| end[结束]
   assert.equal(nextBranch?.roleId, "rejected");
   assert.equal(nextBranch?.activatedByEvent, "REJECTED");
   assert.equal(transition.events[0].type, "human_review_rejected");
+
+  assert.throws(
+    () => planHumanReviewDecisionTransition({
+      state,
+      plan,
+      review,
+      decision: {
+        reviewId: review.reviewId,
+        round: review.round,
+        lineageId: review.lineageId,
+        branchId: review.branchId,
+        loopIteration: review.loopIteration,
+        stateVersion: state.stateVersion,
+        committedAt: "2026-11-16T00:01:00.000Z",
+        decidedAt: "2026-11-16T00:01:00.000Z",
+        decision: "terminate",
+        scope: "run"
+      },
+      logger: createRunConsoleLogger(false),
+      rolePackagesByRoleId: new Map([["writer", { manifest: { authority: { controlActions: ["approve", "rework", "reject"] } } }]])
+    }),
+    /GRAPH_REVIEW_TERMINATE_SCOPE_MISMATCH/
+  );
+
+  assert.throws(
+    () => planHumanReviewDecisionTransition({
+      state,
+      plan,
+      review: { ...review, spec: { ...review.spec, terminateScope: undefined } },
+      decision: {
+        reviewId: review.reviewId,
+        round: review.round,
+        lineageId: review.lineageId,
+        branchId: review.branchId,
+        loopIteration: review.loopIteration,
+        stateVersion: state.stateVersion,
+        committedAt: "2026-11-16T00:01:00.000Z",
+        decidedAt: "2026-11-16T00:01:00.000Z",
+        decision: "terminate"
+      },
+      logger: createRunConsoleLogger(false),
+      rolePackagesByRoleId: new Map([["writer", { manifest: { authority: { controlActions: ["approve", "rework", "reject"] } } }]])
+    }),
+    /GRAPH_REVIEW_TERMINATE_SCOPE_UNRESOLVED/
+  );
 });
