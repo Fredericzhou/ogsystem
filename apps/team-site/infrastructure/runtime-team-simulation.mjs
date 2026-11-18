@@ -4,17 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createFilesystemRuntimeServices, runSystemWithAdapter } from "../../../dist/runtime/adapter.js";
 import { exportTeamPackage, loadTeamPackage } from "../../../dist/visualizer/project-projection.js";
-
-const TEAM_RUN_EVENT_TYPES = new Set([
-  "role.started", "role.input_ready", "role_waiting", "role_retry_scheduled", "flow.activated",
-  "agent_event",
-  "join_activated", "join_quorum_reached", "join_late_arrival_ignored",
-  "loop_exhausted",
-  "human_review_requested", "human_review_approved", "human_review_rework_requested",
-  "human_review_rejected", "human_review_decision_rejected",
-  "human_review_paused", "human_review_terminated", "human_review_expired",
-  "run_waiting", "run_stopping", "run_stopped", "run_terminated"
-]);
+import { TEAM_RUN_EVENT_TYPES } from "./runtime-business-event-types.mjs";
 
 function normalizeRuntimeStatus(status) {
   const value = String(status || "").toLowerCase();

@@ -956,6 +956,7 @@ export type JoinScopeState = {
   readySourceRoleIds: string[];
   missingSourceRoleIds: string[];
   sourceStatusByRoleId?: Record<string, "pending" | "arrived" | "skipped" | "failed">;
+  sourceArrivalByRoleId?: Record<string, { branchId: string; arrivedAt: string }>;
   startedAt: string;
   timeoutSeconds: number;
   status: "waiting" | "activated" | "timed_out" | "failed";

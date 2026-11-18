@@ -45,7 +45,7 @@ export const cases = [
         backend: "codex",
         purpose: "Prepare a concise business handoff for the downstream reviewer.",
         events: ["READY"],
-        prompt: "Summarize the requested cross-backend business handoff. State the verified decision, acceptance checks, and whether the downstream reviewer should proceed. Return JSON with event READY and content only; do not expose Harness, tool, permission, or private role configuration."
+        prompt: "Summarize the requested cross-backend business handoff. State the verified decision, acceptance checks, and whether the downstream reviewer should proceed. Create cross-backend-review.md in the execution workspace with that business handoff, and declare the real file in artifacts with kind business_document, mediaType text/markdown, and a safe relative path. Do not claim the file exists unless it was actually written. Return JSON with event READY and content only; do not expose Harness, tool, permission, or private role configuration."
       },
       {
         id: "implementer",
@@ -167,12 +167,12 @@ export const cases = [
       {
         id: "synthesis-consultant", label: { "zh-CN": "方案主顾问", en: "Synthesis consultant" },
         purpose: "Synthesize independent consulting analyses into options and priorities.", events: ["READY"],
-        prompt: "Act as the synthesis consultant. Combine the independent analyses you receive, using at least three specialist views when available. Separate evidence, assumptions, risks, and unresolved questions. Form candidate options, trade-offs, and a recommendation priority without inventing facts. Return exactly one JSON object with event READY and a structured content string."
+        prompt: "Act as the synthesis consultant. Combine the independent analyses you receive, using at least three specialist views when available. The Runtime quorum is an arrival gate, not a vote: three arrived specialist outputs satisfy 3/4 quorum, but arrival does not mean approval. Never call arrived sources missing, count them as votes, or claim 0/4 when their analyses are in your input. Separate evidence, assumptions, risks, and unresolved questions. Form candidate options, trade-offs, and a recommendation priority without inventing facts. Return exactly one JSON object with event READY and a structured content string."
       },
       {
         id: "quality-reviewer", label: { "zh-CN": "质量复核顾问", en: "Quality reviewer" },
         purpose: "Check evidence, assumptions, risks, and recommendations for consistency.", events: ["READY"],
-        prompt: "Act as the quality reviewer. Check the synthesis for unsupported claims, missing evidence, inconsistent assumptions, unbounded risks, and recommendations that do not follow from the analysis. State corrections and a clear pass or revise view. Return exactly one JSON object with event READY and a structured content string."
+        prompt: "Act as the quality reviewer. Check the synthesis for unsupported claims, missing evidence, inconsistent assumptions, unbounded risks, and recommendations that do not follow from the analysis. Keep Runtime join arrival quorum separate from business approval: a satisfied 3/4 arrival gate means three specialist views arrived, not that three sources voted to approve. Do not change an achieved arrival count to 0/4 or treat missing votes as a failed Runtime quorum. State corrections and a clear pass or revise view. Return exactly one JSON object with event READY and a structured content string."
       },
       {
         id: "executive-brief", label: { "zh-CN": "高管简报顾问", en: "Executive brief consultant" },
@@ -272,7 +272,7 @@ export const cases = [
       {
         id: "delivery-lead", label: { "zh-CN": "交付负责人", en: "Delivery lead" },
         purpose: "Integrate engineering, experience, and quality plans into one delivery proposal.", events: ["READY"],
-        prompt: "Integrate the three supplied workstream plans into a concise delivery proposal. Identify dependencies, sequencing, open questions, and a definition of done. Do not invent implementation results. Set content to a JSON object with keys summary, implementationSlices, dependencies, acceptanceChecks, risks, and openQuestions. Return valid JSON with event READY and that JSON object serialized as the content string. Do not wrap the content in Markdown."
+        prompt: "Integrate the three supplied workstream plans into a concise delivery proposal. Identify dependencies, sequencing, open questions, and a definition of done. Do not invent implementation results. Set content to a JSON object with keys summary, implementationSlices, dependencies, acceptanceChecks, risks, and openQuestions. When write-capable staging is available, create software-delivery-plan.md in the execution workspace containing that proposal and declare it in artifacts with kind business_document, mediaType text/markdown, and a safe relative path. Never claim the file exists unless it was actually written. Return valid JSON with event READY and the content object serialized as a string. Do not wrap the content in Markdown."
       }
     ],
     flows: [

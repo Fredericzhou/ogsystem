@@ -18,6 +18,37 @@ export type TimelineProjectionRecord = {
   status?: string;
   durationMs?: number;
   errorCode?: string;
+  edgeId?: string;
+  fromRoleId?: string;
+  toRoleId?: string;
+  eventType?: string;
+  selectedEntryRoleIds?: string[];
+  candidateRoleIds?: string[];
+  candidates?: Array<{ flowId: string; priority: number; matched?: boolean }>;
+  selectedFlowId?: string;
+  targetRoleId?: string;
+  joinId?: string;
+  joinMode?: string;
+  joinMin?: number;
+  joinSources?: string[];
+  requiredSourceCount?: number;
+  satisfiedSources?: string[];
+  sourceSnapshot?: Array<{
+    roleId: string;
+    status: "pending" | "arrived" | "skipped" | "failed";
+    branchId?: string;
+    arrivedAt?: string;
+  }>;
+  arrivedFromRoleId?: string;
+  arrivedFromBranchId?: string;
+  activatedBranchId?: string;
+  reason?: string;
+  decision?: string;
+  action?: string;
+  loopId?: string;
+  maxRounds?: number;
+  onExhausted?: string;
+  additionalBudget?: number;
   channel: "main" | "error" | "loop" | "join" | "feedback";
 };
 
@@ -284,6 +315,39 @@ function extractErrorCode(event: Record<string, unknown>): string | undefined {
   return asString((errorEnvelope as Record<string, unknown>).errorCode);
 }
 
+function stringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const values = value.filter((item): item is string => typeof item === "string");
+  return values.length === value.length ? values : undefined;
+}
+
+function routeCandidates(value: unknown): TimelineProjectionRecord["candidates"] {
+  if (!Array.isArray(value)) return undefined;
+  const candidates = value.flatMap((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+    const candidate = item as Record<string, unknown>;
+    if (typeof candidate.flowId !== "string" || typeof candidate.priority !== "number") return [];
+    return [{ flowId: candidate.flowId, priority: candidate.priority, ...(typeof candidate.matched === "boolean" ? { matched: candidate.matched } : {}) }];
+  });
+  return candidates.length === value.length ? candidates : undefined;
+}
+
+function joinSourceSnapshot(value: unknown): TimelineProjectionRecord["sourceSnapshot"] {
+  if (!Array.isArray(value)) return undefined;
+  const sources = value.flatMap((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+    const source = item as Record<string, unknown>;
+    if (typeof source.roleId !== "string" || !["pending", "arrived", "skipped", "failed"].includes(String(source.status))) return [];
+    return [{
+      roleId: source.roleId,
+      status: source.status as "pending" | "arrived" | "skipped" | "failed",
+      ...(typeof source.branchId === "string" ? { branchId: source.branchId } : {}),
+      ...(typeof source.arrivedAt === "string" ? { arrivedAt: source.arrivedAt } : {})
+    }];
+  });
+  return sources.length === value.length ? sources : undefined;
+}
+
 export function projectTimelineRecord(args: {
   cursor: number;
   event: Record<string, unknown>;
@@ -307,6 +371,32 @@ export function projectTimelineRecord(args: {
     status: asString(args.event.status),
     durationMs: asNumber(args.event.durationMs),
     errorCode: extractErrorCode(args.event),
+    ...(asString(args.event.edgeId) ? { edgeId: asString(args.event.edgeId) } : {}),
+    ...(asString(args.event.fromRoleId) ? { fromRoleId: asString(args.event.fromRoleId) } : {}),
+    ...(asString(args.event.toRoleId) ? { toRoleId: asString(args.event.toRoleId) } : {}),
+    ...(asString(args.event.eventType) ? { eventType: asString(args.event.eventType) } : {}),
+    ...(stringArray(args.event.selectedEntryRoleIds) ? { selectedEntryRoleIds: stringArray(args.event.selectedEntryRoleIds) } : {}),
+    ...(stringArray(args.event.candidates) ? { candidateRoleIds: stringArray(args.event.candidates) } : {}),
+    ...(routeCandidates(args.event.candidates) ? { candidates: routeCandidates(args.event.candidates) } : {}),
+    ...(asString(args.event.selectedFlowId) ? { selectedFlowId: asString(args.event.selectedFlowId) } : {}),
+    ...(asString(args.event.targetRoleId) ? { targetRoleId: asString(args.event.targetRoleId) } : {}),
+    ...(asString(args.event.joinId) ? { joinId: asString(args.event.joinId) } : {}),
+    ...(asString(args.event.joinMode) ? { joinMode: asString(args.event.joinMode) } : {}),
+    ...(asNumber(args.event.joinMin) !== undefined ? { joinMin: asNumber(args.event.joinMin) } : {}),
+    ...(stringArray(args.event.joinSources) ? { joinSources: stringArray(args.event.joinSources) } : {}),
+    ...(asNumber(args.event.requiredSourceCount) !== undefined ? { requiredSourceCount: asNumber(args.event.requiredSourceCount) } : {}),
+    ...(stringArray(args.event.satisfiedSources) ? { satisfiedSources: stringArray(args.event.satisfiedSources) } : {}),
+    ...(joinSourceSnapshot(args.event.sourceSnapshot) ? { sourceSnapshot: joinSourceSnapshot(args.event.sourceSnapshot) } : {}),
+    ...(asString(args.event.arrivedFromRoleId) ? { arrivedFromRoleId: asString(args.event.arrivedFromRoleId) } : {}),
+    ...(asString(args.event.arrivedFromBranchId) ? { arrivedFromBranchId: asString(args.event.arrivedFromBranchId) } : {}),
+    ...(asString(args.event.activatedBranchId) ? { activatedBranchId: asString(args.event.activatedBranchId) } : {}),
+    ...(asString(args.event.reason) ? { reason: asString(args.event.reason) } : {}),
+    ...(asString(args.event.decision) ? { decision: asString(args.event.decision) } : {}),
+    ...(asString(args.event.action) ? { action: asString(args.event.action) } : {}),
+    ...(asString(args.event.loopId) ? { loopId: asString(args.event.loopId) } : {}),
+    ...(asNumber(args.event.maxRounds) !== undefined ? { maxRounds: asNumber(args.event.maxRounds) } : {}),
+    ...(asString(args.event.onExhausted) ? { onExhausted: asString(args.event.onExhausted) } : {}),
+    ...(asNumber(args.event.additionalBudget) !== undefined ? { additionalBudget: asNumber(args.event.additionalBudget) } : {}),
     channel: timelineChannelForEvent(args.event)
   };
 }

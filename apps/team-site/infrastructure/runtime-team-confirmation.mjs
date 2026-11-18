@@ -2,7 +2,6 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { computeProjectAssetDigest } from "../../../dist/runtime/project-asset-digest.js";
-import { createExecutionPlan } from "../../../dist/runtime/execution-plan.js";
 import { parseSystemFromMermaidSource } from "../../../dist/runtime/parse-mermaid.js";
 import { validateLinearProjectTopology } from "../../../dist/runtime/project-run.js";
 import { exportTeamPackage } from "../../../dist/visualizer/project-projection.js";
@@ -11,7 +10,34 @@ import { computeTeamPackageCoreDigest, TEAM_CORE_DIGEST_VERSION } from "./packag
 export function createRuntimeTeamConfirmation() {
   async function loadExecutionPlan(project) {
     const systemSource = await readFile(join(project.workdir, "system.mmd"), "utf8");
-    return createExecutionPlan(parseSystemFromMermaidSource(systemSource));
+    const system = parseSystemFromMermaidSource(systemSource);
+    // Release confirmation only needs the graph topology. Building a runtime
+    // execution plan here would require resolved Harness model bindings again,
+    // even though the actual Runtime path validates those bindings at run time.
+    const nodesByRoleId = new Map(system.roleIds.map((roleId) => {
+      const incoming = system.flows.filter((flow) => flow.toRoleId === roleId);
+      const outgoing = system.flows.filter((flow) => flow.fromRoleId === roleId);
+      return [roleId, {
+        roleId,
+        incoming,
+        outgoing,
+        dispatchMode: system.graph?.routingModeByRoleId?.[roleId],
+        join: system.graph?.joinModeByRoleId?.[roleId]
+          ? {
+              mode: system.graph.joinModeByRoleId[roleId],
+              sources: system.graph.joinSourcesByRoleId?.[roleId] || [],
+              min: system.graph.joinMinByRoleId?.[roleId]
+            }
+          : undefined,
+        loopMax: system.graph?.loopMaxByRoleId?.[roleId],
+        review: system.graph?.reviewByRoleId?.[roleId]
+      }];
+    }));
+    return {
+      entryRoleIds: system.entryRoleIds,
+      endJoin: system.endJoin,
+      nodesByRoleId
+    };
   }
 
   async function computeTopologyDigest(project) {

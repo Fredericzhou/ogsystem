@@ -6,6 +6,7 @@ import { loadRunEventsSnapshot } from "../../../dist/visualizer/run-query-servic
 import { readProjectRunOwner } from "./project-run-evidence-paths.mjs";
 import { assertSafeEvidencePath } from "./safe-evidence-path.mjs";
 import { projectOgsDir } from "./project-paths.mjs";
+import { isRuntimeBusinessEvent } from "./runtime-business-event-types.mjs";
 
 function assertSafeId(value, field, pattern) {
   if (!pattern.test(String(value || ""))) throw new Error(`${field} is invalid.`);
@@ -84,7 +85,32 @@ export function createFileRunQueryStore({ projectsRoot }) {
           if (error?.code !== "ENOENT") throw error;
         }
       }
-      return loadRunEventsSnapshot({ ...options, workdir: controlRoot, runId });
+      const requestedLimit = Number.isFinite(options.limit) ? Math.min(1000, Math.max(1, Math.floor(options.limit))) : 200;
+      let cursor = Number.isFinite(options.cursor) ? Math.max(0, Math.floor(options.cursor)) : 0;
+      const events = [];
+      let nextCursor = cursor;
+      do {
+        const snapshot = await loadRunEventsSnapshot({
+          ...options,
+          cursor,
+          limit: 1000,
+          workdir: controlRoot,
+          runId
+        });
+        for (const entry of snapshot.events || []) {
+          if (isRuntimeBusinessEvent(entry.record)) events.push(entry);
+          if (events.length >= requestedLimit) break;
+        }
+        const batch = snapshot.events || [];
+        const lastReadCursor = batch.length ? batch[batch.length - 1].cursor : cursor;
+        nextCursor = events.length >= requestedLimit
+          ? (events[events.length - 1]?.cursor ?? lastReadCursor) + 1
+          : snapshot.nextCursor;
+        if (events.length >= requestedLimit || !batch.length || lastReadCursor < cursor) break;
+        if (lastReadCursor + 1 >= snapshot.nextCursor) break;
+        cursor = lastReadCursor + 1;
+      } while (true);
+      return { events: events.slice(0, requestedLimit), nextCursor };
     }
   });
 }

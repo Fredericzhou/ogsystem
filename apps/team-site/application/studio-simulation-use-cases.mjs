@@ -271,15 +271,22 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
       : outputs.length === 1 && typeof outputs[0]?.content === "string"
         ? (() => { try { return JSON.parse(outputs[0].content); } catch { return undefined; } })()
         : undefined;
-    if (!parsed) throw new Error("TEAM_RELEASE_BASELINE_OUTPUT_EMPTY: Sandbox returned no structured output.");
+    // Built-in smoke baselines only require a completed business result. A
+    // role may legitimately return that result as plain text content, so keep
+    // the minimal object contract without forcing every role to serialize JSON
+    // inside its content field.
+    const baselineOutput = parsed || (outputs.length === 1 && typeof outputs[0]?.content === "string"
+      ? { content: outputs[0].content }
+      : undefined);
+    if (!baselineOutput) throw new Error("TEAM_RELEASE_BASELINE_OUTPUT_EMPTY: Sandbox returned no structured output.");
     const badRole = audit.find((item) => item?.status !== "completed" || item?.noop === true || item?.failure || item?.error);
     if (badRole) throw new Error(`TEAM_RELEASE_BASELINE_ROLE_FAILED: ${badRole.roleId || "unknown"} did not complete.`);
     const completed = new Set(audit.filter((item) => item?.status === "completed").map((item) => String(item.roleId || "")));
     const missing = scenario.expectedRoleIds.filter((roleId) => !completed.has(roleId));
     if (missing.length) throw new Error(`TEAM_RELEASE_BASELINE_ROLE_MISSING: ${missing.join(", ")}`);
     const ajv = new Ajv({ allErrors: true, strict: false });
-    if (!ajv.validate(scenario.outputSchema, parsed)) throw new Error(`TEAM_RELEASE_BASELINE_SCHEMA_FAILED: ${ajv.errorsText(ajv.errors, { separator: "; " })}`);
-    return parsed;
+    if (!ajv.validate(scenario.outputSchema, baselineOutput)) throw new Error(`TEAM_RELEASE_BASELINE_SCHEMA_FAILED: ${ajv.errorsText(ajv.errors, { separator: "; " })}`);
+    return baselineOutput;
   }
 
   return Object.freeze({

@@ -46,6 +46,7 @@ import type {
   GraphState,
   GraphStateUpdate,
   HandledFailureArtifactData,
+  JoinScopeState,
   HumanReviewDecision,
   HumanReviewDecisionRecord,
   LoopBudgetReview,
@@ -70,6 +71,12 @@ type JoinTransitionEvent = {
   joinSources: string[];
   requiredSourceCount: number;
   satisfiedSources: string[];
+  sourceSnapshot?: Array<{
+    roleId: string;
+    status: "pending" | "arrived" | "skipped" | "failed";
+    branchId?: string;
+    arrivedAt?: string;
+  }>;
   arrivedFromRoleId: string;
   arrivedFromBranchId: string;
   activatedBranchId?: string;
@@ -1976,6 +1983,7 @@ function buildJoinSourceOutcomeUpdates(args: {
 function mergeJoinScopeOutcomeUpdates(args: {
   state: GraphState;
   updates: NonNullable<GraphState["joinSourceOutcomesByScope"]>;
+  sourceArrival?: { roleId: string; branchId: string; arrivedAt: string };
 }): NonNullable<GraphState["joinScopes"]> {
   const updates: NonNullable<GraphState["joinScopes"]> = {};
   for (const [scopeKey, outcomes] of Object.entries(args.updates)) {
@@ -1985,15 +1993,42 @@ function mergeJoinScopeOutcomeUpdates(args: {
     for (const [roleId, status] of Object.entries(outcomes)) {
       sourceStatusByRoleId[roleId] = mergeJoinSourceStatus(sourceStatusByRoleId[roleId], status);
     }
+    const sourceArrivalByRoleId = { ...(scope.sourceArrivalByRoleId ?? {}) };
+    if (args.sourceArrival && outcomes[args.sourceArrival.roleId] === "arrived" && !sourceArrivalByRoleId[args.sourceArrival.roleId]) {
+      sourceArrivalByRoleId[args.sourceArrival.roleId] = {
+        branchId: args.sourceArrival.branchId,
+        arrivedAt: args.sourceArrival.arrivedAt
+      };
+    }
     const readySourceRoleIds = scope.expectedSourceRoleIds.filter((roleId) => sourceStatusByRoleId[roleId] === "arrived");
     updates[scopeKey] = {
       ...scope,
       sourceStatusByRoleId,
+      sourceArrivalByRoleId,
       readySourceRoleIds,
       missingSourceRoleIds: scope.expectedSourceRoleIds.filter((roleId) => sourceStatusByRoleId[roleId] !== "arrived")
     };
   }
   return updates;
+}
+
+function buildJoinSourceSnapshot(args: {
+  node: ExecutionPlanNode;
+  readiness: ReturnType<typeof evaluateJoinNodeReadiness>;
+  sourceArrivalByRoleId?: NonNullable<JoinScopeState["sourceArrivalByRoleId"]>;
+  currentRoleId: string;
+  currentBranchId: string;
+  currentArrivalAt: string;
+}): NonNullable<JoinTransitionEvent["sourceSnapshot"]> {
+  return args.node.joinSources.map((roleId) => {
+    const arrival = args.sourceArrivalByRoleId?.[roleId]
+      ?? (roleId === args.currentRoleId ? { branchId: args.currentBranchId, arrivedAt: args.currentArrivalAt } : undefined);
+    return {
+      roleId,
+      status: args.readiness.sourceStatusByRoleId[roleId] ?? "pending",
+      ...(arrival ? { branchId: arrival.branchId, arrivedAt: arrival.arrivedAt } : {})
+    };
+  });
 }
 
 function buildArtifactAllowedIdsForActivation(args: {
@@ -2075,7 +2110,12 @@ function buildRoutedTransitionPlan(args: {
     loopIteration: args.currentBranch.loopIteration,
     candidateTargets: args.candidateTargets
   });
-  Object.assign(joinScopeUpdates, mergeJoinScopeOutcomeUpdates({ state: args.state, updates: joinSourceOutcomeUpdates }));
+  const sourceArrivalAt = new Date().toISOString();
+  Object.assign(joinScopeUpdates, mergeJoinScopeOutcomeUpdates({
+    state: args.state,
+    updates: joinSourceOutcomeUpdates,
+    sourceArrival: { roleId: args.roleId, branchId: args.currentBranch.branchId, arrivedAt: sourceArrivalAt }
+  }));
   let nextBranchSequence = args.state.nextBranchSequence;
   let finalStatus: GraphRunStatus = "running";
   let finalError = "";
@@ -2246,6 +2286,12 @@ function buildRoutedTransitionPlan(args: {
           expectedSourceRoleIds: targetNode.joinSources,
           readySourceRoleIds: readiness.completedSourceRoleIds, missingSourceRoleIds: readiness.missingSourceRoleIds,
           sourceStatusByRoleId: readiness.sourceStatusByRoleId,
+          sourceArrivalByRoleId: {
+            ...(existingScope?.sourceArrivalByRoleId ?? {}),
+            ...(readiness.completedSourceRoleIds.includes(args.roleId)
+              ? { [args.roleId]: { branchId: args.currentBranch.branchId, arrivedAt: sourceArrivalAt } }
+              : {})
+          },
           startedAt: existingScope?.startedAt ?? now, timeoutSeconds: joinSpec?.timeoutSeconds ?? 3600,
           status: "waiting", timeoutAction: joinSpec?.onTimeout, failurePolicy: joinSpec?.failurePolicy
         };
@@ -2324,10 +2370,16 @@ function buildRoutedTransitionPlan(args: {
       const existingScope = args.state.joinScopes?.[scopeKey];
       if (existingScope) {
         joinScopeUpdates[scopeKey] = {
-          ...existingScope,
+          ...(joinScopeUpdates[scopeKey] ?? existingScope),
           readySourceRoleIds: readiness.completedSourceRoleIds,
           missingSourceRoleIds: readiness.missingSourceRoleIds,
           sourceStatusByRoleId: readiness.sourceStatusByRoleId,
+          sourceArrivalByRoleId: {
+            ...(joinScopeUpdates[scopeKey]?.sourceArrivalByRoleId ?? existingScope?.sourceArrivalByRoleId ?? {}),
+            ...(readiness.completedSourceRoleIds.includes(args.roleId) && !existingScope?.sourceArrivalByRoleId?.[args.roleId]
+              ? { [args.roleId]: { branchId: args.currentBranch.branchId, arrivedAt: sourceArrivalAt } }
+              : {})
+          },
           status: "activated",
           completedAt: new Date().toISOString()
         };
@@ -2346,6 +2398,14 @@ function buildRoutedTransitionPlan(args: {
           joinSources: targetNode.joinSources,
           requiredSourceCount: readiness.requiredSourceCount,
           satisfiedSources: readiness.completedSourceRoleIds,
+          sourceSnapshot: buildJoinSourceSnapshot({
+            node: targetNode,
+            readiness,
+            sourceArrivalByRoleId: joinScopeUpdates[scopeKey]?.sourceArrivalByRoleId ?? existingScope?.sourceArrivalByRoleId,
+            currentRoleId: args.roleId,
+            currentBranchId: args.currentBranch.branchId,
+            currentArrivalAt: sourceArrivalAt
+          }),
           arrivedFromRoleId: args.roleId,
           arrivedFromBranchId: args.currentBranch.branchId,
           activatedBranchId: branch.branchId
@@ -2363,6 +2423,14 @@ function buildRoutedTransitionPlan(args: {
         joinSources: targetNode.joinSources,
         requiredSourceCount: readiness.requiredSourceCount,
         satisfiedSources: readiness.completedSourceRoleIds,
+        sourceSnapshot: buildJoinSourceSnapshot({
+          node: targetNode,
+          readiness,
+          sourceArrivalByRoleId: joinScopeUpdates[scopeKey]?.sourceArrivalByRoleId ?? existingScope?.sourceArrivalByRoleId,
+          currentRoleId: args.roleId,
+          currentBranchId: args.currentBranch.branchId,
+          currentArrivalAt: sourceArrivalAt
+        }),
         arrivedFromRoleId: args.roleId,
         arrivedFromBranchId: args.currentBranch.branchId,
         activatedBranchId: branch.branchId

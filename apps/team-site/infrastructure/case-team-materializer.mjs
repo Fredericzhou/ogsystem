@@ -9,9 +9,16 @@ export const caseTeamMaterializer = Object.freeze({
     const caseSpec = getCase(caseId);
     if (!caseSpec) return false;
     const expected = buildCaseSystem(caseSpec);
+    const artifactPublisherRoleId = {
+      "cross-backend-review-loop": "planner",
+      "management-consulting": "document-publisher",
+      "software-team": "delivery-lead",
+      "structured-debate": "document-publisher"
+    }[caseSpec.id];
     try {
       if ((await readFile(join(workdir, "system.mmd"), "utf8")) !== expected) return false;
       const bindings = JSON.parse(await readFile(join(workdir, ".ogs", "execution-bindings.json"), "utf8"));
+      const runtime = JSON.parse(await readFile(join(workdir, ".ogs", "runtime.json"), "utf8"));
       const authoring = JSON.parse(await readFile(join(workdir, ".ogs", "studio", "system.authoring.json"), "utf8"));
       const roleFiles = await Promise.all(caseSpec.roles.map(async (role) => {
         try { return JSON.parse(await readFile(join(workdir, "team-roles", "roles", role.id, "role.json"), "utf8")); }
@@ -26,6 +33,10 @@ export const caseTeamMaterializer = Object.freeze({
       ]);
       return authoring?.ogsContractVersion === 2
         && authoring?.version === 2
+        && runtime?.configVersion === "2"
+        && runtime?.roleRepo === "team-roles"
+        && runtime?.runsDir === ".ogs/runs"
+        && !Object.hasOwn(runtime, "runtime")
         && roleEntries.filter((entry) => entry.isDirectory()).every((entry) => expectedRoleIds.has(entry.name))
         && roleEntries.filter((entry) => entry.isDirectory()).length === expectedRoleIds.size
         && roleFiles.every((manifest) => manifest?.ogsContractVersion === 2 && manifest?.schemaVersion === 2 && !manifest?.contractVersion && !manifest?.outputs?.events)
@@ -45,9 +56,9 @@ export const caseTeamMaterializer = Object.freeze({
           try {
             const schema = JSON.parse(await readFile(join(workdir, "team-roles", "roles", role.id, "output.schema.json"), "utf8"));
             const prompt = await readFile(join(workdir, "team-roles", "roles", role.id, "prompt.md"), "utf8");
-            const schemaReady = role.id !== "document-publisher" || Object.hasOwn(schema?.properties || {}, "artifacts");
-            const promptReady = role.id === "document-publisher"
-              ? prompt.includes("write-capable staging")
+            const schemaReady = role.id !== artifactPublisherRoleId || Object.hasOwn(schema?.properties || {}, "artifacts");
+            const promptReady = role.id === artifactPublisherRoleId
+              ? prompt.includes("available native file-writing tool")
               : prompt.includes("does not publish files");
             return schemaReady && promptReady;
           } catch {

@@ -232,6 +232,12 @@ export async function materializeCaseTeam(caseId, workdir, locale = "zh-CN") {
 
 async function writeCaseProject(caseSpec, workdir, prompt, mode, locale = "zh-CN") {
   const rolesRoot = join(workdir, "team-roles", "roles");
+  const artifactPublisherRoleId = {
+    "cross-backend-review-loop": "planner",
+    "management-consulting": "document-publisher",
+    "software-team": "delivery-lead",
+    "structured-debate": "document-publisher"
+  }[caseSpec.id];
   // Team Site templates are V2 model roles. Legacy profile/tool assets are
   // intentionally not materialized; business artifacts belong to the Role
   // output contract and Evidence, not an executable V1 profile.
@@ -247,32 +253,33 @@ async function writeCaseProject(caseSpec, workdir, prompt, mode, locale = "zh-CN
     await mkdir(roleDir, { recursive: true });
     await writeFile(join(roleDir, "role.json"), `${JSON.stringify(roleManifest(role), null, 2)}\n`);
     await writeFile(join(roleDir, "agent.md"), role.prompt);
-    const artifactProperties = role.id === "document-publisher" ? {
+    const publishesArtifact = role.id === artifactPublisherRoleId;
+    const artifactProperties = publishesArtifact ? {
       artifacts: {
         type: "array",
         items: {
           type: "object",
-          required: ["artifactId", "kind", "path", "mediaType"],
+          required: ["artifactId", "kind", "path", "mediaType", "encoding", "entrypoint", "publishTarget"],
           properties: {
             artifactId: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
             kind: { enum: ["text", "source", "business_document", "business_data", "technical_artifact"] },
             path: { type: "string", pattern: "^(?![./])(?!.*(?:^|/)[.][.]?(?:/|$))(?!.*(?:^|/)[.][^/]*)(?!.*\\\\).+$" },
             mediaType: { type: "string", minLength: 1 },
             encoding: { enum: ["utf-8", "binary"] },
-            entrypoint: { type: "string" },
-            publishTarget: { type: "string", minLength: 1, maxLength: 256 }
+            entrypoint: { type: ["string", "null"] },
+            publishTarget: { type: ["string", "null"], minLength: 1, maxLength: 256 }
           },
           additionalProperties: false
         }
       }
     } : {};
-    const artifactInstruction = role.id === "document-publisher"
-      ? `- When the Harness exposes write-capable staging, use exactly the native exec_command/process tool (do not use apply_patch or edit) to execute node "$OGSYSTEM_TARGET_DIR/publish-artifacts.mjs" ${caseSpec.id === "management-consulting" ? "consulting" : "debate"} before returning. Declare every generated deliverable in artifacts.`
+    const artifactInstruction = publishesArtifact
+      ? "- Create the requested final document in the execution workspace with the available native file-writing tool. Its contents must reflect your completed business result. Declare the real file in artifacts with kind business_document, mediaType text/markdown, and a safe relative path. Do not claim a file was created unless it exists."
       : "- This Role does not publish files. Do not create files or declare artifacts, even when the user task mentions document delivery; return only this Role's business result in content.";
     await writeFile(join(roleDir, "prompt.md"), `{{agent}}\n\nAllowed events:\n{{allowed_events}}\n\nUser preferences:\n{{user_preferences}}\n\nTask:\n{{task}}\n\nInput:\n{{input}}\n\nOutput requirements:\n- Return exactly one schema-compliant JSON object and no Markdown.\n- event must be one of allowed_events.\n- Put the useful role result in content.\n${artifactInstruction}\n`);
     await writeFile(join(roleDir, "output.schema.json"), `${JSON.stringify({
       type: "object",
-      required: ["event", "content"],
+      required: publishesArtifact ? ["event", "content", "artifacts"] : ["event", "content"],
       properties: {
         event: { type: "string", enum: role.events },
         content: { type: "string", minLength: 1 },
@@ -339,12 +346,11 @@ async function writeCaseProject(caseSpec, workdir, prompt, mode, locale = "zh-CN
   // tools or request resources that the selected adapter has not discovered.
   // The real model run below materializes the requested tools separately.
   const textOnlySimulation = mode === "simulation";
-  const textOnlyCrossBackend = caseSpec.id === "cross-backend-review-loop";
   for (const role of caseSpec.roles) {
     const resolved = resolveCaseRoleModel(caseSpec, role, process.env);
     const adapterResources = defaultBackendRegistry.getAdapter(resolved.backend)?.getResourceCapabilities?.() || {};
     const canUseWorkspaceTools = adapterResources.filesystem === true && adapterResources.process === true;
-    const roleNeedsWorkspaceTools = role.id === "document-publisher";
+    const roleNeedsWorkspaceTools = role.id === artifactPublisherRoleId;
     const templateId = `harness.site.${caseSpec.id}.${role.id}`;
     harnessTemplates[templateId] = {
       ogsContractVersion: 2,
@@ -355,10 +361,10 @@ async function writeCaseProject(caseSpec, workdir, prompt, mode, locale = "zh-CN
       model: resolved.modelId,
       // Cross-backend evidence validates business handoff and adapter identity;
       // it does not claim filesystem/process capabilities for OpenCode.
-      allowedTools: textOnlySimulation || textOnlyCrossBackend || !canUseWorkspaceTools || !roleNeedsWorkspaceTools ? [] : ["apply_patch", "exec_command"],
+      allowedTools: textOnlySimulation || !canUseWorkspaceTools || !roleNeedsWorkspaceTools ? [] : ["apply_patch", "exec_command"],
       environment: {
-        filesystem: textOnlySimulation || textOnlyCrossBackend || !canUseWorkspaceTools || !roleNeedsWorkspaceTools ? "none" : { read: true, write: true },
-        process: textOnlySimulation || textOnlyCrossBackend || !canUseWorkspaceTools || !roleNeedsWorkspaceTools ? "deny" : "allow",
+        filesystem: textOnlySimulation || !canUseWorkspaceTools || !roleNeedsWorkspaceTools ? "none" : { read: true, write: true },
+        process: textOnlySimulation || !canUseWorkspaceTools || !roleNeedsWorkspaceTools ? "deny" : "allow",
         network: "deny",
         limits: { timeoutMs: role.execution?.timeoutMs ?? modelTimeoutMs, maxOutputBytes: role.execution?.maxOutputBytes ?? 65536 }
       },
@@ -381,7 +387,6 @@ async function writeCaseProject(caseSpec, workdir, prompt, mode, locale = "zh-CN
     outputLength: "short"
   }, null, 2)}\n`);
   await writeFile(join(workdir, "request.md"), prompt);
-  await writeFile(join(workdir, "publish-artifacts.mjs"), PUBLISH_ARTIFACTS_SCRIPT);
   await writeFile(join(workdir, "run-mode.txt"), mode);
 }
 

@@ -1617,6 +1617,65 @@ function studioSimulationEventTime(event) {
   return parts.join(" · ");
 }
 
+function studioRuntimeEventLabel(type) {
+  const labels = state.locale === "en"
+    ? { "flow.activated": "Flow activated", route_decision: "Branch decision", start_dispatch_selected: "Entry decision", join_quorum_reached: "Quorum reached", join_activated: "Join activated", join_late_arrival_ignored: "Late arrival", loop_budget_decision: "Loop budget decision", loop_exhausted: "Loop ended", failure_handled: "Failure routed", "role.started": "Role started", role_waiting: "Role waiting", role_retry_scheduled: "Role retry", result_committed: "Result committed", run_waiting: "Run waiting", run_stopping: "Run stopping", run_stopped: "Run stopped", run_terminated: "Run terminated", join_timed_out: "Join timed out", join_source_outcome_rejected: "Join source rejected", human_review_requested: "Review requested", human_review_approved: "Review approved", human_review_rework_requested: "Review returned", human_review_rejected: "Review rejected", human_review_decision_rejected: "Review decision rejected", human_review_paused: "Review paused", human_review_terminated: "Review terminated", human_review_expired: "Review expired" }
+    : { "flow.activated": "流转已激活", route_decision: "分支决策", start_dispatch_selected: "入口决策", join_quorum_reached: "已达到聚合门槛", join_activated: "聚合已激活", join_late_arrival_ignored: "迟到来源", loop_budget_decision: "循环预算决策", loop_exhausted: "循环结束", failure_handled: "失败已分流", "role.started": "角色已启动", role_waiting: "角色等待中", role_retry_scheduled: "角色将重试", result_committed: "结果已提交", run_waiting: "运行等待中", run_stopping: "运行正在停止", run_stopped: "运行已停止", run_terminated: "运行已终止", join_timed_out: "聚合超时", join_source_outcome_rejected: "聚合来源被拒绝", human_review_requested: "请求人工审核", human_review_approved: "审核已通过", human_review_rework_requested: "审核要求返工", human_review_rejected: "审核未通过", human_review_decision_rejected: "审核决策被拒绝", human_review_paused: "审核已暂停", human_review_terminated: "审核已终止", human_review_expired: "审核已过期" };
+  return labels[type] || type || (state.locale === "en" ? "Event" : "事件");
+}
+
+function studioRuntimeEventSummary(event, roleLabel) {
+  const english = state.locale === "en";
+  const candidates = Array.isArray(event.candidates) ? event.candidates : [];
+  const sources = Array.isArray(event.sourceSnapshot) ? event.sourceSnapshot : [];
+  if (event.type === "route_decision") {
+    const selected = event.targetRoleId ? roleLabel(event.targetRoleId) : event.status === "failed" ? (english ? "No route selected" : "未选出分支") : "—";
+    const matched = candidates.filter((candidate) => candidate.matched).length;
+    return (english ? "Selected " : "选中 ") + selected + (candidates.length ? " · " + matched + "/" + candidates.length + (english ? " conditions matched" : " 个条件命中") : "");
+  }
+  if (event.type === "join_quorum_reached" || event.type === "join_activated") {
+    const arrived = sources.filter((source) => source.status === "arrived");
+    const quorum = event.joinMode === "quorum_of" ? " · " + (english ? "quorum " : "满足门槛 ") + event.requiredSourceCount : "";
+    const roles = arrived.map((source) => roleLabel(source.roleId)).join(", ");
+    return arrived.length + "/" + (sources.length || (event.joinSources || []).length) + (english ? " sources arrived" : " 个来源到达") + quorum + (roles ? " · " + roles : "");
+  }
+  if (event.type === "join_late_arrival_ignored") return roleLabel(event.arrivedFromRoleId || "") + " · " + (english ? "decision snapshot fixed" : "决策快照已固定");
+  if (event.type === "loop_budget_decision") return (english ? "Round " : "第 ") + (event.loopIteration ?? "—") + " · " + (english ? "limit " : "上限 ") + (event.maxRounds ?? "—") + " · " + (event.decision || event.action || "—");
+  if (event.type === "loop_exhausted") return (english ? "Round " : "第 ") + (event.loopIteration ?? "—") + " / " + (event.maxRounds ?? "—") + " · " + (event.onExhausted || (english ? "loop limit reached" : "已达循环上限"));
+  if (event.type === "flow.activated") return roleLabel(event.fromRoleId || "") + " → " + roleLabel(event.toRoleId || "") + " · " + (event.eventType || "—");
+  if (event.type === "start_dispatch_selected") return (event.selectedEntryRoleIds || []).map(roleLabel).join(", ") || (english ? "Entry role selected" : "已选择入口角色");
+  if (event.type === "failure_handled") return (event.errorCode || "—") + " → " + roleLabel(event.handledTargetRoleId || "");
+  if (event.type.startsWith("human_review_")) return event.reason || event.decision || event.action || "—";
+  return event.roleId ? roleLabel(event.roleId) : event.reason || event.waitKind || event.status || "—";
+}
+
+function studioRuntimeEventDetails(event, roleLabel) {
+  const english = state.locale === "en";
+  const labels = english
+    ? { roleId: "Role", fromRoleId: "From", toRoleId: "To", event: "Business event", eventType: "Flow event", branchId: "Branch", lineageId: "Lineage", loopIteration: "Loop round", selectedFlowId: "Selected flow", targetRoleId: "Selected role", status: "Status", reason: "Decision context", errorCode: "Error code", loopId: "Loop", maxRounds: "Round limit", onExhausted: "Limit action", decision: "Decision", action: "Action", additionalBudget: "Additional rounds", requiredSourceCount: "Required sources", joinMode: "Join mode", joinMin: "Quorum", joinId: "Join scope", arrivedFromRoleId: "Arrived from", arrivedFromBranchId: "Arrival branch", activatedBranchId: "Activated branch", waitKind: "Wait type", pendingJoinCount: "Waiting joins", resultId: "Result ID", committedAt: "Committed at" }
+    : { roleId: "角色", fromRoleId: "来源角色", toRoleId: "目标角色", event: "业务事件", eventType: "流转事件", branchId: "分支", lineageId: "运行范围", loopIteration: "循环轮次", selectedFlowId: "选中流转", targetRoleId: "选中角色", status: "状态", reason: "决策背景", errorCode: "错误代码", loopId: "循环", maxRounds: "轮次上限", onExhausted: "达到上限时", decision: "决策", action: "操作", additionalBudget: "追加轮次", requiredSourceCount: "所需来源数", joinMode: "聚合模式", joinMin: "Quorum 门槛", joinId: "聚合范围", arrivedFromRoleId: "本次到达角色", arrivedFromBranchId: "本次到达分支", activatedBranchId: "已激活分支", waitKind: "等待类型", pendingJoinCount: "等待中聚合数", resultId: "结果编号", committedAt: "提交时间" };
+  const fields = ["roleId", "fromRoleId", "toRoleId", "event", "eventType", "branchId", "lineageId", "loopIteration", "selectedFlowId", "targetRoleId", "status", "reason", "errorCode", "loopId", "maxRounds", "onExhausted", "decision", "action", "additionalBudget", "joinMode", "joinMin", "requiredSourceCount", "joinId", "arrivedFromRoleId", "arrivedFromBranchId", "activatedBranchId", "waitKind", "pendingJoinCount", "resultId", "committedAt"];
+  const roleFields = new Set(["roleId", "fromRoleId", "toRoleId", "targetRoleId", "arrivedFromRoleId"]);
+  const items = fields.filter((key) => event[key] !== undefined && event[key] !== null && event[key] !== "").map((key) => {
+    const value = roleFields.has(key) ? roleLabel(event[key]) : String(event[key]);
+    return "<div><dt>" + esc(labels[key] || key) + "</dt><dd>" + esc(value) + "</dd></div>";
+  });
+  if (Array.isArray(event.candidates) && event.candidates.length) {
+    const rows = event.candidates.map((candidate) => "<li>" + esc(candidate.flowId || "—") + " · " + (english ? "priority " : "优先级 ") + esc(candidate.priority ?? "—") + " · " + (candidate.matched ? (english ? "matched" : "命中") : (english ? "not matched" : "未命中")) + (candidate.flowId === event.selectedFlowId ? " · " + (english ? "selected" : "已选中") : "") + "</li>").join("");
+    items.push("<div class=\"studio-event-detail-wide\"><dt>" + (english ? "Route candidates" : "分支候选") + "</dt><dd><ul>" + rows + "</ul></dd></div>");
+  }
+  if (Array.isArray(event.sourceSnapshot) && event.sourceSnapshot.length) {
+    const rows = event.sourceSnapshot.map((source) => "<li><strong>" + esc(roleLabel(source.roleId)) + "</strong><span>" + esc(source.status || "—") + "</span>" + (source.branchId ? "<code>" + esc(source.branchId) + "</code>" : "") + (source.arrivedAt ? "<time>" + esc(studioSimulationEventTime({ at: source.arrivedAt })) + "</time>" : "") + "</li>").join("");
+    items.push("<div class=\"studio-event-detail-wide\"><dt>" + (english ? "Decision-time source snapshot" : "决策时来源快照") + "</dt><dd><ul class=\"studio-event-sources\">" + rows + "</ul></dd></div>");
+  }
+  return items.length ? "<dl class=\"studio-event-details\">" + items.join("") + "</dl>" : "<p class=\"form-hint\">" + (english ? "No additional decision context was recorded." : "未记录更多决策背景。") + "</p>";
+}
+
+function studioRuntimeEventListMarkup(events, roleLabel) {
+  const english = state.locale === "en";
+  return events.map((event) => "<li data-role-id=\"" + esc(event.roleId || event.fromRoleId || "") + "\" data-edge-id=\"" + esc(event.edgeId || event.flowId || event.selectedFlowId || "") + "\"><details class=\"studio-event-row\"><summary><time>" + esc(studioSimulationEventTime(event)) + "</time><strong>" + esc(studioRuntimeEventLabel(event.type)) + "</strong><span>" + esc(studioRuntimeEventSummary(event, roleLabel)) + "</span>" + (event.type === "route_decision" && event.status === "failed" ? "<span class=\"status-chip failed\">" + (english ? "Failed" : "失败") + "</span>" : "") + "</summary><div class=\"studio-event-row-details\">" + studioRuntimeEventDetails(event, roleLabel) + "</div></details></li>").join("");
+}
+
 const {
   messagePresentation: studioMessagePresentation,
   messageSectionMarkup: studioTranscriptSectionMarkup,
@@ -2225,13 +2284,16 @@ async function renderStudioSimulationDetail(teamId, teamVersionId, simulationId,
     if (eventsPanel) {
       const eventsDetails = document.createElement("details");
       eventsDetails.className = `${eventsPanel.className} studio-events-panel`;
-      eventsDetails.open = true;
       const eventsSummary = document.createElement("summary");
       eventsSummary.className = "panel-head";
       const eventsHead = eventsPanel.querySelector(".panel-head");
       const eventsList = eventsPanel.querySelector(".studio-event-list");
       while (eventsHead?.firstChild) eventsSummary.append(eventsHead.firstChild);
-      if (eventsList) eventsDetails.append(eventsSummary, eventsList);
+      if (eventsList) {
+        eventsList.innerHTML = studioRuntimeEventListMarkup(runtimeEventsFromPayload(eventPayload), roleLabel);
+        eventsDetails.append(eventsSummary, eventsList);
+      }
+      eventsDetails.open = false;
       eventsPanel.replaceWith(eventsDetails);
     }
     root.querySelector(".studio-layout-switcher")?.remove();
@@ -7483,21 +7545,29 @@ async function renderCollaborationProject(projectId, project, pageRequest = stat
         button.disabled = true;
         button.textContent = state.locale === "en" ? `Run ${button.dataset.archiveRun} archived` : `Run ${button.dataset.archiveRun} 已归档`;
       });
+      const deliverablesById = new Map(deliverables.map((item) => [item.deliverableId, item]));
       list.innerHTML = deliverables.length ? deliverables.slice().reverse().map((item) => `<div class="material-row deliverable-row"><div><strong>任务 ${esc(item.taskId)} · Run ${esc(item.runId)}</strong><p>${esc(item.summary || "暂无结果摘要")}</p><span>尝试 ${esc(item.attemptNumber)} · ${esc(item.createdAt || "")}</span><code>${esc(item.outputPath || "")}</code></div><button class="secondary-button" type="button" data-open-deliverable="${esc(item.deliverableId)}">打开成果</button></div>`).join("") : '<p class="empty-note">尚无已归档成果。完成任务后可从运行记录归档。</p>';
       list.querySelectorAll("[data-open-deliverable]").forEach((button) => button.addEventListener("click", async () => {
         const dialog = section.querySelector("[data-deliverable-viewer]");
         const output = dialog.querySelector("[data-deliverable-content]");
+        const item = deliverablesById.get(button.dataset.openDeliverable);
+        if (!item) return;
         try {
           const response = await pageFetch(`/api/v2/projects/${encodeURIComponent(projectId)}/deliverables/${encodeURIComponent(button.dataset.openDeliverable)}/content`);
           const result = await response.json();
           if (!isCurrentRequest(pageRequest)) return;
           if (!response.ok) throw new Error(result.error || "Unable to read deliverable.");
-          output.textContent = result.content || result.error || "";
+          const deliverableContent = typeof result.content === "string"
+            ? result.content
+            : result.content === undefined || result.content === null
+              ? String(result.error || "")
+              : JSON.stringify(result.content, null, 2);
+          output.textContent = deliverableContent;
           dialog.querySelector("[data-deliverable-title]").textContent = `任务 ${item.taskId} · Run ${item.runId}`;
           dialog.querySelector("[data-deliverable-path]").textContent = item.outputPath || "";
           const download = dialog.querySelector("[data-download-deliverable]");
           download.onclick = () => {
-            const url = URL.createObjectURL(new Blob([result.content || ""], { type: "text/plain;charset=utf-8" }));
+            const url = URL.createObjectURL(new Blob([deliverableContent], { type: "text/plain;charset=utf-8" }));
             const anchor = document.createElement("a");
             anchor.href = url;
             anchor.download = `task-${item.taskId}-run-${item.runId}.txt`;
