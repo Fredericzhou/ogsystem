@@ -21,12 +21,12 @@ technical, and production-workflow gates using one final v2 code and schema stat
 
 ### Workspace terminology boundary
 
-During the refactor, existing `Artifact` and `ArtifactReference` field names may still appear in
-implementation evidence. They are temporary names for an authorized run evidence package or file
-handoff, not a Workspace content version. Before the V2 contract is frozen, public fields must use
-`WorkspaceRef`, Run evidence, and Release materialization. The authoritative Workspace version is a
-Git commit, including Git LFS objects; the final downloadable result is a Release materialization
-with a digest. No compatibility aliases remain after the cleanup.
+`Artifact`, `Final Artifact`, and `ArtifactReference` are not V2 public concepts. Public fields and
+acceptance evidence use `WorkspaceRef`, Run evidence, and Release materialization. The authoritative
+Workspace version is a Git commit, including Git LFS objects; the final downloadable result is a
+Release materialization with a digest. Any remaining old field in an active schema, API, UI, or
+acceptance record blocks the V2 cutover. No compatibility aliases, migration readers, or dual-write
+paths are allowed.
 
 ## 2. Three Acceptance Gates
 
@@ -84,6 +84,69 @@ At least two real workflows must pass with real verified Backends and real deliv
    - Use separate Roles for research/outline, drafting, review, and finalization where appropriate.
    - Produce the final document as a Release materialization with links, structure, terminology, and completeness checks.
    - A reviewer confirms that the document is usable by its intended audience and that unsupported claims are traceable.
+
+### Real-team and real-project coverage
+
+The four built-in teams must each complete both a real Studio Sandbox run and a new formal Project
+Run. Coverage is distributed by capability; a team is not required to exercise every capability in
+one graph, but every capability must be produced by at least one real Project/Task/Run.
+
+| Built-in team | Required real Project coverage | Required Workspace evidence |
+| --- | --- | --- |
+| `cross-backend-review-loop` | Two verified Backends execute different Roles, exchange a projected `WorkspaceRef`, and complete a real review or rework decision | Run ID, Project/Task IDs, Backend snapshots, WorkspaceRef, review decision, evidence and Release result |
+| `management-consulting` | Multiple specialist Roles work in parallel, converge into synthesis and quality review, and produce a real document or structured file package | Role arrivals, Join evidence, source commit, materialization manifest, output digest, preview and download |
+| `software-team` | Roles modify a real repository in parallel; a same-file conflict is created and resolved; a large-file fixture exercises Git LFS; the Run is interrupted and resumed | `baseCommit`, role commits, `join_conflict`, `mergeCommit`, LFS pointer/object evidence, recovery checkpoint, Release record |
+| `structured-debate` | Proposition and opposition both execute in a real Run, branch outcomes converge, loop or review behavior is exercised, and a final brief is published | Both Role execution records, branch/quorum/loop evidence, decision background, final commit and materialization digest |
+
+The project coverage pack must also include, across these real Runs:
+
+```text
+linear execution
+parallel edits to independent paths
+same-file text conflict
+same-path LFS/binary serialization
+branch and Join
+quorum decision
+loop or rework
+human review
+checkpoint interruption and resume
+restore commit
+stale canonical HEAD rejection
+Release materialization failure and recovery
+WorkspaceRef authorization failure
+```
+
+No row is closed by a graph preview, mocked model response, manually inserted event, or API-only
+smoke test. Each Workspace row requires a real Project ID, Task ID, Run ID, commit reference,
+materialization manifest or failure code, and browser evidence where the workflow is user-facing.
+
+The formal Project coverage is closed only when the run ledger also records the Workspace and
+execution facts needed to reproduce the result: `workspaceId`, `worktreeId`, `baseCommit`, role
+commits, `mergeCommit`, `releaseCommit` when present, `canonicalRefUpdated` when applicable,
+decision/event evidence, checkpoint references, materialization manifest and digest, output digest or
+`failureCode`, and the download reference when published. A single successful Run does not close a
+failure or recovery case; each companion Run retains its own Run ID and result.
+
+### Real-run scenario mapping
+
+The semantic matrix below must be represented in the real Project pack as well as in deterministic
+contract tests. A Run may cover several rows, but the named team must produce the listed evidence.
+
+| Semantic scenarios | Real team/project coverage |
+| --- | --- |
+| S1, S3, S4, S12, S13, S15 | `cross-backend-review-loop`: two verified Backends, explicit projection, WorkspaceRef allow-set, readiness failure, and denied access attempt |
+| S2, S7, S8, S10, S11, S19 | `structured-debate`: both branches execute, quorum/late arrival is recorded, loop/rework and Review decisions are visible, and terminal aggregation is recovered |
+| S5, S6, S17 | `management-consulting`: parallel specialist Roles, Join/QA, document and media delivery, materialization and download verification |
+| S5, S14, S15, S16, S18 | `software-team`: independent worktrees, interruption/resume, fail-closed tools and paths, code delivery, conflict/timeout compensation |
+| S9 | A readiness or failure companion Run in the owning Project: automatic retry exhaustion is recorded and Human Review does not expose retry as a manual action |
+
+The Debug History view is part of the real-run acceptance, not a visual-only check. For a Run with
+branch, Join, quorum, loop, or Review decisions, the browser must show a compact collapsed list with
+stable rows and secondary typography, then show expanded decision background, Role/node arrival time
+and status, selected route/action, quorum calculation, lineage and loop fields, evidence/commit
+references, and final state. The same event facts must be available from the supported read boundary
+after refresh, while model request, token, and transport events remain excluded from the business event
+list.
 
 The workflows must complete through the actual Studio/CLI or supported product path. Mock model
 responses, synthetic success events, and a graph preview without a delivered result do not pass

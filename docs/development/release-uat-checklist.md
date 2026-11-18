@@ -6,10 +6,10 @@ new project; historical development data and interfaces are not migration or com
 ## Workspace terminology
 
 This checklist uses `Release materialization` for the final file or media delivery produced from a
-recorded Git commit. During the refactor, existing UI or evidence fields may still use `artifact` in
-their name; those fields must be renamed before the final V2 acceptance run. The temporary name is
-an implementation label for run evidence or a delivery package, not an independent Workspace
-content version, and no compatibility alias remains after cleanup.
+recorded Git commit. `Artifact`, `Final Artifact`, and `ArtifactReference` are not accepted as V2
+public concepts or evidence fields. Any remaining occurrence in an active schema, API, UI, or
+acceptance record is a pre-release cleanup failure; no compatibility alias or historical read path
+is allowed.
 
 ## Participants
 
@@ -84,6 +84,91 @@ content version, and no compatibility alias remains after cleanup.
     finalization Roles, materialize the final document from its recorded commit, and verify links,
     terminology, completeness checks, reviewer decision, and append-only Evidence after refresh.
 
+17. Open Debug History for a completed branch, Join, quorum, loop, or review Run. Confirm the event
+    list is collapsed by default, uses compact secondary typography with stable rows, is scrollable
+    without changing page layout, and uses the same control sizing and visual language as the rest of
+    the page. Expand decision
+    events and verify the list shows decision background, selected route or loop action, contributing
+    Role/node arrivals with timestamps and statuses, quorum calculation, `round`, `lineageId`,
+    `branchId`, `loopIteration`, commit/evidence references, and the resulting state. Model request,
+    token, and transport events must not appear as business events. Capture the same facts after a
+    refresh and from the Run evidence/API read boundary.
+
+## Real team and Project coverage
+
+The release must execute all four built-in teams twice: once through a real Studio Sandbox run and
+once from a newly created formal Project with a new Task and a real Run. The formal Project run is
+the acceptance authority; Sandbox proves the authoring and live-debug path and cannot replace the
+Project run. A Project may contain several Tasks/Runs for positive, failure, and recovery cases.
+
+| Pack | Formal Project run requirements | Required assertions and delivery evidence |
+| --- | --- | --- |
+| `cross-backend-review-loop` | Create a Project and Task, run Role A and Role B on two verified Backends, pass an explicit `WorkspaceRef`, then exercise review approval and rework decisions | Both Role executions occur; the handoff projection and authorization are visible; review decisions are principal- and CAS-bound; the final Run records the full WorkspaceRef (immutable commit, relative path, digest), decision background, evidence refs, and a Release result |
+| `management-consulting` | Create a Project and Task for a document or structured package; run specialist Roles in parallel, converge through Join and QA, and deliver a real document plus a Git LFS binary/media fixture | Role arrivals and Join/quorum facts are visible; source and `mergeCommit` are recorded; the materialization manifest, output digest, preview, download, and refresh all agree; the LFS content is restored and checksum-verified |
+| `software-team` | Create a Project backed by a real repository; run independent edits in parallel, force a same-file text conflict, resolve it through Join, interrupt and resume, and perform a restore and stale-head attempt | Each worktree has a distinct `worktreeId`; Role attempts to run prohibited Git mutations are denied and audited; role commits and changed paths are traceable; `join_conflict` leaves canonical HEAD unchanged; `mergeCommit` and restore commit are valid; the canonical lock records `owner`, `leaseUntil`, `fencingToken`, and `expectedCanonicalHead`; stale CAS fails closed; the resulting code/test package is downloaded from the published Release |
+| `structured-debate` | Create a Project and Task with proposition and opposition Roles; run both branches, exercise quorum and a loop/review decision, and publish a final brief | Both sides have real execution records; branch, quorum, loop, and review decisions show their background and evidence; the final brief is materialized from the recorded commit and remains available after refresh |
+
+The formal Project pack must include at least one text deliverable and one binary or media file
+tracked through Git LFS. The binary/media file may be a real project input or a generated deliverable,
+but it must pass through the same Workspace commit, restore, materialization, download, and digest
+checks. No manually copied file outside the Workspace is accepted as delivery evidence.
+
+Each Sandbox run has a narrow user-facing assertion in addition to the formal Project run: the
+cross-Backend team shows both real Role messages and the handoff/review state; the consulting team
+shows Join progress and a browsable delivery; the software team shows live branch/Run state and the
+decision event list; the debate team shows both proposition and opposition activity and the branch or
+quorum outcome. Sandbox evidence demonstrates the browser path only; it cannot be used for commit,
+LFS, or Release claims.
+
+### Required companion Runs
+
+The following cases are separate real Runs with their own Run IDs. They may reuse one of the four
+Projects above, but each case must be triggered through the supported product path and leave its
+failure or recovery state inspectable. When a failure cannot be induced safely from the UI, use a
+Framework-approved deterministic fault-injection hook attached to the real Run; never insert a fake
+event or edit persisted evidence by hand.
+
+| Case | Run setup | Pass condition |
+| --- | --- | --- |
+| Readiness and retry | Select an unavailable Backend/model or deny a required capability, then fix readiness and retry the same Task | The blocked attempt creates no false success; the retry has a new Run ID; the failed attempt remains inspectable |
+| Unauthorized `WorkspaceRef` | A Role requests a path, commit, or Workspace outside its projected allow-set | Handoff fails closed, no unauthorized read occurs, and the denial is in Run evidence |
+| Join conflict | Two Role worktrees write the same path with incompatible text or binary content | `join_conflict` is emitted, canonical ref is unchanged, and resolution resumes from the merge candidate without rerunning committed Roles |
+| Checkpoint interruption | Stop or crash after a Role commit and before the next durable transition | Recovery recreates the worktree from commit references, skips the committed Role, and preserves lineage/state version |
+| LFS interruption | Interrupt an LFS upload or restore | Retry or resume verifies the pointer/object checksum and never publishes a partial object |
+| Stale canonical head | Advance the canonical ref through another Framework operation before release CAS | Release fails with `STALE_CANONICAL_HEAD`, exposes no official download, and creates a new candidate from the current head |
+| Materialization failure | Inject a materialization or output-digest failure after `prepared` | Release enters `failed` with the defined `failureCode`; no official download is exposed; a retry follows Framework/materialization policy |
+| Release reconciliation | Interrupt after canonical ref update and before Release finalization | Recovery publishes only when canonical ref, manifest, digest, and download reference all verify; otherwise it remains recoverable or fails closed |
+| External ref write | Modify an authoritative ref outside Framework control during a guarded operation | The next Framework operation detects the expected-head mismatch and fails closed; only a known Release failure window may reconcile |
+| Cleanup and retention | Complete successful, failed, conflicted, and recoverable Runs, then apply the configured cleanup policy | Stale worktrees, branches, refs, and locks are removed; retained checkpoints, Release records, and evidence still resolve; unreferenced LFS objects are only marked for repository garbage collection |
+
+### Capability-to-team coverage
+
+The following mapping is the minimum real Project coverage. One Run can satisfy multiple rows when all
+listed evidence is present; a row is not satisfied by a graph preview, mock response, synthetic event,
+or API-only request.
+
+| Design capability | Required real team/project evidence |
+| --- | --- |
+| Linear handoff, context projection, and authorized `WorkspaceRef` | `cross-backend-review-loop` Project Run with HandoffProjection and denial attempt |
+| Parallel split and independent worktrees | `management-consulting` or `software-team` Project Run with two concurrent Role executions |
+| Same-file text/binary conflict and Join recovery | `software-team` Project Run plus `Join conflict` companion Run |
+| All-of/quorum Join and late-arrival handling | `management-consulting` and `structured-debate` Project Runs with Role arrival timestamps |
+| Branch routing and loop/rework | `structured-debate` Project Run with both branches and a loop iteration |
+| Human Review approve/rework/reject and stale decision rejection | `cross-backend-review-loop` Project Runs with attributed decisions |
+| Retry exhaustion, timeout, compensation, cancellation, terminal aggregation | Companion Runs attached to the owning Project, with event and checkpoint evidence |
+| Git/LFS commit, restore, worktree cleanup, and canonical lock/CAS | `software-team` Project Run and its interruption, restore, stale-head, and LFS companion Runs |
+| Release materialization, manifest, digest, download, and reconciliation | `management-consulting` and `software-team` Releases plus failure/reconciliation Runs; verify `releaseCommit = mergeCommit` unless release content changes |
+| Decision event audit view | `structured-debate` Debug History Run, with browser capture and API/evidence cross-check |
+| Backend readiness, capability freeze, fail-closed permissions, and cross-Backend execution | `cross-backend-review-loop` Project Run and readiness/authorization companion Runs |
+
+For every formal Project Run, attach a single run ledger containing `projectId`, `taskId`, `runId`,
+`workspaceId`, TeamVersion and code/schema digests, Backend/model snapshot, `baseCommit`,
+`roleCommit` values, `mergeCommit`, `releaseCommit` when present, decision/event evidence, checkpoint
+references and commit provenance, canonical lock/CAS facts, `canonicalRefUpdated` when applicable,
+Release status history, `materializationManifestRef` and digest, output digest or `failureCode`,
+download reference when published, browser captures, and operator/product-owner sign-off. The ledger
+is the minimum acceptance index, not a second runtime record.
+
 ## Manual Evidence Record
 
 Create one record for every scenario. The initial status for every row is **Not run**; change it
@@ -113,6 +198,9 @@ the same evidence is reproduced against the final v2 code, schemas, and package 
 | 14 | Framework developer / Product owner | Not run | Two control roots, one shared workspace path, two TeamVersion IDs, two Run IDs, before/after directory listings, and proof that no workspace `.ogs`, `source`, or `destination` directory was generated. | Must be executed against the new control-root/workspace contract. |
 | 15 | Framework developer / Product owner | Not run | Two v2 TeamVersion IDs and digests; unchanged first v2 Run manifest, asset snapshot and result; second v2 Run evidence; Studio Simulation and Project history listings. | Must prove v2 version freezing and Studio/Projects namespace isolation without importing or reading v1 data. |
 | 16 | Workflow operator / Product owner | Blocked | Documentation request and source digest; Role inputs/outputs; final Release materialization digest and URL; reviewer decision and CAS scope; link, terminology, completeness, and refresh evidence. | Engineering evidence is attached in `docs/development/evidence/v2-gate-c-real-workflow-success-2026-11-16.md` for Run `20261116-020145-9adc9512`, including the sealed materialization manifest, promotion receipt, and reviewer result. Workflow-operator/product-owner review and sign-off remain outstanding. |
+| 17 | Workflow operator / Product owner | Not run | Formal Project/Task/Run IDs for a branch, Join, quorum, loop, or review case; desktop/mobile Debug History captures; expanded decision details; refresh capture; matching event/evidence read response; browser console record. | Must prove compact collapsed event list, scrolling, decision background, Role arrival times/statuses, quorum/branch/loop facts, evidence/commit links, and exclusion of model request events. |
+| 18 | Workflow operator / Product owner | Not run | Four TeamVersion IDs; four Project IDs; Sandbox and formal Project Run IDs for each built-in team; per-team run ledger and final deliverable/release evidence. | Must prove every built-in team ran through both supported paths with real models and a real file or media delivery where required. |
+| 19 | Framework developer / Product owner | Not run | Companion Run IDs for readiness, unauthorized WorkspaceRef, Join conflict, checkpoint interruption, LFS interruption, stale head, materialization failure, reconciliation, and external ref write; failure codes and recovery evidence. | Every required case must be executed or explicitly marked Blocked with an environment dependency; no case can be closed by a unit test or injected event alone. |
 
 ## Release Gate
 
@@ -133,6 +221,16 @@ Windows lifecycle smoke: **Blocked** in this environment (macOS; PowerShell and 
 
 - Required build, unit, contract, integration, fault-injection, package-install, and browser E2E
   checks pass on supported CI platforms.
+- All four built-in teams have a real Sandbox run and a new formal Project/Task/Run run with a
+  completed run ledger; the formal Project coverage matrix and all required companion Runs are
+  complete.
+- At least one formal Project Release contains a Git LFS tracked binary or media file and a text or
+  structured file, both restored and digest-verified through the published Release.
+- The Debug History audit scenario proves the user can inspect branch, Join, quorum, loop, review,
+  decision background, Role arrival timing/status, commit/evidence references, and final outcomes
+  without model request events being presented as business events.
+- No active V2 schema, API, UI, checkpoint, or acceptance record exposes `Artifact`, `Final Artifact`,
+  or `ArtifactReference`; any remaining occurrence blocks release cleanup.
 - UAT evidence records package version, OS/runtime, workflow fixture, API/UI paths used, outcome,
   and issue references.
 - Every manual scenario above has an explicit status and evidence reference; scenarios marked
