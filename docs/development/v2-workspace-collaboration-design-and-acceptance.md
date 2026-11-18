@@ -29,6 +29,19 @@ The Workspace must be file-based. Structured business data is represented as fil
 live database state, external SaaS state, and caches are referenced or exported rather than treated
 as an additional Workspace backend.
 
+## 1.1 Four-layer architecture
+
+| Layer | Responsibility |
+| --- | --- |
+| Business | Role, Flow, Join, Review, and Handoff semantics |
+| Technical Binding | Harness, Backend, Model, `allowedTools`, and EnvironmentPolicy |
+| Execution | Git, LFS, Worktree, canonical lock, CAS, and Materialization |
+| Evidence | Checkpoint, events, provenance, Evidence manifest, and Release record |
+
+`WorkspaceRef` is a cross-layer value object. It is not a fifth layer or a new business entity:
+Business authorizes the projection, Execution resolves and validates the commit/path, and Evidence
+records its producer and access facts.
+
 ## 2. Core Topology
 
 ```text
@@ -39,8 +52,10 @@ Project
       -> merge worktree
       -> mergeCommit
       -> releaseCommit (= mergeCommit unless release metadata changes)
-      -> materialization
-      -> Release record and download reference
+      -> materialization manifest
+      -> outputDigest
+      -> Release record
+      -> download reference
 ```
 
 The Workspace has one canonical ref managed by the Framework. Branch names, worktree paths, Git
@@ -60,11 +75,12 @@ flowchart TB
     WT --> RC[roleCommit]
     RC --> M[Merge worktree]
     M --> MC[mergeCommit]
+    MC --> RLC[releaseCommit]
     R[Run] --> CP[Runtime checkpoint]
     R --> E[Run evidence]
-    MC --> REL[Release record]
-    REL --> MAT[Materialization manifest + output digest]
-    MAT --> D[Download reference]
+    RLC --> MAT[Materialization manifest + output digest]
+    MAT --> REL[Release record]
+    REL --> D[Download reference]
 ```
 
 `Project`, `Workspace`, `Run`, and `Release` are durable product records. Worktrees, merge trees,
@@ -147,13 +163,39 @@ fencingToken
 expectedCanonicalHead
 ```
 
+The canonical Workspace lock is the only Runtime concurrency control mechanism. An optional Git LFS
+server lock is repository protection for a binary path; it does not create a second Flow or Runtime
+lock model and is acquired or released only by the Framework.
+
 Merge worktree creation and candidate integration do not use this lock. Publication uses a
 compare-and-swap check against `expectedCanonicalHead`. A stale head fails closed and leaves the
 candidate commit available for retry or rebase.
 
 All authoritative ref updates must pass through the Framework. Direct writes from an external Git
-client are unsupported; the Framework must reject, fence, or reconcile an out-of-band ref change
-before continuing a Run or Release.
+client are unsupported. The Framework detects an out-of-band ref change through
+`expectedCanonicalHead` and fails closed before continuing a Run or Release; only a known Release
+record failure window may enter the defined reconciliation path.
+
+### 4.4 Worktree lifecycle and cleanup
+
+Role and merge worktrees are temporary execution state. The Framework marks a worktree eligible for
+cleanup only after its commit provenance is durable, no active Role, Join, Review, or recovery path
+references it, and any required merge or Release record is persisted. Cleanup is idempotent and does
+not depend on the original machine path.
+
+```text
+commit / merge / Release evidence durable
+  -> lock released
+  -> worktree eligible
+  -> remove worktree directory and temporary outputs
+  -> retain refs and objects according to retention policy
+```
+
+Failed or conflicted worktrees remain available until resolution, Run termination, or retention
+expiry. Recovery recreates them from `worktreeId`, branch, and commit references. Worktree removal
+releases checkout and temporary-file space; it does not immediately delete shared Git objects or LFS
+objects. Branch/ref pruning and Git/LFS garbage collection are separate delayed cleanup operations and
+must not remove content referenced by a checkpoint, Release record, or retained evidence.
 
 ## 5. Contract Boundary
 
@@ -172,21 +214,18 @@ The public V2 reference for a Workspace file is `WorkspaceRef`:
 ```json
 {
   "workspaceId": "workspace-123",
-  "commit": "40-character-commit-sha",
+  "commit": "full-immutable-commit-id",
   "path": "docs/report.md",
-  "digest": "sha256:...",
-  "access": "read",
-  "producer": {
-    "runId": "run-123",
-    "roleId": "writer"
-  }
+  "digest": "sha256:..."
 }
 ```
 
-`commit` is an immutable commit SHA, never a branch name. `path` is a repository-relative path;
-the Framework validates it against the committed tree, authorizes the requested access, and projects
-only the paths allowed for the receiving Role. An uncommitted file cannot cross a Role boundary as a
-`WorkspaceRef`.
+`commit` is a full immutable commit ID matching the repository object format, never a branch name.
+`path` is a repository-relative path; the Framework validates it against the committed tree,
+validates the digest, and projects only the paths allowed for the receiving Role. `WorkspaceRef`
+does not carry write permission; authorization comes from `HandoffProjection` and Workspace policy.
+An uncommitted file cannot cross a Role boundary as a `WorkspaceRef`. Producer provenance is recorded
+in Run evidence, commit provenance, and the `result_committed` event.
 
 ### Public concepts and implementation responsibilities
 
@@ -213,7 +252,8 @@ Release materialization verifier
 ```
 
 `Evidence manifest` describes Run events, checkpoints, logs, and verification evidence.
-`Materialization manifest` describes the final files generated from `releaseCommit`. They may share
+`Materialization manifest` describes the final files generated from `releaseCommit`. Its reference is
+immutable and content-addressed by `materializationManifestDigest`. The two manifests may share
 hashing helpers, but they are different records with different owners and recovery rules.
 
 ```mermaid
@@ -273,7 +313,7 @@ workspace.release()
 
 ## 7. Checkpoint and Provenance Contract
 
-A checkpoint contains workflow state plus scalar Git references:
+A checkpoint contains workflow state, commit references, provenance, and evidence references:
 
 ```json
 {
@@ -286,8 +326,11 @@ A checkpoint contains workflow state plus scalar Git references:
   "baseCommit": "C10",
   "roleCommit": "C11",
   "changedPaths": ["src/api.ts"],
-  "lfsObjects": [],
-  "branchState": {},
+  "branchId": "backend@1#1",
+  "lineageId": "backend@1#1",
+  "round": 1,
+  "loopIteration": 1,
+  "stateVersion": 3,
   "decisionBackground": {},
   "evidenceRefs": []
 }
@@ -357,8 +400,10 @@ The Workspace-specific additions are:
 ```text
 join_conflict
 workspace_integrated
-release_created
 ```
+
+Release status transitions are projected from the Release record; they are not a second publication
+fact or a required core event.
 
 `workspace_claimed` and `workspace_released` may remain technical audit records. Low-level resource
 lock, handoff, and restore operations are technical audit details rather than primary business
@@ -409,17 +454,65 @@ The Release record contains at least:
   "workspaceId": "workspace-123",
   "releaseCommit": "C20",
   "expectedCanonicalHead": "C10",
+  "materializationManifestRef": "materializations/release-123/manifest.json",
+  "materializationManifestDigest": "sha256:...",
   "outputDigest": "sha256:...",
   "materializationMetadata": {},
-  "profileDigest": "sha256:...",
-  "toolchainDigest": "sha256:...",
-  "commandDigest": "sha256:...",
   "downloadReference": "...",
+  "failureCode": null,
   "status": "published",
   "createdAt": "...",
   "updatedAt": "..."
 }
 ```
+
+Release field constraints are part of the contract:
+
+| Status | Required fields and constraints |
+| --- | --- |
+| `prepared` | `releaseCommit` and `expectedCanonicalHead` are present; no public download is available |
+| `materialized` | `materializationManifestRef`, `materializationManifestDigest`, `outputDigest`, and `downloadReference` are present and verified |
+| `ref_updated` | `materialized = true`; canonical ref update is recorded; publication is not yet finalized |
+| `published` | Manifest, `outputDigest`, and `downloadReference` are present and verified; `failureCode = null` |
+| `failed` | `failureCode` is one of the defined failure codes; no official download is exposed |
+
+The initial failure code set is:
+
+```text
+STALE_CANONICAL_HEAD
+CANDIDATE_INVALID
+MATERIALIZATION_FAILED
+OUTPUT_DIGEST_MISMATCH
+RELEASE_STORE_UNAVAILABLE
+RELEASE_RECONCILIATION_FAILED
+```
+
+Release materialization has an explicit visibility boundary:
+
+| Release status | Content state | Public download visibility |
+| --- | --- | --- |
+| `prepared` | `releaseCommit` recorded; no materialized output | Not available |
+| `materialized` | Output atomically persisted, manifest and `outputDigest` verified, and `downloadReference` created | Internal or held; not an official delivery |
+| `ref_updated` | Canonical ref updated by CAS | Held until publication is finalized |
+| `published` | Release record finalized and canonical ref verified | Available to authorized consumers |
+| `failed` | Candidate or publication state is incomplete | Never presented as the official delivery |
+
+The materialized output may remain retained for reconciliation or operator inspection, but its
+`downloadReference` is not publicly exposed as a delivery until the status is `published`.
+
+The initial `failureCode` policy is owned by the Framework:
+
+| Failure code | Retry policy |
+| --- | --- |
+| `STALE_CANONICAL_HEAD` | Retryable; create a new candidate from the current head |
+| `RELEASE_STORE_UNAVAILABLE` | Retryable |
+| `MATERIALIZATION_FAILED` | Defined by the materialization policy |
+| `OUTPUT_DIGEST_MISMATCH` | Non-retryable |
+| `CANDIDATE_INVALID` | Non-retryable |
+| `RELEASE_RECONCILIATION_FAILED` | Operator or recovery intervention required |
+
+`failureCode` is the only failure field persisted on Release. Retryability is derived from the
+Framework policy and is not duplicated in every Release record.
 
 Final delivery is materialized from `releaseCommit`. Source, configuration, and media project files
 remain in Git/LFS; temporary builds and intermediate renders do not enter the canonical Workspace.
@@ -435,7 +528,21 @@ prepared
   -> published
 ```
 
-Failure states are `failed` and `partially_published`.
+The only terminal failure state is `failed`; `ref_updated` remains the recoverable intermediate state
+when canonical ref advancement was recorded before the final Release write.
+
+When the CAS succeeds, immutable Run evidence records:
+
+```json
+{
+  "canonicalRefUpdated": true,
+  "canonicalRef": "refs/heads/main",
+  "releaseCommit": "C20",
+  "updatedAt": "..."
+}
+```
+
+This provenance fact is retained even if the final Release status later becomes `failed`.
 
 Publication order:
 
@@ -444,15 +551,18 @@ Publication order:
 2. Run QA and quality validation.
 3. Determine `releaseCommit`; create a child commit only when release metadata or other
    authoritative content must change, then validate that commit.
-4. Materialize from `releaseCommit` into a temporary directory.
-5. Compute and verify `outputDigest` and the Materialization manifest.
-6. Write the `prepared` or `materialized` Release record.
-7. Acquire the canonical Workspace lock.
-8. Verify `expectedCanonicalHead`.
-9. Update the canonical ref with a compare-and-swap operation.
-10. Mark the record `ref_updated`.
-11. Mark the record `published`.
-12. Release the lock and clean temporary worktrees.
+4. Write a `prepared` Release record containing `releaseCommit` and `expectedCanonicalHead`.
+5. Materialize from `releaseCommit` into a temporary directory.
+6. Compute and verify `outputDigest` and the Materialization manifest.
+7. Atomically finalize the output in the Materialization store, persist its metadata and
+   `downloadReference` in the Release record, then mark the record `materialized`. These stores may be
+   different systems; this step is not treated as one cross-system transaction.
+8. Acquire the canonical Workspace lock.
+9. Verify `expectedCanonicalHead`.
+10. Update the canonical ref with a compare-and-swap operation.
+11. Mark the record `ref_updated`.
+12. Mark the record `published`.
+13. Release the lock and clean temporary worktrees.
 
 ```mermaid
 sequenceDiagram
@@ -463,8 +573,11 @@ sequenceDiagram
     F->>G: create candidate / mergeCommit
     F->>V: validate candidate
     F->>F: determine releaseCommit
-    F->>V: materialize and verify digest
-    F->>S: write prepared/materialized
+    F->>S: write prepared
+    F->>V: materialize and verify manifest/digest
+    F->>S: atomically finalize output in Materialization store
+    F->>S: persist materialization metadata + downloadReference
+    F->>S: mark materialized
     F->>G: acquire lock and verify expected HEAD
     F->>G: CAS update canonical ref
     F->>S: write ref_updated then published
@@ -474,9 +587,15 @@ sequenceDiagram
 Git ref update and Release record persistence are not one cross-system transaction. Recovery
 reconciles the Release record, candidate commit, canonical ref, and output digest:
 
-- canonical ref unchanged: retry the CAS update;
-- canonical ref updated and record incomplete: finish `ref_updated -> published`;
-- expected head changed: stop and create a new candidate from the current head;
+- canonical ref equals `expectedCanonicalHead` and the release lock is valid: retry the CAS update;
+- canonical ref updated and record incomplete: finish `ref_updated -> published` only when
+  `canonicalRef == releaseCommit`, `materialized = true`, `outputDigest` is verified,
+  `downloadReference` exists and resolves to the verified output, and the Release record is not
+  `failed`; otherwise retain `ref_updated` and continue reconciliation;
+- canonical ref differs from `expectedCanonicalHead`: mark `failed` with
+  `failureCode = STALE_CANONICAL_HEAD`, then create a new candidate from the current head;
+- materialization output was finalized but Release metadata was not persisted: reconcile by matching
+  the stored output digest to the prepared Release record, then attach it or remove the orphaned output;
 - digest mismatch: mark `failed` and never publish the candidate.
 
 ## 10. Recovery and Rollback
@@ -489,7 +608,9 @@ reconciles the Release record, candidate commit, canonical ref, and output diges
 | Join interrupted | Recreate the merge worktree from candidate commits |
 | LFS upload interrupted | Verify or resume the object upload, then retry the pointer commit |
 | Lock lease expired | Fence the old owner and reclaim the canonical lock |
+| Stale canonical head | Mark `failed` with `failureCode = STALE_CANONICAL_HEAD`; create a new candidate from the current head |
 | Release record write failed after ref update | Reconcile Git ref and complete the Release state |
+| Materialization store finalized before Release metadata persisted | Match output digest to the prepared Release record; attach it or remove the orphaned output |
 | Content must be reverted | Create a new restore commit from the earlier commit |
 
 Rollback never rewrites shared history. Workflow rollback resumes from a Runtime checkpoint;
@@ -511,11 +632,28 @@ The implementation remains limited to one Git + LFS Workspace backend:
 7. Project the compact business event list with branch, quorum, loop, decision background, evidence,
    conflict, commit, and release details.
 8. Keep Studio authoring limited to business Role/Flow fields; generate technical Git metadata.
-9. Clear old runtime history, worktrees, branches, locks, unreferenced objects, old public Artifact
-   names, and compatibility aliases before V2 release.
+9. Add idempotent worktree lifecycle cleanup: immediate checkout/temp-file cleanup, delayed branch/ref
+   pruning, and retention-aware Git/LFS garbage collection.
+10. Clear old runtime history, worktrees, branches, locks, old public Artifact names, and compatibility
+   aliases before V2 release. Mark unreferenced LFS objects for repository garbage collection rather
+   than requiring physical garbage collection during the V2 cutover.
 
-No migration, dual-write, compatibility read, alternate content backend, or separate delivery
-version is required.
+### 11.1 Implementation blockers before acceptance
+
+The target design may proceed into implementation, but the acceptance baseline cannot close until:
+
+- Git capability probing accepts valid LFS configuration and rejects only missing or unusable LFS;
+- `join_conflict` and `workspace_integrated` are registered in the Runtime event registry;
+- `WorkspaceRef`, Release record, Workspace content verifier, and Release materialization verifier are
+  represented in the active schemas and APIs;
+- active Role/Flow architecture and acceptance documents remove public Artifact fields and use
+  `WorkspaceRef`, Run evidence, and Release materialization, including
+  `role-execution-architecture.md`;
+- no persisted-data migration, historical compatibility read, or dual-write path is introduced.
+
+No persisted-data migration or compatibility read is required. A source, schema, public-contract,
+and active-documentation refactor is required before V2 release; no dual-write path, alternate
+content backend, or separate delivery version is retained.
 
 ## 12. Workspace-Specific Acceptance
 
@@ -527,8 +665,8 @@ defined by [`v2-validation-and-acceptance.md`](v2-validation-and-acceptance.md) 
 
 - Two Roles can edit independent worktrees from the same `baseCommit` in parallel.
 - A Role commit is traceable to `runId`, `nodeId`, `roleId`, `worktreeId`, `branch`, and `baseCommit`.
-- A `WorkspaceRef` contains a 40-character commit SHA, repository-relative path, digest, access,
-  Workspace ID, and producer provenance.
+- A `WorkspaceRef` contains a Workspace ID, full immutable commit ID matching the repository object
+  format, repository-relative path, and digest; producer provenance is recorded separately in evidence.
 - A branch name, absolute path, or uncommitted file is rejected as a cross-Role `WorkspaceRef`.
 - Merge worktree integration does not acquire the canonical lock.
 - A same-path text conflict creates `join_conflict` and does not change the canonical ref.
@@ -540,10 +678,32 @@ defined by [`v2-validation-and-acceptance.md`](v2-validation-and-acceptance.md) 
 - Canonical ref updates, restore, and release require `owner`, `leaseUntil`, `fencingToken`, and
   `expectedCanonicalHead`.
 - A stale expected head rejects integration into the canonical ref and leaves the candidate recoverable.
-- An external direct write to an authoritative ref is rejected, fenced, or detected during reconciliation.
+- An external direct write to an authoritative ref is detected by `expectedCanonicalHead` and fails
+  closed. Only a known Release record failure window may enter reconciliation.
 - Role worktree paths are not required for recovery; Framework recreates them from identifiers and commits.
 - A failed checkpoint write can be reconciled from branch, commit trailers, and commit provenance.
 - A restore creates a new commit containing earlier Git/LFS content; shared history is not rewritten.
+
+### Worktree cleanup and retention
+
+- Completed Role and merge worktrees become eligible for automatic cleanup after durable commit,
+  merge, and Release evidence is written.
+- Active, conflicted, reviewed, or recoverable worktrees are retained until their lifecycle ends or
+  the retention policy expires.
+- Recovery recreates a worktree from identifiers and commit references without relying on its old path.
+- Worktree cleanup removes checkout and temporary-file space without prematurely deleting shared Git or
+  LFS objects.
+- Branch/ref pruning and Git/LFS garbage collection never remove content referenced by a retained
+  checkpoint, Release record, or evidence package.
+
+### File-based collaboration scenarios
+
+- The same Workspace contract supports source, document, design, image, audio, video, and other
+  file-based workflows through Role/Flow profiles and Release materialization profiles.
+- A new file-based scenario adds Role contracts, Flow edges, WorkspaceRef authorization, verification,
+  and materialization rules; it does not add a new content-version or Artifact model.
+- Live database state, external SaaS state, and caches remain outside the Workspace and must be
+  exported or referenced through an explicit integration boundary.
 
 ### Git LFS
 
@@ -558,14 +718,22 @@ defined by [`v2-validation-and-acceptance.md`](v2-validation-and-acceptance.md) 
 - `releaseCommit = mergeCommit` when Release does not modify Workspace content.
 - A new release commit is created only when release metadata or other authoritative content changes.
 - Materialization uses the recorded release commit and produces the recorded `outputDigest`.
-- A crash between Git ref update and Release record persistence is reconciled to `published` or
-  marked `failed` without silently publishing an unverified result.
-- Release output is traceable to the release commit, profile, toolchain, command, digest, and download reference.
+- The materialized output and `downloadReference` are atomically persisted before the record becomes
+  `materialized`.
+- A stale expected head produces `failed` with `failureCode = STALE_CANONICAL_HEAD`; a new candidate
+  is based on the current head.
+- A crash between Git ref update and Release record persistence is reconciled to `published` only
+  when the canonical ref, materialization, manifest, digest, and download reference all verify;
+  otherwise reconciliation continues or marks `failed` with a defined `failureCode`. An unverified
+  result is never silently published.
+- Release output is traceable to the release commit, immutable materialization manifest, output digest,
+  materialization metadata, and download reference.
 
 ### Event and provenance
 
 - The event projection uses the registered Runtime event names and does not introduce aliases.
-- `join_conflict`, `workspace_integrated`, and `release_created` are registered before acceptance.
+- `join_conflict` and `workspace_integrated` are registered before acceptance; Release status
+  transitions are projected from the Release record.
 - Decision events expose branch, quorum, loop, Role arrival, timing, commit, and evidence facts.
 - Model request events and `agent_event` entries are absent from the business event list.
 
@@ -587,8 +755,9 @@ Role / Flow
   -> Runtime checkpoint and decision evidence
   -> canonical lock and expected-head CAS
   -> releaseCommit
-  -> materialization and Release record
-  -> downloadable content
+  -> materialization manifest / outputDigest
+  -> Release record
+  -> download reference
 ```
 
 Git commit is the content fact. Git LFS extends that fact to large files and media. Worktrees provide
