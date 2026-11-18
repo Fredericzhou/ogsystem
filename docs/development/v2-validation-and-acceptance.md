@@ -9,7 +9,7 @@ OGSystem v2 is accepted only when it demonstrates both of these properties:
 
 ```text
 Explicit collaboration
-  Roles exchange declared events, data, and authorized Artifacts through a durable Flow.
+  Roles exchange declared events, data, and authorized Workspace references through a durable Flow.
 
 Production usefulness
   A real team can use the system to complete and review software and documentation work,
@@ -19,6 +19,15 @@ Production usefulness
 Passing schema or adapter tests alone is insufficient. The release must pass semantic,
 technical, and production-workflow gates using one final v2 code and schema state.
 
+### Workspace terminology boundary
+
+During the refactor, existing `Artifact` and `ArtifactReference` field names may still appear in
+implementation evidence. They are temporary names for an authorized run evidence package or file
+handoff, not a Workspace content version. Before the V2 contract is frozen, public fields must use
+`WorkspaceRef`, Run evidence, and Release materialization. The authoritative Workspace version is a
+Git commit, including Git LFS objects; the final downloadable result is a Release materialization
+with a digest. No compatibility aliases remain after the cleanup.
+
 ## 2. Three Acceptance Gates
 
 ### Gate A: Semantic Conformance
@@ -27,11 +36,12 @@ Verify that the Business Layer remains deterministic and explicit:
 
 - Role Contract contains responsibility, inputs, outputs, acceptance, failure semantics, and business review actions only.
 - Flow is the only source of routable transitions and registered Business Events.
-- HandoffProjection transfers only declared context mappings, Flow Contract payloads, and authorized ArtifactReferences.
+- HandoffProjection transfers only declared context mappings, Flow Contract payloads, and authorized
+  `WorkspaceRef` values.
 - No prompt history, workspace path, raw tool output, or implicit shared memory crosses a Role boundary.
 - Branch, Join, quorum, Loop, automatic retry, rework, rejection, termination, and recovery preserve lineage and state versions.
 - `round`, `loopIteration`, `lineageId`, `branchId`, and `stateVersion` remain distinguishable in Review evidence.
-- Ambiguous routes, missing mappings, missing required Artifacts, and stale decisions fail closed.
+- Ambiguous routes, missing mappings, missing required Workspace references, and stale decisions fail closed.
 
 ### Gate B: Execution and Evidence Conformance
 
@@ -49,10 +59,10 @@ Verify the Technical Binding and Execution Layers:
   staging boundary is proven.
 - Pi and Kimi remain unavailable or degraded until their probes pass. Claude is not a verified Backend.
 - Unknown tools, dynamic MCP/tool-search requests, unbounded resources, staging escapes, and
-  unauthorized Artifact reads are denied and audited.
+  unauthorized Workspace reference reads are denied and audited.
 - Studio/debug simulation uses a text-only Harness (`allowedTools=[]`, `filesystem=none`,
   `process=deny`, `network=deny`) and never promotes simulated capability facts into a Run
-  Snapshot. Real artifact-producing classic teams default to the verified Codex staging profile;
+  Snapshot. Real deliverable-producing classic teams default to the verified Codex staging profile;
   OpenCode/Pi remain text-only unless their Adapter proves the requested resource boundary.
 - Review decisions are idempotent and CAS-bound to `reviewId`, `round`, `lineageId`, `branchId`,
   `loopIteration`, and `stateVersion`.
@@ -65,14 +75,14 @@ At least two real workflows must pass with real verified Backends and real deliv
 1. **Software development workflow**
    - Start from a real repository, issue, or change request.
    - Use at least two collaborating Roles, such as planner, implementer, tester, reviewer, or release owner.
-   - Use explicit handoff data and at least one authorized Artifact or repository change.
+   - Use explicit handoff data and at least one authorized Workspace reference or repository change.
    - Produce a reviewable code diff, tests or verification output, and delivery notes.
    - A reviewer confirms the result against acceptance criteria before promotion.
 
 2. **Documentation workflow**
    - Start from a real documentation request and source material.
    - Use separate Roles for research/outline, drafting, review, and finalization where appropriate.
-   - Produce the final document as an Artifact with links, structure, terminology, and completeness checks.
+   - Produce the final document as a Release materialization with links, structure, terminology, and completeness checks.
    - A reviewer confirms that the document is usable by its intended audience and that unsupported claims are traceable.
 
 The workflows must complete through the actual Studio/CLI or supported product path. Mock model
@@ -83,7 +93,7 @@ Gate C.
 
 The engineering execution portion of Gate C is passed for both required workflows. The attached
 evidence record [`v2-gate-c-real-workflow-success-2026-11-16.md`](evidence/v2-gate-c-real-workflow-success-2026-11-16.md)
-records real Codex `gpt-6-luna` Runs, frozen capability/policy configuration, sealed Artifacts,
+records real Codex `gpt-6-luna` Runs, frozen capability/policy configuration, sealed run evidence,
 verification reports, and reviewer decisions. Gate C remains a release gate until the
 [Release UAT checklist](release-uat-checklist.md) contains the required workflow-operator and
 product-owner sign-offs. Historical v1 validation records, archived Team Site tests, API-only
@@ -113,7 +123,7 @@ the fixture is immutable and its digest is recorded.
 | S1 | Linear handoff | Registered event, typed data, and declared input/output schema reach the next Role only through the Flow. |
 | S2 | Event and condition routing | Each registered event and condition selects the correct edge; unknown or ambiguous routes stop the Run. |
 | S3 | Context projection | `context.map` passes only declared fields; undeclared upstream data is unavailable. |
-| S4 | Artifact handoff | Default transfer is empty; declared and authorized ArtifactReferences transfer; missing or unauthorized Artifacts block handoff. |
+| S4 | Authorized file-reference handoff | Default transfer is empty; declared and authorized references transfer; missing or unauthorized references block handoff. |
 | S5 | Parallel split | Branches receive isolated staging, lineage, and session context. |
 | S6 | All-of Join | All required source outcomes are durable; late, skipped, or failed sources follow the declared Join policy. |
 | S7 | Quorum Join | The threshold is reached exactly once and late arrivals remain evidence without changing the committed result. |
@@ -124,10 +134,10 @@ the fixture is immutable and its digest is recorded.
 | S12 | Cross-Backend handoff | Two verified Backends execute different Roles in one Flow without Backend-specific fields entering Business or Semantic IR. |
 | S13 | Capability readiness | Missing Model, missing tool, unsupported resource boundary, or invalid Harness binding prevents Backend startup. |
 | S14 | Run freeze and recovery | Crash/restart resumes from the original Snapshot, policy, staging identity, and Review scope. |
-| S15 | Fail-closed security | Unknown tools, dynamic tools, path escapes, denied resources, and unauthorized Artifacts are blocked and audited. |
+| S15 | Fail-closed security | Unknown tools, dynamic tools, path escapes, denied resources, and unauthorized Workspace references are blocked and audited. |
 | S15a | Harness advanced parameters | `variant` and requested `reasoningEffort` are validated against the selected Backend/model; `auto` is resolved by the Adapter and request/effective values remain technical facts. |
 | S16 | Real software delivery | A code change is produced, tested, reviewed, and promoted or explicitly rejected. |
-| S17 | Real documentation delivery | A usable document is produced, reviewed, artifact-sealed, and delivered with traceable evidence. |
+| S17 | Real documentation delivery | A usable document is produced, reviewed, materialized, digest-verified, and delivered with traceable evidence. |
 | S18 | Join timeout and compensation | A timed-out or failed source follows the declared exception path; retryable infrastructure failure does not silently consume budget or duplicate committed work. |
 | S19 | Start and terminal aggregation | Start dispatch, End quorum/ordering, cancellation, and final Result commit occur once and remain recoverable. |
 
@@ -145,7 +155,7 @@ The two Harness Templates may use different models and different native tools. T
 must remain identical across the handoff:
 
 - Business Event and Flow routing;
-- declared data and Artifact contract;
+- declared data and Workspace-reference contract;
 - Review and recovery semantics;
 - audit and Evidence ownership.
 
@@ -164,15 +174,15 @@ Every passed scenario must attach one immutable evidence package containing:
 - Capability Snapshot and `verifiedTools` digest;
 - `resolved-config.json` with `allowedTools`, `verifiedTools`, EffectiveEnvironmentPolicy,
   staging, Law, policy, capability, and Adapter identities;
-- Role inputs, outputs, Business Events, HandoffProjection, and Artifact authorization records;
+- Role inputs, outputs, Business Events, HandoffProjection, and Workspace-reference authorization records;
 - tool invocation and PermissionDecision events;
 - Review request, decision, CAS state, and scope identity;
 - checkpoints, recovery/replay output, and final Run status;
 - production deliverables, verification reports, code diff or document package;
 - operator and product-owner sign-off for Gate C.
 
-Evidence without a reproducible Run identity, required Artifact, or human sign-off cannot close a
-production acceptance scenario.
+Evidence without a reproducible Run identity, required Workspace reference or Release materialization,
+or human sign-off cannot close a production acceptance scenario.
 
 ## 6. Release Rules
 
@@ -187,7 +197,7 @@ The v2 cutover is blocked when any of the following is true:
 - a high-severity authorization, data-integrity, recovery, or audit issue remains open.
 
 Performance and capacity thresholds are not invented without a product commitment. For each real
-workflow, record duration, token/model usage when available, Artifact size, event count, disk use,
+workflow, record duration, token/model usage when available, materialization size, event count, disk use,
 peak memory, and operator effort. Product owners decide whether the observed workload is acceptable
 or requires a separate capacity target.
 

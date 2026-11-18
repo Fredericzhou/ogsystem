@@ -25,7 +25,7 @@ from those frozen facts during execution and recovery.
 ## D4: Fail Closed
 
 Missing model, unavailable tool, unsupported resource boundary, dynamic tool request, path escape,
-stale Review decision, or unauthorized Artifact blocks the operation and writes evidence.
+stale Review decision, or unauthorized WorkspaceRef blocks the operation and writes evidence.
 
 ## D5: Product and Evidence Gates
 

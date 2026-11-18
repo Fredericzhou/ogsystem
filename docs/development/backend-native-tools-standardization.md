@@ -25,7 +25,7 @@ OGSystem 的核心定位是**多智能体拓扑编排、企业法则（Law）治
 1. **底座反向约束工具集（Capability Projection，目标）**：Harness Template 生成时，工具选项不是全局静态任意挑选的，而是由模板绑定的 Backend/Model 动态投影出可选范围；Role 只选择模板；MVP 先依赖已实现的 role contract 与 capability policy 门禁；
 2. **OGS 零自建工具执行器**：OGS 不写文件编辑算法，不写网络抓取爬虫，不自建搜索引擎，坚决避免重复造轮子；
 3. **纯映射与策略开关（Pure Mapping & Switch）**：OGS 只负责“意图声明（`toolId`） $\to$ 底座原生参数/网络沙箱开关透传”；
-4. **刚性安全由现有基础设施兜底**：执行过程由 Runtime 现成的 Staging Clean Room 目录隔离与配额门禁兜底，执行后由 `artifact-verifier.ts` 做防逃逸检查与 SHA-256 存证封签；
+4. **刚性安全由现有基础设施兜底**：执行过程由 Runtime 现成的 Staging Clean Room 目录隔离与配额门禁兜底，目标由 Workspace content verifier 做防逃逸检查、Git/LFS 内容校验与 SHA-256 存证；当前 `artifact-verifier.ts` 只是迁移期间的实现名称；
 5. **Studio 极简联动内嵌（目标）**：不建独立的“工具库”或大盘页面，在角色检查器内提供“底座联动投影的工具选项 + 环境意图摘要 + 行内就绪诊断”，10 秒内完成配置。Studio 只编辑 Harness Template 的 `allowedTools` 和 EnvironmentIntent。
 
 本文同时描述当前实现和目标方案。为了避免把设计草图误当成现有能力，使用以下标记：
@@ -95,12 +95,12 @@ Inherited v2 execution mapping
 
 ### 现成可用资产：Staging 隔离与门禁封签
 
-Runtime 内部已经拥有完善的物理隔离与安全基础设施（位于 `src/runtime/role-executor.ts` 及 `src/runtime/artifact-verifier.ts`），无需新造轮子：
+Runtime 内部已经拥有完善的物理隔离与安全基础设施（位于 `src/runtime/role-executor.ts` 及迁移中的 content verifier），无需新造轮子：
 - **Clean Room 独立目录**：每次角色激活（Attempt/Retry）均在 `roles/<roleId>/executions/<executionId>/workspace/` 创建全新工作区；
 - **防路径逃逸**：`safeRelativePath` 与 `isWithin` 拦截所有绝对路径与 `..` 相对段；
 - **禁止符号链接**：底层句柄携带 `O_NOFOLLOW`，严禁跨区软链逃逸；
 - **硬性安全配额**：单文件大小（默认 50MB）、总字节数（默认 200MB）、文件总数等硬配额限制；
-- **原子提升与哈希封签**：校验通过后通过 `flag: "wx"` 提升至 `run/shared/artifacts/`，生成不可变的 `seal-manifest.json` 与不透明 `artifactRef`。
+- **原子证据与哈希记录**：校验通过后生成不可变的 Evidence manifest；最终交付由 Release materialization verifier 生成 Materialization manifest 和 `outputDigest`。
 
 ### 当前实现边界（以源码为准）
 
@@ -119,7 +119,7 @@ role.json constraints.allowedTools
 
 这条链路的关键约束是“能力声明不能超过 capability policy，实际工作目录不能离开本次 execution staging”。`workspace.write`、`workspace.patch_text` 和 `workspace.run` 是当前代码中有明确运行语义的工具引用；读取 staging 是会话的默认能力，`workspace.list` 尚未作为独立的 Runtime 门禁实现。`web.search` 也尚未形成统一的 OGS tool contract、adapter 映射或 Readiness 检查，不能把它当作当前已启用的能力。
 
-MVP 的 backend contract 位于 `src/runtime/backend-capabilities.ts`：它校验 capability policy 的绝对 `root` 和布尔字段，把已启用的 workspace 能力投影为稳定的 tool ID，并在 `Executor` 启动/复用 backend session 前检查 adapter 即将使用的 execution directory 是否仍在该 root 内。提供 policy 时，越界、相对路径和未知字段都会 fail-closed；缺少 policy 是为兼容未接入 capability contract 的旧 adapter 而保留的有意放行，此时函数只返回规范化目录，不提供额外 root 门禁。Role 执行路径在启用该契约时应始终传入 policy。这项校验不替代 staging 的符号链接、配额和 artifact 验证。`projectWorkspaceCapabilities()` 目前只是由 adapter 导出的纯投影辅助函数和契约单测，尚未接入运行时门禁、tool 审计或 Studio 投影；它不能被当作已经生效的项目能力 enforcement。
+MVP 的 backend contract 位于 `src/runtime/backend-capabilities.ts`：它校验 capability policy 的绝对 `root` 和布尔字段，把已启用的 workspace 能力投影为稳定的 tool ID，并在 `Executor` 启动/复用 backend session 前检查 adapter 即将使用的 execution directory 是否仍在该 root 内。提供 policy 时，越界、相对路径和未知字段都会 fail-closed；缺少 policy 是为兼容未接入 capability contract 的旧 adapter 而保留的有意放行，此时函数只返回规范化目录，不提供额外 root 门禁。Role 执行路径在启用该契约时应始终传入 policy。这项校验不替代 staging 的符号链接、配额和 Workspace content verification。`projectWorkspaceCapabilities()` 目前只是由 adapter 导出的纯投影辅助函数和契约单测，尚未接入运行时门禁、tool 审计或 Studio 投影；它不能被当作已经生效的项目能力 enforcement。
 
 当前 `BackendDescriptor.capabilities` 表示后端会话层的通用能力（文本输入、tool call、结构化输出、会话复用和中止），不是本文标准工具 ID 的完整能力矩阵。后端 adapter 会转发工作目录及 `workspaceCapabilityPolicy`，但 OGS 不会替代各 CLI 内部的文件编辑、搜索或网络实现。
 
@@ -271,11 +271,11 @@ v2，不能通过 v2 绕过 staging、quota 或资源策略。
 > v2 活动标准以 [`role-execution-architecture.md`](role-execution-architecture.md) 和
 > [`v2-validation-and-acceptance.md`](v2-validation-and-acceptance.md) 为准。
 
-文件产物交付文档是本能力层的前置依赖。Role 必须先能在独立 staging 中产生可验证 artifact，并通过 handoff 交给串行下游或通过 Git worktree 进入 Join 后 Merge Stage；backend 工具标准化只决定 Role 如何在 staging 中工作，不改变 artifact、handoff、merge 和 promotion 的所有权。
+Workspace 内容与 Release materialization 文档是本能力层的前置依赖。Role 必须先能在独立 staging 中产生可验证的 Workspace change，并通过 `WorkspaceRef` 交给串行下游或通过 Git worktree 进入 Join 后 Merge Stage；backend 工具标准化只决定 Role 如何在 staging 中工作，不改变 Workspace content verification、handoff、merge 和 Release 的所有权。
 
 推荐按以下顺序落地：
 
-1. **交付基线（前置）**：完成 `staging -> artifact verify/seal -> handoff -> promotion` 的可恢复链路，保留当前单 Role 和串行 handoff 行为。
+1. **交付基线（前置）**：完成 `staging -> Workspace content verification -> WorkspaceRef handoff -> Release materialization` 的可恢复链路，保留当前单 Role 和串行 handoff 行为。
 2. **MVP 能力契约**：把现有 `workspace.write`、`workspace.patch_text`、`workspace.run` 的 capability policy、backend 工作目录传递和失败审计固化为测试；读取继续使用当前 staging 默认能力。此阶段不新增 `web.search` 或独立 `workspace.list` 执行器。
 3. **Git 协作接入**：`src/runtime/git-collaboration.ts` 已提供受控 native Git CLI wrapper、worktree 生命周期、固定基线、commit provenance、merge/conflict 和合并工作树验证 API；Graph Runner 在显式传入 coordinator 时已接入并行代码 Role、Join 后 Merge Stage、commit/merge 事件和 verify 门禁，并有真实临时仓库端到端测试。项目级自动构造、CAS promotion adapter 仍由调用方接线。Git 合并失败必须保留冲突证据并停止 promotion，不向业务目录写入编号冲突文件。
 4. **后端投影（后续）**：为实际注册的 backend 逐个补充可验证的 native capability descriptor 和 readiness probe。每次只接入一个能力，先实现 workspace 工具，再评估 `web.search`；不得仅凭 CLI 宣传文档把能力标为可用。
@@ -292,7 +292,7 @@ v1 字段或旧权限模式。v1 数据不导入 v2。
 
 - **能力边界可验证**：`role contract` 和 semantic capability policy 拒绝未授权的 tool reference；`workspace.write`、`workspace.patch_text`、`workspace.run` 分别控制 staging 写入、补丁写入和命令执行。
 - **后端工作目录正确**：每个 adapter 收到本次 execution staging 目录，不能写入 `project.workspaceDir`；单 Role 与串行 handoff 的现有行为保持不变。
-- **执行安全刚性兜底**：防逃逸、符号链接检查、文件配额、artifact manifest/seal 和 promotion 门禁继续由 Runtime 基础设施负责。
+- **执行安全刚性兜底**：防逃逸、符号链接检查、文件配额、Evidence manifest 和 Release materialization verifier 门禁继续由 Runtime 基础设施负责。
 - **Git 协作 MVP 可验证**：并行 worktree 的 commit provenance、固定基线、Join 后确定性 merge、Join 重试复用合并工作树、最新成功 leaf 的最终合并、冲突事件和合并工作树验证有真实端到端测试；publish 异常会持久化失败 Run 和可能部分生效的证据。项目级 Git-aware promotion lock/CAS adapter 仍需后续接线，合并失败不得污染业务目录。
 - **架构保持轻量**：不在 OGS 内实现文件编辑算法、搜索爬虫或 Git 语义合并引擎；优先使用 backend 原生工具和 Git CLI。
 

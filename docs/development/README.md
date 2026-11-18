@@ -34,6 +34,7 @@ v1 data.
 
 - [Role execution architecture](role-execution-architecture.md): sole architecture and direct replacement standard.
 - [v2 validation and acceptance](v2-validation-and-acceptance.md): semantic, technical, recovery, and production workflow acceptance baseline.
+- [V2 workspace collaboration design and acceptance](v2-workspace-collaboration-design-and-acceptance.md): framework-managed Git/LFS commits, Worktree isolation, canonical locking, Release materialization, and Workspace-specific acceptance.
 - [Backend native tools standardization](backend-native-tools-standardization.md): capability discovery and Adapter mapping reference only.
 
 ## Reference / Research
@@ -46,7 +47,7 @@ v1 data.
 ## Verification, UAT & Release Records
 
 - [Historical v1 validation record (2026-11-10)](current-version-validation-2026-11-10.md): retained for archaeology; it does not close a v2 gate.
-- [v2 Gate C real workflow success evidence](evidence/v2-gate-c-real-workflow-success-2026-11-16.md): final Codex/gpt-6-luna software and documentation Runs, sealed Artifacts, reviewer decisions, and promotion receipts.
+- [v2 Gate C real workflow success evidence](evidence/v2-gate-c-real-workflow-success-2026-11-16.md): final Codex/gpt-6-luna software and documentation Runs, sealed run evidence and materializations, reviewer decisions, and promotion receipts.
 - [v2 Gate C failure attempts](evidence/v2-gate-c-real-workflow-attempts-2026-11-16.md): retained diagnostic evidence; it does not override the successful final Runs.
 - [Release UAT checklist](release-uat-checklist.md): manual and browser release verification gates.
 - [Design release validation template](design-release-validation-template.md): repeatable evidence template for design and release validation runs.

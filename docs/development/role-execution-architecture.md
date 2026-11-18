@@ -7,6 +7,12 @@ auditable executions.
 > authority after the direct replacement. Source code and executable tests define the implemented
 > behavior; historical v1 documents are archived and are not runtime inputs.
 
+Workspace content and delivery vocabulary is defined by
+[`v2-workspace-collaboration-design-and-acceptance.md`](v2-workspace-collaboration-design-and-acceptance.md).
+Any remaining `Artifact` wording in this document is transitional implementation text. Before the
+V2 freeze it must be replaced by `WorkspaceRef`, Run evidence, or Release materialization; it is not
+an additional product object or compatibility contract.
+
 ## Contract Set Version
 
 This document defines **OGS Contract Set v2**. The cutover is breaking and does not retain runtime
@@ -53,7 +59,7 @@ rejected by the active Runtime.
 
 3. Runtime cutover
    Implement resolved Run snapshots, effective policy/tool freezing, readiness fail-closed,
-   Artifact authorization, Review CAS identity, and remove v1 runtime fallback branches.
+   WorkspaceRef authorization, Review CAS identity, and remove v1 runtime fallback branches.
 
 4. Backend readiness
    Verify each registered Adapter's discovery, staging, resource enforcement, native session,
@@ -64,7 +70,7 @@ rejected by the active Runtime.
    Templates; remove v1 Role tool and execution fields from v2 authoring inputs.
 
 6. Evidence and recovery
-   Persist v2 event version fields, tool/permission evidence, Review scope identity, Artifact
+   Persist v2 event version fields, tool/permission evidence, Review scope identity, WorkspaceRef
    decisions, and frozen Run configuration; verify replay and resume from those records.
 
 7. Direct replacement and validation
@@ -113,7 +119,7 @@ Evidence / Review Records
 The v2 core does not add Service Agent, Human Agent, Remote Agent, API/Cmd Role, Profile,
 Tool, or `local_shell` objects. Fixed commands must be exposed as verified Backend-native
 capabilities. Capability matrices, Studio tool-directory UX, Backend-specific permission protocol
-variants, extended exception-review workflows, notification policy, and alternate Artifact stores
+variants, extended exception-review workflows, notification policy, and alternate evidence stores
 are Deferred RFCs. V2 currently implements only the loop-budget exception Review path; v1 data is
 not migrated into v2.
 
@@ -127,7 +133,7 @@ ACP/MCP transport details and static/request/none protocol variants
 Pi, Kimi, and other Backend-specific probes
 Extended Runtime exception review matrices, timeout, escalation, and notification
 Action-specific review payloads and detailed evidence/result references
-Alternate Artifact stores and other non-core integrations
+Alternate evidence stores and other non-core integrations
 Service Agent, Human Agent, and Remote Agent bindings
 ```
 
@@ -171,7 +177,7 @@ Execution Layer
 
 Evidence (cross-cutting)
   Graph transition records, policy decisions, audit, tool events, permission results,
-  artifacts, Human Review records, checkpoints, and recovery.
+  Run evidence, Human Review records, checkpoints, and recovery.
 ```
 
 The following rules are fixed:
@@ -209,7 +215,7 @@ The following rules are fixed:
 10. Every Graph node remains a Responsibility Role. The v2 Harness binding describes how a
     Responsibility Role executes; it is not a new Graph node type.
 11. Role handoff data is explicit. Only declared event, context mappings, Flow Contracts, and
-    authorized Artifact references cross a Role boundary.
+    authorized WorkspaceRef values cross a Role boundary.
 12. Evidence events are append-only; checkpoints and result records use versioned/CAS writes.
    Evidence records and restores execution facts, but does not own mutable business or
    technical configuration.
@@ -441,7 +447,7 @@ Role-to-Role information transfer has one structural contract and three business
 type RoleResult = {
   event: BusinessEventType;
   data: Record<string, unknown>;
-  artifacts: ArtifactReference[];
+  workspaceRefs: WorkspaceRef[];
 };
 
 type RoleInput = {
@@ -449,7 +455,7 @@ type RoleInput = {
   input: Record<string, unknown>; // current hop input
   sourceEvent: BusinessEventType;
   data: Record<string, unknown>;
-  artifacts: ArtifactReference[];
+  workspaceRefs: WorkspaceRef[];
 };
 
 // A read-only projection of an existing FlowContract; it is not a new persisted contract.
@@ -458,15 +464,13 @@ type HandoffProjection = {
   targetRole: string;
   event: BusinessEventType;
   contextMap: FieldMapping[];
-  artifactRefs: string[];
+  workspaceRefs: WorkspaceRef[];
 };
 ```
 
-`artifactRefs` contains opaque Artifact IDs authorized by the existing Flow edge. Runtime verifies
-each reference against the sealed Artifact manifest before exposing it to the downstream Role; it
-never copies file paths or raw workspace data across a Role boundary. A future structured mapping
-with explicit source, target, and required fields would be a versioned contract extension, not an
-implicit interpretation of the current string list.
+`workspaceRefs` contains immutable commit/path/digest references authorized by the existing Flow
+edge. Runtime verifies each reference against the committed Git tree and Workspace policy before
+exposing it to the downstream Role; it never copies raw Workspace data across a Role boundary.
 
 `HandoffProjection` is an in-memory, read-only join of the existing sources. It does not
 create `handoff-contracts.json`, a second compiler, or a second validation source. The unique
@@ -481,9 +485,9 @@ Flow Contract
   and relation metadata. `FlowContractDefinition` is not extended with `contextMap` or
   `artifactRefs` by this proposal.
 
-artifactRefs
-  A read-only list of declared RoleResult artifact IDs authorized by the existing Artifact
-  Resolver. It is not a second persisted artifact contract.
+workspaceRefs
+  A read-only list of declared `WorkspaceRef` values authorized by the Framework. It is not a
+  second persisted Workspace contract.
 ```
 
 The view combines these sources only for execution planning and diagnostics. Any future change
@@ -499,41 +503,42 @@ Business Event
 Typed Data
   Carry declared structured business facts, decisions, and status values.
 
-Artifact Reference
-  Carry documents, media, code, and other large outputs through ArtifactResolver.
+Workspace Reference
+  Carry authorized committed Workspace paths, media, code, and other large files through the
+  Framework-managed WorkspaceRef boundary.
 ```
 
 `event` must be a value from the shared Business Event registry. The Flow edge is the only
 source of the routable event; `sourceEvent` is derived from that edge and is never configured
 as a second event field.
 
-Artifact handoff is fail-closed:
+Workspace reference handoff is fail-closed:
 
 ```text
-default Artifact transfer
+default WorkspaceRef transfer
   none
 
-declared and authorized ArtifactReference
-  may cross the handoff through the compiled artifactRefs list and Artifact Resolver
+declared and authorized WorkspaceRef
+  may cross the handoff through the compiled path projection and Framework Workspace reader
 
 missing declaration, authorization, or mapping
   reject the handoff
 
-required Artifact missing or unverifiable
+required WorkspaceRef missing or unverifiable
   do not commit the handoff or advance the Graph
 ```
 
-An Artifact path, tool output, or workspace file is never implicitly promoted into a handoff.
+An uncommitted path, tool output, or Workspace file is never implicitly promoted into a handoff.
 
 `task` remains the original user request. `input` is the changing per-hop payload. A Role does
 not receive the entire upstream context, prompt history, Backend session, workspace path, or raw
-tool output by implication. Artifact references are opaque and authorized; a filesystem path is
+tool output by implication. WorkspaceRef values are immutable and authorized; a filesystem path is
 not an authorization token. Join nodes use explicit source and field mappings rather than an
 implicit merge of all upstream data.
 
 Native tool availability is not a business completion guarantee. A Model Role becomes eligible
 for a durable `RoleResult` only after its output schema, declared postconditions, acceptance
-criteria, and Artifact verification pass. If a required business effect is not produced, whether
+criteria, and Workspace content verification pass. If a required business effect is not produced, whether
 because the Agent did not invoke an available tool or because the tool result is invalid, the
 Runtime does not persist a successful result and does not advance the Flow handoff. It records the
 failure and applies the declared failure or exception policy.
@@ -2440,11 +2445,11 @@ Contract Set v2. A new v2 project or TeamVersion starts from v2 schemas and v2 H
     `authority.controlActions`, loop-budget binding, and Runtime scope; ambiguous static targets
     fail readiness and ambiguous runtime decisions are rejected and audited.
 28. A Model Role cannot commit a successful result or advance a handoff until output
-    postconditions, acceptance criteria, and declared Artifact verification pass.
+    postconditions, acceptance criteria, and declared Workspace content verification pass.
 29. Every allowed `terminate` action resolves explicitly to `branch` or `run`; an ambiguous scope
     is rejected and audited.
-30. Artifact handoff defaults to none; undeclared, unauthorized, unmapped, missing, or unverifiable
-    required artifacts prevent handoff and Graph advancement.
+30. WorkspaceRef handoff defaults to none; undeclared, unauthorized, unmapped, missing, or
+    unverifiable required references prevent handoff and Graph advancement.
 31. `round` starts at 1 and is distinct from `loopIteration`; both are preserved when required to
     validate Review identity and Runtime scope.
 32. Loop-budget exception actions and terminate scope are read-only compiled projections; users do

@@ -3,6 +3,14 @@
 This checklist gates the Contract Set v2 local-first release. It starts from a clean install and a
 new project; historical development data and interfaces are not migration or compatibility targets.
 
+## Workspace terminology
+
+This checklist uses `Release materialization` for the final file or media delivery produced from a
+recorded Git commit. During the refactor, existing UI or evidence fields may still use `artifact` in
+their name; those fields must be renamed before the final V2 acceptance run. The temporary name is
+an implementation label for run evidence or a delivery package, not an independent Workspace
+content version, and no compatibility alias remains after cleanup.
+
 ## Participants
 
 - Framework developer: checks install, configuration diagnostics, API contracts, and recovery evidence.
@@ -54,8 +62,8 @@ new project; historical development data and interfaces are not migration or com
     `gpt-6-luna`). Verify the panel switches to the run view, role avatars/names and live
     messages appear, at least one message expands to show input/output/diagnostics, and active
     graph Flow edges use the animated green runtime style. Record the TeamVersion ID, Simulation
-    ID, final status, artifact URL, screenshots, and console errors.
-13. Follow the `Open run directory` link and inspect the real controlled artifact listing. Confirm
+    ID, final status, materialization URL, screenshots, and console errors.
+13. Follow the `Open run directory` link and inspect the real controlled materialization listing. Confirm
     events, timeline, audit, logs, and role output remain readable after a page refresh. Start a
     second Sandbox run, click the red Stop button before completion, and record the complete
     `stopping` to `stopped` transition. Repeat the panel switch, return, scroll, and link checks at
@@ -70,10 +78,10 @@ new project; historical development data and interfaces are not migration or com
 15. Change the TeamVersion after a completed Run. Confirm the old Run's `team-version.json`, asset
     snapshot, digest, events, and result remain unchanged; the next v2 Run records the new
     TeamVersion and digest. Confirm Studio Simulation history remains in `.studio/simulations` and
-    is absent from Project Task history and Deliverables. Do not import or compare released v1 data.
+    is absent from Project Task history and Release materializations. Do not import or compare released v1 data.
 16. Complete a real documentation delivery workflow through the supported Studio/CLI path. Start
     from a documentation request and source material, use separate research, drafting, review, and
-    finalization Roles, seal the final document as an authorized Artifact, and verify links,
+    finalization Roles, materialize the final document from its recorded commit, and verify links,
     terminology, completeness checks, reviewer decision, and append-only Evidence after refresh.
 
 ## Manual Evidence Record
@@ -90,7 +98,7 @@ the same evidence is reproduced against the final v2 code, schemas, and package 
 | Scenario | Executor / sign-off role | Status (Not run / Pass / Fail / Blocked) | Required evidence to attach | Evidence, individuals, date, blocker/dependency, issue IDs |
 | --- | --- | --- | --- | --- |
 | 1 | Workflow operator / Workflow operator | Blocked | Project and Task IDs; page capture showing mounted TeamVersion, materials area, empty task list before creation, then queued Task without a Run ID. | Executor unavailable in this run; workflow operator must perform and record IDs/captures. |
-| 2 | Workflow operator / Product owner | Blocked | Package/version and real target workflow fixture; Task, TeamVersion, and Run IDs; role-by-role inputs/outputs and event history; final result; before/after-refresh page captures. | Engineering CLI evidence for the v2 software workflow is attached in `docs/development/evidence/v2-gate-c-real-workflow-success-2026-11-16.md` (Run `20261116-021112-8895f585`), including sealed and promoted artifacts and reviewer approval. Browser workflow, refresh capture, and operator/product-owner sign-off remain outstanding. |
+| 2 | Workflow operator / Product owner | Blocked | Package/version and real target workflow fixture; Task, TeamVersion, and Run IDs; role-by-role inputs/outputs and event history; final result; before/after-refresh page captures. | Engineering CLI evidence for the v2 software workflow is attached in `docs/development/evidence/v2-gate-c-real-workflow-success-2026-11-16.md` (Run `20261116-021112-8895f585`), including sealed materializations and reviewer approval. Browser workflow, refresh capture, and operator/product-owner sign-off remain outstanding. |
 | 3 | Workflow operator / Workflow operator | Blocked | Readiness blocker and displayed reason; Task Run history before/after retry; failed and retry Run IDs; evidence the blocked attempt reserved no Run and the failed Run remains inspectable. | Requires workflow operator to execute and record the page flow. |
 | 4 | Framework developer / Framework developer | Not run | Clean-machine OS/runtime and package version; install/configuration transcript; readiness result; minimal linear workflow inputs, outputs, and execution record. | Final v2 npm and pnpm tarball smoke passed in the development environment. A clean supported machine transcript and operator record are still required before changing this status. |
 | 5 | Workflow operator / Workflow operator | Blocked | Branch-and-join fixture and Run ID; initial input; each Role's input/output and handoff; matching Visualizer capture and `/api/v2` requests/responses or saved records. | Requires workflow operator to perform the scenario and verify the delivered flow. |
@@ -100,11 +108,11 @@ the same evidence is reproduced against the final v2 code, schemas, and package 
 | 9 | Workflow operator / Workflow operator | Blocked | Desktop, mobile, and viewport dimensions; screenshots or recording showing graph, failure location, pending review, and next lifecycle action; overflow/overlap findings and issue IDs. | Final browser regression passed 17 tests with 2 deployment-only skips; Build layout regression passed 4 tests, including mobile graph controls and long-label geometry. Manual operator-flow screenshots, tablet comparison, and product-owner sign-off remain outstanding. |
 | 10 | Workflow operator / Product owner | Blocked | TeamVersion and Run IDs; screen recording showing the Team assets panel open while connecting two graph ports; saved Flow endpoints/event/business label; Global panel state; Start/End flow labels; any console errors. | Automated Studio design regression keeps Team assets open, verifies both connection ports are outside the panel bounds, creates the Flow, and saves its business label. The combined flow is covered automatically, but no human-reviewed screen recording and release sign-off are recorded yet. |
 | 11 | Accessibility evaluator / Accessibility evaluator | Blocked | Device model/OS, browser/version, assistive technology/version, viewport/zoom; keyboard path and focus order; screen-reader names, states, and announcements; recording or notes for any blocker and its reproduction steps. | No real supported device or screen reader is available in this execution context; accessibility evaluator owns completion. |
-| 12 | Workflow operator / Product owner | Blocked | TeamVersion ID, Simulation ID, Backend/model configuration, final status, role transcript captures, expanded diagnostic capture, green Flow capture, artifact URL, console log. | Requires a real browser workflow and an available verified Backend/model (current local target: Codex/`gpt-6-luna`); mock or API-only execution does not count. |
-| 13 | Workflow operator / Product owner | Blocked | Artifact listing and file captures before/after refresh; second Simulation ID; stop request and `stopping`/`stopped` timestamps; desktop/tablet/mobile viewport evidence. | Requires a live run long enough to exercise graceful stop and a real browser. A missing selected Backend/model or credential is a blocker; the current local engineering target is Codex/`gpt-6-luna`, while OpenCode/Pi may be selected only when their own readiness probe passes. |
+| 12 | Workflow operator / Product owner | Blocked | TeamVersion ID, Simulation ID, Backend/model configuration, final status, role transcript captures, expanded diagnostic capture, green Flow capture, materialization URL, console log. | Requires a real browser workflow and an available verified Backend/model (current local target: Codex/`gpt-6-luna`); mock or API-only execution does not count. |
+| 13 | Workflow operator / Product owner | Blocked | Materialization listing and file captures before/after refresh; second Simulation ID; stop request and `stopping`/`stopped` timestamps; desktop/tablet/mobile viewport evidence. | Requires a live run long enough to exercise graceful stop and a real browser. A missing selected Backend/model or credential is a blocker; the current local engineering target is Codex/`gpt-6-luna`, while OpenCode/Pi may be selected only when their own readiness probe passes. |
 | 14 | Framework developer / Product owner | Not run | Two control roots, one shared workspace path, two TeamVersion IDs, two Run IDs, before/after directory listings, and proof that no workspace `.ogs`, `source`, or `destination` directory was generated. | Must be executed against the new control-root/workspace contract. |
 | 15 | Framework developer / Product owner | Not run | Two v2 TeamVersion IDs and digests; unchanged first v2 Run manifest, asset snapshot and result; second v2 Run evidence; Studio Simulation and Project history listings. | Must prove v2 version freezing and Studio/Projects namespace isolation without importing or reading v1 data. |
-| 16 | Workflow operator / Product owner | Blocked | Documentation request and source digest; Role inputs/outputs; final document Artifact digest and URL; reviewer decision and CAS scope; link, terminology, completeness, and refresh evidence. | Engineering evidence is attached in `docs/development/evidence/v2-gate-c-real-workflow-success-2026-11-16.md` for Run `20261116-020145-9adc9512`, including the sealed document manifest, promotion receipt, and reviewer result. Workflow-operator/product-owner review and sign-off remain outstanding. |
+| 16 | Workflow operator / Product owner | Blocked | Documentation request and source digest; Role inputs/outputs; final Release materialization digest and URL; reviewer decision and CAS scope; link, terminology, completeness, and refresh evidence. | Engineering evidence is attached in `docs/development/evidence/v2-gate-c-real-workflow-success-2026-11-16.md` for Run `20261116-020145-9adc9512`, including the sealed materialization manifest, promotion receipt, and reviewer result. Workflow-operator/product-owner review and sign-off remain outstanding. |
 
 ## Release Gate
 
