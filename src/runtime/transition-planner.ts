@@ -1001,7 +1001,6 @@ function buildApprovedHumanReviewTransition(args: {
   };
   const loopScopeUpdates: Record<string, number> = {};
   const roleActivationUpdates: Record<string, number> = {};
-  const artifactAllowedByBranchId: Record<string, string[]> = {};
   const joinSourceOutcomeUpdates = buildJoinSourceOutcomeUpdates({
     state: args.state,
     plan: args.plan,
@@ -1248,22 +1247,6 @@ function buildApprovedHumanReviewTransition(args: {
       });
       nextBranchSequence += 1;
       branchUpdates[branch.branchId] = branch;
-      artifactAllowedByBranchId[branch.branchId] = buildArtifactAllowedIdsForActivation({
-        state: {
-          ...args.state,
-          roleResults: {
-            ...args.state.roleResults,
-            [args.review.branchId]: args.review.draftResult
-          }
-        },
-        targetNode,
-        targetLoopIteration: nextLoopIteration,
-        currentRoleId: args.review.roleId,
-        currentResult: args.review.draftResult,
-        currentBranch,
-        readiness,
-        indexes: args.indexes
-      });
       if (targetNode.joinMode === "quorum_of") {
         joinEvents.push({
           type: "join_quorum_reached",
@@ -1327,21 +1310,6 @@ function buildApprovedHumanReviewTransition(args: {
     });
     nextBranchSequence += 1;
     branchUpdates[branch.branchId] = branch;
-    artifactAllowedByBranchId[branch.branchId] = buildArtifactAllowedIdsForActivation({
-      state: {
-        ...args.state,
-        roleResults: {
-          ...args.state.roleResults,
-          [args.review.branchId]: args.review.draftResult
-        }
-      },
-      targetNode,
-      targetLoopIteration: nextLoopIteration,
-      currentRoleId: args.review.roleId,
-      currentResult: args.review.draftResult,
-      currentBranch,
-      indexes: args.indexes
-    });
     args.logger.transition({
       fromRoleId: args.review.roleId,
       event: targetEvent,
@@ -1415,7 +1383,6 @@ function buildApprovedHumanReviewTransition(args: {
       branchRecords: branchUpdates,
       loopIterations: loopUpdates,
       loopCountersByScope: loopScopeUpdates,
-      artifactAllowedByBranchId,
       selectedEventByBranchId: args.review.selectedEvent
         ? { [args.review.branchId]: args.review.selectedEvent }
         : {},
@@ -2031,43 +1998,6 @@ function buildJoinSourceSnapshot(args: {
   });
 }
 
-function buildArtifactAllowedIdsForActivation(args: {
-  state: GraphState;
-  targetNode: ExecutionPlanNode;
-  targetLoopIteration: number;
-  currentRoleId: string;
-  currentResult?: StoredRoleResult;
-  currentBranch: BranchRecord;
-  readiness?: { completedSourceRoleIds: string[] };
-  indexes?: RuntimeIndexes;
-}): string[] {
-  // Freeze the invocation allow-set from the results that are actually present
-  // at activation time. Indexes can lag a parallel branch merge by one
-  // scheduler step, so use the persisted state as the authoritative fallback
-  // and always include the current result explicitly. This preserves the
-  // quorum boundary while preventing a valid source artifact from being lost
-  // merely because its index was not refreshed yet.
-  const results = args.targetNode.joinMode
-    ? (args.readiness?.completedSourceRoleIds ?? []).map((sourceRoleId) => {
-        if (sourceRoleId === args.currentRoleId && args.currentResult) return args.currentResult;
-        const indexed = findRoleResult({
-          state: args.state,
-          roleId: sourceRoleId,
-          lineageId: args.currentBranch.lineageId,
-          loopIteration: args.targetLoopIteration,
-          indexes: args.indexes
-        });
-        if (indexed) return indexed;
-        return Object.values(args.state.roleResults ?? {}).find((result) =>
-          result.roleId === sourceRoleId &&
-          result.lineageId === args.currentBranch.lineageId &&
-          result.loopIteration === args.targetLoopIteration
-        );
-      })
-    : [args.currentResult];
-  return Array.from(new Set(results.flatMap((result) => result?.artifactRef?.artifactId ? [result.artifactRef.artifactId] : [])));
-}
-
 function buildRoutedTransitionPlan(args: {
   runId?: string;
   state: GraphState;
@@ -2101,7 +2031,6 @@ function buildRoutedTransitionPlan(args: {
   const roleActivationUpdates: Record<string, number> = {};
   const joinEvents: RuntimeTransitionEvent[] = [];
   const joinScopeUpdates: NonNullable<GraphState["joinScopes"]> = {};
-  const artifactAllowedByBranchId: Record<string, string[]> = {};
   const joinSourceOutcomeUpdates = buildJoinSourceOutcomeUpdates({
     state: args.state,
     plan: args.plan,
@@ -2356,16 +2285,6 @@ function buildRoutedTransitionPlan(args: {
       branchUpdates[branch.branchId] = consumedBudgetKeys.length
         ? { ...branch, consumedLoopBudgetKeys: consumedBudgetKeys }
         : branch;
-      artifactAllowedByBranchId[branch.branchId] = buildArtifactAllowedIdsForActivation({
-        state: args.state,
-        targetNode,
-        targetLoopIteration: nextLoopIteration,
-        currentRoleId: args.roleId,
-        currentResult: args.currentResult,
-        currentBranch: args.currentBranch,
-        readiness,
-        indexes: args.indexes
-      });
       const scopeKey = JSON.stringify([targetRoleId, args.currentBranch.lineageId, nextLoopIteration]);
       const existingScope = args.state.joinScopes?.[scopeKey];
       if (existingScope) {
@@ -2491,15 +2410,6 @@ function buildRoutedTransitionPlan(args: {
     branchUpdates[branch.branchId] = consumedBudgetKeys.length
       ? { ...branch, consumedLoopBudgetKeys: consumedBudgetKeys }
       : branch;
-    artifactAllowedByBranchId[branch.branchId] = buildArtifactAllowedIdsForActivation({
-      state: args.state,
-      targetNode,
-      targetLoopIteration: nextLoopIteration,
-      currentRoleId: args.roleId,
-      currentResult: args.currentResult,
-      currentBranch: args.currentBranch,
-      indexes: args.indexes
-    });
     args.logger.transition({
       fromRoleId: args.roleId,
       event: targetEvent,
@@ -2573,7 +2483,6 @@ function buildRoutedTransitionPlan(args: {
         ? { loopBudgetAuthorizationDeltasByScope }
         : {}),
       roleActivationsByScope: roleActivationUpdates,
-      artifactAllowedByBranchId,
       joinScopes: joinScopeUpdates,
       joinSourceOutcomesByScope: joinSourceOutcomeUpdates,
       selectedEventByBranchId: args.selectedEvent

@@ -371,7 +371,6 @@ export function createInitialGraphState(args: {
     loopIterations,
     loopCountersByScope: {},
     roleActivationsByScope,
-    artifactAllowedByBranchId: Object.fromEntries(Object.keys(branchRecords).map((branchId) => [branchId, []])),
     joinScopes: {},
     selectedEventByBranchId: {},
     finalOutputsByRoleId: {},

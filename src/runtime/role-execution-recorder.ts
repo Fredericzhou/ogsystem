@@ -1,6 +1,7 @@
 import { appendAuditRecord } from "./audit-recorder.js";
 import type { RuntimeAuditEvent } from "./engine-adapter.js";
 import { filesystemArtifactStore } from "./artifact-store.js";
+import { loadRoleExecutionCandidate, persistRoleExecutionCandidate, removeRoleExecutionCandidate } from "./run-artifacts.js";
 import type {
   AuditRecord,
   BranchRecord,
@@ -81,6 +82,18 @@ export async function persistCommittedExecutionResult(args: {
     outcome
   });
   return outcome;
+}
+
+export async function persistRoleExecutionCandidateRecord(args: Parameters<typeof persistRoleExecutionCandidate>[0]): Promise<void> {
+  await persistRoleExecutionCandidate(args);
+}
+
+export async function loadRoleExecutionCandidateRecord(executionDir: string) {
+  return loadRoleExecutionCandidate(executionDir);
+}
+
+export async function removeRoleExecutionCandidateRecord(executionDir: string): Promise<void> {
+  await removeRoleExecutionCandidate(executionDir);
 }
 
 export async function recordRolePrelude(args: Parameters<typeof filesystemArtifactStore.persistPrelude>[0]): Promise<void> {

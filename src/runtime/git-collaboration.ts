@@ -1,8 +1,10 @@
 import { execFile as execFileCallback } from "node:child_process";
 import { createHash } from "node:crypto";
-import { lstat, mkdir, realpath, rm } from "node:fs/promises";
+import { lstat, mkdir, readFile, realpath, rm } from "node:fs/promises";
 import { dirname, relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
+import { buildWorkspaceRef, type CanonicalWorkspaceLock, type WorkspaceRef } from "./workspace-contracts.js";
+import { assertCanonicalWorkspaceLock, readCanonicalWorkspaceLock } from "./workspace-lock.js";
 
 const execFile = promisify(execFileCallback);
 const SHA = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
@@ -30,7 +32,12 @@ export type GitRoleWorktree = {
 export type GitRoleCommit = GitRoleWorktree & {
   resultCommit: string;
   changedPaths: string[];
+  /** Framework-generated immutable references for regular files changed by this commit. */
+  workspaceRefs: WorkspaceRef[];
+  lfsObjectIds: string[];
   provenance: {
+    ogsContractVersion: 2;
+    schemaVersion: 1;
     version: 1;
     kind: "role-commit";
     runId: string;
@@ -52,6 +59,8 @@ export type GitMergeResult = {
   mergeCommit?: string;
   conflictPaths: string[];
   provenance: {
+    ogsContractVersion: 2;
+    schemaVersion: 1;
     version: 1;
     kind: "merge";
     runId: string;
@@ -72,6 +81,11 @@ export type GitMergeVerification = {
   reason?: "WORKTREE_NOT_CLEAN" | "DIFF_CHECK_FAILED" | "MERGE_HEAD_MISMATCH" | "MERGE_CANDIDATE_MISMATCH" | "MERGE_CANDIDATE_PROVENANCE_MISMATCH" | "MERGE_WORKTREE_MISMATCH";
 };
 
+export type GitRestoreResult = GitRoleCommit & {
+  targetCommit: string;
+  expectedCanonicalHead: string;
+};
+
 type GitMergeVerificationOptions = {
   mergeId?: string;
   branch?: string;
@@ -83,6 +97,7 @@ export type GitCollaborationOptions = {
   repositoryRoot: string;
   worktreeRoot: string;
   runId: string;
+  workspaceId?: string;
   timeoutMs?: number;
 };
 
@@ -196,6 +211,70 @@ function parseNameOnlyPaths(output: string): string[] {
   return output.split("\0").filter((item) => item.length > 0);
 }
 
+async function readCommittedBlob(args: {
+  repositoryRoot: string;
+  commit: string;
+  path: string;
+  timeoutMs: number;
+}): Promise<Buffer | undefined> {
+  const tree = await runGitAllowFailure(args.repositoryRoot, ["ls-tree", "-z", "--full-tree", args.commit, "--", args.path], args.timeoutMs);
+  if (tree.code !== 0) return undefined;
+  const entry = tree.stdout.split("\0").find(Boolean);
+  if (!entry) return undefined;
+  const header = entry.slice(0, entry.indexOf("\t")).split(" ");
+  if (header[0] === "120000" || header[1] !== "blob") return undefined;
+  try {
+    const result = await execFile("git", ["--literal-pathspecs", "show", `${args.commit}:${args.path}`], {
+      cwd: args.repositoryRoot,
+      env: gitEnv(),
+      encoding: "buffer",
+      maxBuffer: 64 * 1024 * 1024,
+      timeout: args.timeoutMs,
+      windowsHide: true
+    });
+    return Buffer.from(result.stdout as Uint8Array);
+  } catch {
+    return undefined;
+  }
+}
+
+async function workspaceRefsForCommit(args: {
+  repositoryRoot: string;
+  workspaceId: string;
+  commit: string;
+  changedPaths: string[];
+  timeoutMs: number;
+}): Promise<{ workspaceRefs: WorkspaceRef[]; lfsObjectIds: string[] }> {
+  const refs: WorkspaceRef[] = [];
+  const lfsObjectIds = new Set<string>();
+  for (const path of args.changedPaths) {
+    const pointerOrContent = await readCommittedBlob({ ...args, path });
+    if (!pointerOrContent) continue;
+    let content = pointerOrContent;
+    const pointer = /^version https:\/\/git-lfs\.github\.com\/spec\/v1\noid sha256:([0-9a-f]{64})\nsize (\d+)\n?$/.exec(content.toString("utf8"));
+    if (pointer) {
+      lfsObjectIds.add(`sha256:${pointer[1]}`);
+      const lfsRootResult = await runGitAllowFailure(args.repositoryRoot, ["rev-parse", "--git-path", "lfs/objects"], args.timeoutMs);
+      if (lfsRootResult.code !== 0) {
+        throw new Error("[WORKSPACE_LFS_UNAVAILABLE] Git LFS object storage is unavailable for a committed pointer");
+      }
+      const objectPath = resolve(args.repositoryRoot, lfsRootResult.stdout.trim(), pointer[1].slice(0, 2), pointer[1].slice(2, 4), pointer[1]);
+      try {
+        content = await readFile(objectPath);
+      } catch {
+        throw new Error("[WORKSPACE_LFS_UNAVAILABLE] referenced Git LFS object is unavailable for the committed pointer");
+      }
+      const objectDigest = createHash("sha256").update(content).digest("hex");
+      if (content.length !== Number(pointer[2]) || objectDigest !== pointer[1]) {
+        throw new Error("[WORKSPACE_LFS_DIGEST_MISMATCH] referenced Git LFS object failed checksum verification");
+      }
+    }
+    const digest = `sha256:${createHash("sha256").update(content).digest("hex")}`;
+    refs.push(buildWorkspaceRef({ workspaceId: args.workspaceId, commit: args.commit, path, digest }));
+  }
+  return { workspaceRefs: refs, lfsObjectIds: [...lfsObjectIds].sort() };
+}
+
 function encodeWorktreeId(roleId: string, executionId: string): string {
   return createHash("sha256").update(JSON.stringify([roleId, executionId]), "utf8").digest("hex");
 }
@@ -206,13 +285,22 @@ async function detectUnsupportedRepositoryFeature(repositoryRoot: string, timeou
     return "SUBMODULE_UNSUPPORTED";
   }
 
-  const lfsAttributes = await runGitAllowFailure(
-    repositoryRoot,
-    ["grep", "-I", "-n", "-e", "filter=lfs", "HEAD", "--", ":(glob)**/.gitattributes"],
-    timeoutMs
-  );
-  if (lfsAttributes.code === 0) return "LFS_ATTRIBUTES_UNSUPPORTED";
-  if (lfsAttributes.code !== 1) return "LFS_ATTRIBUTES_PROBE_FAILED";
+  const trackedFiles = await runGitAllowFailure(repositoryRoot, ["ls-tree", "-r", "--name-only", "HEAD"], timeoutMs);
+  let hasLfsAttributes = false;
+  if (trackedFiles.code === 0) {
+    for (const file of trackedFiles.stdout.split(/\r?\n/).filter((item) => item.endsWith(".gitattributes"))) {
+      const attributes = await runGitAllowFailure(repositoryRoot, ["show", `HEAD:${file}`], timeoutMs);
+      if (attributes.code === 0 && /filter=lfs\b/.test(attributes.stdout)) {
+        hasLfsAttributes = true;
+        break;
+      }
+    }
+  }
+  if (hasLfsAttributes) {
+    const lfsVersion = await runGitAllowFailure(repositoryRoot, ["lfs", "version"], timeoutMs);
+    if (lfsVersion.code !== 0) return "LFS_UNAVAILABLE";
+  }
+  if (trackedFiles.code !== 0) return "LFS_ATTRIBUTES_PROBE_FAILED";
 
   const sparseConfig = await runGitAllowFailure(repositoryRoot, ["config", "--bool", "--get", "core.sparseCheckout"], timeoutMs);
   if (sparseConfig.code === 0 && sparseConfig.stdout.trim().toLowerCase() === "true") return "SPARSE_CHECKOUT_UNSUPPORTED";
@@ -267,6 +355,7 @@ export function createGitCollaboration(options: GitCollaborationOptions) {
   const repositoryRoot = resolve(options.repositoryRoot);
   const worktreeRoot = resolve(options.worktreeRoot);
   const runId = assertId(options.runId, "run_id");
+  const workspaceId = options.workspaceId ?? `workspace-${createHash("sha256").update(repositoryRoot, "utf8").digest("hex").slice(0, 24)}`;
   const timeoutMs = options.timeoutMs ?? 30_000;
   const roleCommitsBySha = new Map<string, GitRoleCommit>();
 
@@ -284,6 +373,45 @@ export function createGitCollaboration(options: GitCollaborationOptions) {
   async function worktreeEntries(): Promise<GitWorktreeEntry[]> {
     const result = await runGitAllowFailure(repositoryRoot, ["worktree", "list", "--porcelain"], timeoutMs);
     return result.code === 0 ? parseWorktreeEntries(result.stdout) : [];
+  }
+
+  async function runBranchEntries(): Promise<Array<{ ref: string; commit: string }>> {
+    const result = await runGitAllowFailure(repositoryRoot, ["for-each-ref", "--format=%(refname) %(objectname)", `refs/heads/ogs/${runId}`], timeoutMs);
+    if (result.code !== 0) return [];
+    return result.stdout.split(/\r?\n/).filter(Boolean).flatMap((line) => {
+      const [ref, commit] = line.trim().split(/\s+/);
+      return ref && commit ? [{ ref, commit }] : [];
+    });
+  }
+
+  async function removeRunWorktrees(): Promise<string[]> {
+    const prefix = `refs/heads/ogs/${runId}/`;
+    const paths: string[] = [];
+    for (const entry of await worktreeEntries()) {
+      if (!entry.branch?.startsWith(prefix)) continue;
+      await removeWorktree(entry.path, true);
+      paths.push(entry.path);
+    }
+    return paths;
+  }
+
+  async function deleteRunBranch(args: { ref: string; expectedCommit: string; workspaceDir: string; expectedCanonicalHead: string; lock: CanonicalWorkspaceLock }): Promise<void> {
+    const { ref, expectedCommit } = args;
+    if (!ref.startsWith(`refs/heads/ogs/${runId}/`) || !SHA.test(expectedCommit)) throw new Error("GIT_COLLABORATION_BRANCH_INVALID");
+    if ((await worktreeEntries()).some((entry) => entry.branch === ref)) throw new Error("GIT_COLLABORATION_BRANCH_IN_USE");
+    const currentCanonicalHead = (await runGit(repositoryRoot, ["rev-parse", "HEAD"], timeoutMs)).trim();
+    const currentLock = await readCanonicalWorkspaceLock(args.workspaceDir);
+    if (!currentLock) throw new Error("[WORKSPACE_LOCK_OWNER_MISMATCH] canonical lock is missing");
+    await assertCanonicalWorkspaceLock({
+      workspaceDir: args.workspaceDir,
+      lock: currentLock,
+      owner: args.lock.owner,
+      fencingToken: args.lock.fencingToken,
+      expectedCanonicalHead: args.expectedCanonicalHead,
+      currentCanonicalHead
+    });
+    const result = await runGitAllowFailure(repositoryRoot, ["update-ref", "-d", ref, expectedCommit], timeoutMs);
+    if (result.code !== 0) throw new Error("GIT_COLLABORATION_BRANCH_CHANGED");
   }
 
   async function validateMergeCandidateSet(path: string, baseCommit: string, head: string, candidateCommits: string[]): Promise<void> {
@@ -409,24 +537,30 @@ export function createGitCollaboration(options: GitCollaborationOptions) {
       const changedPaths = resultCommit === worktree.baseCommit
         ? []
         : parseNameOnlyPaths(await runGit(worktree.path, ["diff", "--name-only", "-z", worktree.baseCommit, resultCommit], timeoutMs));
+      const { workspaceRefs, lfsObjectIds } = await workspaceRefsForCommit({ repositoryRoot, workspaceId, commit: resultCommit, changedPaths, timeoutMs });
       const commit: GitRoleCommit = {
         ...worktree,
         resultCommit,
         changedPaths,
-        provenance: { version: 1, kind: "role-commit", runId, roleId: worktree.roleId, executionId: worktree.executionId, baseCommit: worktree.baseCommit, resultCommit, changedPaths }
+        workspaceRefs,
+        lfsObjectIds,
+        provenance: { ogsContractVersion: 2, schemaVersion: 1, version: 1, kind: "role-commit", runId, roleId: worktree.roleId, executionId: worktree.executionId, baseCommit: worktree.baseCommit, resultCommit, changedPaths }
       };
       roleCommitsBySha.set(resultCommit, commit);
       return commit;
     }
     await runGit(worktree.path, ["add", "--all", ":(exclude).ogs", ":(exclude).ogs/**"], timeoutMs);
-    await runGit(worktree.path, ["-c", "user.name=OGS Runtime", "-c", "user.email=ogs-runtime@localhost", "commit", "--no-verify", "-m", message.trim()], timeoutMs);
+    await runGit(worktree.path, ["-c", "user.name=OGS Runtime", "-c", "user.email=ogs-runtime@localhost", "commit", "--no-verify", "-m", message.trim(), "--trailer", `Run-Id=${runId}`, "--trailer", `Node-Id=${worktree.roleId}`, "--trailer", `Checkpoint-Id=${runId}:${worktree.roleId}:${worktree.executionId}`, "--trailer", `Base-Commit=${worktree.baseCommit}`], timeoutMs);
     const resultCommit = (await runGit(worktree.path, ["rev-parse", "HEAD"], timeoutMs)).trim();
     const changedPaths = parseNameOnlyPaths(await runGit(worktree.path, ["diff-tree", "--no-commit-id", "--name-only", "-z", "-r", resultCommit], timeoutMs));
+    const { workspaceRefs, lfsObjectIds } = await workspaceRefsForCommit({ repositoryRoot, workspaceId, commit: resultCommit, changedPaths, timeoutMs });
     const commit: GitRoleCommit = {
       ...worktree,
       resultCommit,
       changedPaths,
-      provenance: { version: 1, kind: "role-commit", runId, roleId: worktree.roleId, executionId: worktree.executionId, baseCommit: worktree.baseCommit, resultCommit, changedPaths }
+      workspaceRefs,
+      lfsObjectIds,
+      provenance: { ogsContractVersion: 2, schemaVersion: 1, version: 1, kind: "role-commit", runId, roleId: worktree.roleId, executionId: worktree.executionId, baseCommit: worktree.baseCommit, resultCommit, changedPaths }
     };
     roleCommitsBySha.set(resultCommit, commit);
     return commit;
@@ -435,6 +569,91 @@ export function createGitCollaboration(options: GitCollaborationOptions) {
   async function registerRoleCommit(commit: GitRoleCommit): Promise<void> {
     await validateRoleCommitProvenance(commit);
     roleCommitsBySha.set(commit.resultCommit, commit);
+  }
+
+  async function recoverPreparedRoleCommit(args: {
+    roleId: string;
+    executionId: string;
+    branch: string;
+    baseCommit: string;
+  }): Promise<GitRoleCommit | undefined> {
+    const roleId = assertId(args.roleId, "role_id");
+    const executionId = assertId(args.executionId, "execution_id");
+    const worktreeId = encodeWorktreeId(roleId, executionId);
+    const expectedRoleBranch = branchName("role", worktreeId);
+    const mergePrefix = `ogs/${runId}/merge/`;
+    const isMergeBranch = args.branch.startsWith(mergePrefix);
+    const expectedBranch = isMergeBranch ? args.branch : expectedRoleBranch;
+    if (!isMergeBranch && args.branch !== expectedRoleBranch) {
+      throw new Error("GIT_COLLABORATION_PREPARED_IDENTITY_MISMATCH");
+    }
+    if (isMergeBranch && !/^ogs\/[A-Za-z0-9._-]+\/merge\/[A-Za-z0-9._-]+$/.test(args.branch)) {
+      throw new Error("GIT_COLLABORATION_PREPARED_IDENTITY_MISMATCH");
+    }
+    const baseCommit = await fixedBase(args.baseCommit);
+    const branchHead = await runGitAllowFailure(repositoryRoot, ["rev-parse", "--verify", expectedBranch], timeoutMs);
+    if (branchHead.code !== 0) return undefined;
+    const resultCommit = branchHead.stdout.trim();
+    if (resultCommit === baseCommit) return undefined;
+    const parents = (await runGit(repositoryRoot, ["rev-list", "--parents", "-n", "1", resultCommit], timeoutMs)).trim().split(" ").slice(1);
+    if (parents.length !== 1) throw new Error("GIT_COLLABORATION_PREPARED_COMMIT_MISMATCH");
+    if (!isMergeBranch && parents[0] !== baseCommit) throw new Error("GIT_COLLABORATION_PREPARED_COMMIT_MISMATCH");
+    if (isMergeBranch) {
+      const basedOnBase = await runGitAllowFailure(repositoryRoot, ["merge-base", "--is-ancestor", baseCommit, resultCommit], timeoutMs);
+      if (basedOnBase.code !== 0) throw new Error("GIT_COLLABORATION_PREPARED_COMMIT_MISMATCH");
+    }
+    const message = await runGit(repositoryRoot, ["show", "-s", "--format=%B", resultCommit], timeoutMs);
+    const trailers = new Map<string, string>();
+    for (const line of message.split(/\r?\n/)) {
+      const match = /^([A-Za-z][A-Za-z0-9-]*):\s*(.*)$/.exec(line);
+      if (match) trailers.set(match[1], match[2]);
+    }
+    if (trailers.get("Run-Id") !== runId
+      || trailers.get("Node-Id") !== roleId
+      || trailers.get("Checkpoint-Id") !== `${runId}:${roleId}:${executionId}`
+      || trailers.get("Base-Commit") !== baseCommit) {
+      throw new Error("GIT_COLLABORATION_PREPARED_COMMIT_PROVENANCE_INVALID");
+    }
+    const changedPaths = parseNameOnlyPaths(await runGit(repositoryRoot, ["diff-tree", "--no-commit-id", "--name-only", "-z", "-r", resultCommit], timeoutMs));
+    const { workspaceRefs, lfsObjectIds } = await workspaceRefsForCommit({ repositoryRoot, workspaceId, commit: resultCommit, changedPaths, timeoutMs });
+    const commit: GitRoleCommit = {
+      roleId,
+      executionId,
+      branch: expectedBranch,
+      path: isMergeBranch
+        ? resolve(worktreeRoot, runId, `merge-${args.branch.slice(mergePrefix.length)}`)
+        : resolve(worktreeRoot, runId, worktreeId),
+      baseCommit,
+      resultCommit,
+      changedPaths,
+      workspaceRefs,
+      lfsObjectIds,
+      provenance: { ogsContractVersion: 2, schemaVersion: 1, version: 1, kind: "role-commit", runId, roleId, executionId, baseCommit, resultCommit, changedPaths }
+    };
+    await registerRoleCommit(commit);
+    return commit;
+  }
+
+  async function restoreWorktree(args: { restoreId: string; targetCommit: string; expectedCanonicalHead: string; message: string }): Promise<GitRestoreResult> {
+    const expectedCanonicalHead = await fixedBase(args.expectedCanonicalHead);
+    const targetCommit = await fixedBase(args.targetCommit);
+    const worktree = await addWorktree({ roleId: "restore", executionId: assertId(args.restoreId, "restore_id"), baseCommit: expectedCanonicalHead });
+    try {
+      await runGit(worktree.path, ["read-tree", "--reset", "-u", targetCommit], timeoutMs);
+      const commit = await commitWorktree(worktree, args.message);
+      return { ...commit, targetCommit, expectedCanonicalHead };
+    } finally {
+      await removeWorktree(worktree.path, true).catch(() => undefined);
+    }
+  }
+
+  async function updateCanonicalRef(args: { newCommit: string; expectedCanonicalHead: string }): Promise<void> {
+    const expectedCanonicalHead = await fixedBase(args.expectedCanonicalHead);
+    const newCommit = await fixedBase(args.newCommit);
+    const branch = (await runGit(repositoryRoot, ["symbolic-ref", "--quiet", "--short", "HEAD"], timeoutMs)).trim();
+    if (!branch) throw new Error("GIT_COLLABORATION_CANONICAL_REF_DETACHED");
+    const result = await runGitAllowFailure(repositoryRoot, ["update-ref", `refs/heads/${branch}`, newCommit, expectedCanonicalHead], timeoutMs);
+    if (result.code !== 0) throw new Error("GIT_COLLABORATION_STALE_CANONICAL_HEAD");
   }
 
   async function mergeCommits(args: { mergeId: string; baseCommit: string; candidateCommits: string[]; order?: string[] }): Promise<GitMergeResult> {
@@ -507,14 +726,14 @@ export function createGitCollaboration(options: GitCollaborationOptions) {
         const conflicts = parseNameOnlyPaths(await runGitAllowFailure(path, ["diff", "--name-only", "--diff-filter=U", "-z"], timeoutMs).then((item) => item.stdout));
         return {
           mergeId, path, branch, baseCommit, candidateCommits, status: "conflict", conflictPaths: conflicts,
-          provenance: { version: 1, kind: "merge", runId, mergeId, baseCommit, candidateCommits, status: "conflict", conflictPaths: conflicts }
+          provenance: { ogsContractVersion: 2, schemaVersion: 1, version: 1, kind: "merge", runId, mergeId, baseCommit, candidateCommits, status: "conflict", conflictPaths: conflicts }
         };
       }
     }
     const mergeCommit = (await runGit(path, ["rev-parse", "HEAD"], timeoutMs)).trim();
     return {
       mergeId, path, branch, baseCommit, candidateCommits, status: "merged", mergeCommit, conflictPaths: [],
-      provenance: { version: 1, kind: "merge", runId, mergeId, baseCommit, candidateCommits, status: "merged", mergeCommit, conflictPaths: [] }
+      provenance: { ogsContractVersion: 2, schemaVersion: 1, version: 1, kind: "merge", runId, mergeId, baseCommit, candidateCommits, status: "merged", mergeCommit, conflictPaths: [] }
     };
   }
 
@@ -585,15 +804,44 @@ export function createGitCollaboration(options: GitCollaborationOptions) {
     const target = resolve(path);
     const actualTarget = await assertSafeWorktreePath(target);
     if (actualTarget === await resolveActualPath(worktreeRoot, "WORKTREE_ROOT")) throw new Error("GIT_COLLABORATION_WORKTREE_PATH_INVALID");
-    const entry = (await worktreeEntries()).find((item) => resolve(item.path) === actualTarget);
     await runGit(repositoryRoot, ["worktree", "remove", ...(force ? ["--force"] : []), actualTarget], timeoutMs);
     await rm(actualTarget, { recursive: true, force: true });
-    const branchRef = entry?.branch;
-    const runBranchPrefix = `refs/heads/ogs/${runId}/`;
-    if (branchRef?.startsWith(runBranchPrefix)) {
-      await runGitAllowFailure(repositoryRoot, ["branch", "-D", branchRef.slice("refs/heads/".length)], timeoutMs);
-    }
   }
 
-  return Object.freeze({ repositoryRoot, worktreeRoot, runId, probe: (workspaceDir?: string) => probeGitCollaboration({ repositoryRoot, workspaceDir, timeoutMs }), addWorktree, commitWorktree, registerRoleCommit, mergeCommits, verifyMergeWorktree, isCommitAncestor, resetWorktree, removeWorktree });
+  async function discardPreparedWorktree(args: {
+    roleId: string;
+    executionId: string;
+    branch: string;
+    baseCommit: string;
+    workspaceDir: string;
+    expectedCanonicalHead: string;
+    lock: CanonicalWorkspaceLock;
+  }): Promise<boolean> {
+    const roleId = assertId(args.roleId, "role_id");
+    const executionId = assertId(args.executionId, "execution_id");
+    const worktreeId = encodeWorktreeId(roleId, executionId);
+    const expectedBranch = branchName("role", worktreeId);
+    const expectedPath = await assertSafeWorktreePath(resolve(worktreeRoot, runId, worktreeId));
+    if (args.branch !== expectedBranch) throw new Error("GIT_COLLABORATION_PREPARED_IDENTITY_MISMATCH");
+    const baseCommit = await fixedBase(args.baseCommit);
+    const branchRef = `refs/heads/${expectedBranch}`;
+    const branchCommit = await runGitAllowFailure(repositoryRoot, ["rev-parse", "--verify", branchRef], timeoutMs);
+    if (branchCommit.code !== 0) return false;
+    if (branchCommit.stdout.trim() !== baseCommit) return false;
+
+    const entries = await worktreeEntries();
+    const entry = entries.find((candidate) => resolve(candidate.path) === expectedPath);
+    if (entry && entry.branch !== branchRef) throw new Error("GIT_COLLABORATION_PREPARED_IDENTITY_MISMATCH");
+    if (entry) await removeWorktree(expectedPath, true);
+    await deleteRunBranch({
+      ref: branchRef,
+      expectedCommit: baseCommit,
+      workspaceDir: args.workspaceDir,
+      expectedCanonicalHead: args.expectedCanonicalHead,
+      lock: args.lock
+    });
+    return true;
+  }
+
+  return Object.freeze({ repositoryRoot, worktreeRoot, runId, workspaceId, probe: (workspaceDir?: string) => probeGitCollaboration({ repositoryRoot, workspaceDir, timeoutMs }), addWorktree, commitWorktree, registerRoleCommit, recoverPreparedRoleCommit, mergeCommits, verifyMergeWorktree, isCommitAncestor, resetWorktree, removeWorktree, discardPreparedWorktree, removeRunWorktrees, runBranchEntries, deleteRunBranch, restoreWorktree, updateCanonicalRef });
 }

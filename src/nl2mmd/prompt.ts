@@ -104,7 +104,7 @@ export function buildNl2MmdSystemPrompt(context: Nl2MmdContext): string {
     "- Runtime-native human review uses review.* metadata on the reviewed role: review.mode.<roleId>=required, optional review.timeout, review.timeout.action, review.rework.target, review.rework.max, and review.terminate.scope",
     "- When the user asks for human approval, audit, sign-off, review, rework, or an approval gate, prefer review.* metadata; do not add a synthetic reviewer role solely to represent the human decision",
     "- For rework flows, project human feedback with optional selectors such as context.map.<roleId>.review_comment=global.human_review.current.comment? and context.map.<roleId>.review_round=global.human_review.current.round?",
-    "- context.map selectors may use direct.*, global.task, global.user_profile.*, global.human_review.current.*, and source(<roleId>).* only on join roles where the source is listed in join.sources",
+    "- context.map selectors may use direct.* (including direct.workspaceRefs), global.task, global.user_profile.*, global.human_review.current.*, and source(<roleId>).* (including workspaceRefs) only on join roles where the source is listed in join.sources",
     "- Runtime failure compensation uses role-origin ERROR or ERROR.<errorCode> edges to a handler role; ERROR* edges must never originate from Start or End and executable role schemas must not list ERROR* as normal output events",
     "- Use role JSON Schema output packages for structured role output; do not encode 'return JSON' as Mermaid metadata",
     "- Preserve existing Studio graph intent, role ids, display labels, and layout-friendly structure when a draft is provided",

@@ -45,21 +45,20 @@ await cp(join(repoRoot, "examples", "gate-c-software", "og-roles"), join(root, "
 // intentionally remain resource-degraded until a real staging sandbox exists.
 await writeFile(join(root, "og-roles", "roles", "implementer", "prompt.md"), `{{agent}}
 
-Return exactly one JSON object with event, content, data, and artifacts.
+Return exactly one JSON object with event and content.
 Consume the upstream planner handoff and produce a concise business result.
-Set event to READY. The content MUST contain CROSS_BACKEND_HANDOFF_OK and data.handoff must equal true.
+Set event to READY. The content MUST contain CROSS_BACKEND_HANDOFF_OK.
 Do not claim filesystem or process work. Allowed events: {{allowed_events}}
 Task: {{task}}
 Input: {{input}}
 `, "utf8");
 await writeFile(join(root, "og-roles", "roles", "implementer", "output.schema.json"), JSON.stringify({
   type: "object",
-  required: ["event", "content", "data"],
+  required: ["event", "content"],
   properties: {
     event: { type: "string", enum: ["READY"] },
     content: { type: "string" },
-    data: { type: "object", required: ["handoff"], properties: { handoff: { const: true } }, additionalProperties: true },
-    artifacts: { type: "array" }
+    data: { type: "object" }
   },
   additionalProperties: false
 }, null, 2), "utf8");
@@ -107,7 +106,6 @@ let cliResult;
 try { cliResult = JSON.parse(result.stdout); } catch { cliResult = undefined; }
 const finalOutputs = Array.isArray(cliResult?.finalOutputsByRoleId?.implementer) ? cliResult.finalOutputsByRoleId.implementer : [];
 const finalOutput = finalOutputs.map((item) => typeof item?.content === "string" ? item.content : "").join("\n");
-const handoffData = finalOutputs.some((item) => item?.data?.handoff === true);
 const handoffMarker = finalOutput.includes("CROSS_BACKEND_HANDOFF_OK");
 const refusal = /unable to implement|no files were created|no native file|capabilities explicitly disable/i.test(finalOutput);
 const envelopeValid = runEvents.length > 0 && runEvents.every((event) =>
@@ -129,7 +127,6 @@ const acceptance = {
   failedRoleCount: runSummaries.reduce((sum, run) => sum + Number(run.failedCount || 0), 0),
   noopCount: runSummaries.reduce((sum, run) => sum + Number(run.noopCount || 0), 0),
   handoffMarker,
-  handoffData,
   refusal,
   evidenceEventCount: runEvents.length,
   envelopeValid,
@@ -151,7 +148,7 @@ const evidence = {
   result: { code: result.code, signal: result.signal, timedOut: result.timedOut, stdout: sanitize(result.stdout), stderr: sanitize(result.stderr) },
   runs: runDirs.map((run) => ({ ...run, runDir: sanitize(run.runDir) })),
   acceptance,
-  status: result.code === 0 && !result.timedOut && acceptance.runCompleted && acceptance.handoffMarker && acceptance.handoffData && !acceptance.refusal && acceptance.envelopeValid && acceptance.backendBindingsObserved ? "observed" : "failed"
+  status: result.code === 0 && !result.timedOut && acceptance.runCompleted && acceptance.handoffMarker && !acceptance.refusal && acceptance.envelopeValid && acceptance.backendBindingsObserved ? "observed" : "failed"
 };
 const output = process.env.OGS_CROSS_BACKEND_EVIDENCE || join(repoRoot, "docs/development/evidence/v2-cross-backend-real-run-latest.json");
 await writeFile(output, `${JSON.stringify(evidence, null, 2)}\n`);

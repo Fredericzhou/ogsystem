@@ -1,5 +1,8 @@
 import { createHash } from "node:crypto";
-import type { StoredRoleResult, VerifiedArtifactManifest } from "./types.js";
+import type { StoredRoleResult } from "./types.js";
+import type { InternalVerifiedManifest } from "./artifact-verifier.js";
+
+type ArtifactBackedRoleResult = StoredRoleResult & { artifactRef?: ArtifactReference };
 
 export type ArtifactReference = {
   artifactId: string;
@@ -19,8 +22,8 @@ export type ArtifactAccessAudit = {
   reason?: string;
 };
 
-export type ArtifactManifestReader = (reference: ArtifactReference) => VerifiedArtifactManifest | undefined;
-export type ArtifactFileReader = (reference: ArtifactReference, filePath: string, entry: VerifiedArtifactManifest["files"][number]) => Uint8Array | string;
+export type ArtifactManifestReader = (reference: ArtifactReference) => InternalVerifiedManifest | undefined;
+export type ArtifactFileReader = (reference: ArtifactReference, filePath: string, entry: InternalVerifiedManifest["files"][number]) => Uint8Array | string;
 
 export type ArtifactResolver = {
   resolve(reference: ArtifactReference, args: {
@@ -32,7 +35,7 @@ export type ArtifactResolver = {
     consumerRoleId: string;
     allowedArtifactIds: ReadonlySet<string>;
     audit?: (entry: ArtifactAccessAudit) => void;
-  }): VerifiedArtifactManifest;
+  }): InternalVerifiedManifest;
   readFile(reference: ArtifactReference, filePath: string, args: {
     consumerRoleId: string;
     allowedArtifactIds: ReadonlySet<string>;
@@ -52,15 +55,15 @@ export function buildArtifactReference(args: {
   };
 }
 
-export function buildAllowedArtifactSet(results: Iterable<StoredRoleResult | undefined>): Set<string> {
+export function buildAllowedArtifactSet(results: Iterable<ArtifactBackedRoleResult | undefined>): Set<string> {
   return new Set(Array.from(results).flatMap((result) => result?.artifactRef?.artifactId ? [result.artifactRef.artifactId] : []));
 }
 
-export function createArtifactResolver(results: Iterable<StoredRoleResult>, readers: {
+export function createArtifactResolver(results: Iterable<ArtifactBackedRoleResult>, readers: {
   readManifest?: ArtifactManifestReader;
   readFile?: ArtifactFileReader;
 } = {}): ArtifactResolver {
-  const byId = new Map(Array.from(results).flatMap((result: StoredRoleResult) => result.artifactRef ? [[result.artifactRef.artifactId, result] as const] : []));
+  const byId = new Map(Array.from(results).flatMap((result: ArtifactBackedRoleResult) => result.artifactRef ? [[result.artifactRef.artifactId, result] as const] : []));
   return {
     resolve(reference, args) {
       const result = byId.get(reference.artifactId);
@@ -90,7 +93,7 @@ export function createArtifactResolver(results: Iterable<StoredRoleResult>, read
       return result;
     },
     resolveManifest(reference, args) {
-      const result = this.resolve(reference, args);
+      const result = this.resolve(reference, args) as ArtifactBackedRoleResult;
       const manifest = readers.readManifest?.(reference);
       const producerRoleId = result.provenance?.producerRoleId ?? result.roleId;
       if (!manifest) {

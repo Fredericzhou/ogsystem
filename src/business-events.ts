@@ -25,12 +25,17 @@ export const RUNTIME_AUDIT_EVENT_TYPES = [
 export const RUNTIME_EVENT_HUMAN_REVIEW_REJECTED = RUNTIME_AUDIT_EVENT_TYPES[0];
 export const RUNTIME_EVENT_HUMAN_REVIEW_DECISION_REJECTED = RUNTIME_AUDIT_EVENT_TYPES[1];
 export type RuntimeAuditEventType = (typeof RUNTIME_AUDIT_EVENT_TYPES)[number];
+/** Append-only Runtime events are owned by the Workspace machine contract. */
+import { WORKSPACE_EVENT_TYPES } from "./runtime/workspace-event-types.js";
+export const RUNTIME_CONTRACT_EVENT_TYPES = WORKSPACE_EVENT_TYPES;
+export type RuntimeContractEventType = (typeof RUNTIME_CONTRACT_EVENT_TYPES)[number];
 export type SystemEventType = "START" | RuntimeErrorEventType;
 export type EventType = BusinessEventType | SystemEventType;
 
 const BUSINESS_EVENT_SET = new Set<string>(BUSINESS_EVENT_TYPES);
 const RUNTIME_CONTROL_EVENT_SET = new Set<string>(RUNTIME_CONTROL_EVENT_TYPES);
 const RUNTIME_AUDIT_EVENT_SET = new Set<string>(RUNTIME_AUDIT_EVENT_TYPES);
+const RUNTIME_CONTRACT_EVENT_SET = new Set<string>(RUNTIME_CONTRACT_EVENT_TYPES);
 
 export const BUSINESS_EVENT_KIND: Readonly<Record<BusinessEventType, BusinessEventKind>> = Object.freeze({
   READY: "handoff",
@@ -54,6 +59,14 @@ export function isRuntimeControlEvent(value: unknown): value is RuntimeControlEv
 
 export function isRuntimeAuditEvent(value: unknown): value is RuntimeAuditEventType {
   return typeof value === "string" && RUNTIME_AUDIT_EVENT_SET.has(value);
+}
+
+export function isRuntimeContractEvent(value: unknown): value is RuntimeContractEventType {
+  return typeof value === "string" && RUNTIME_CONTRACT_EVENT_SET.has(value);
+}
+
+export function listRuntimeContractEventTypes(): RuntimeContractEventType[] {
+  return [...RUNTIME_CONTRACT_EVENT_TYPES];
 }
 
 export function listRuntimeAuditEventTypes(): RuntimeAuditEventType[] {

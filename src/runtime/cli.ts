@@ -54,7 +54,6 @@ import { resolveProjectTargetDirectory } from "./project-target.js";
 import { loadExecutionBindingsV2 } from "./contract-v2-loader.js";
 import type { AdapterRunResult } from "./types.js";
 import { formatHumanRunSummary, shouldEmitFullRunJson } from "./cli-run-output.js";
-import { promoteSealedArtifact } from "./artifact-promotion.js";
 import { generateDeploymentManifest } from "./deployment-manifest.js";
 
 await ensureSystemHome();
@@ -64,7 +63,7 @@ const { version: CLI_VERSION } = require("../../package.json") as { version: str
 
 type HelpTopic = "compatibility" | "doctor" | "lint" | "nl2mmd" | "project" | "run" | "vis" | "visualizer";
 type ProjectSubcommand = "init" | "create" | "sync" | "sync-models" | "manifest";
-type RunSubcommand = "start" | "resume" | "stop" | "list" | "status" | "inspect" | "logs" | "review" | "artifact";
+type RunSubcommand = "start" | "resume" | "stop" | "list" | "status" | "inspect" | "logs" | "review";
 
 function isVisualizerTopic(value: string | undefined): value is "vis" | "visualizer" {
   return value === "vis" || value === "visualizer";
@@ -212,9 +211,9 @@ function usageCompatibility(): string {
   return [
     "OGSystem current CLI input boundary",
     "",
-    `Current package: ${CLI_VERSION}; historical project files and run artifacts are outside the current input boundary.`,
+    `Current package: ${CLI_VERSION}; historical project files and run evidence are outside the current input boundary.`,
     "No automatic compatibility handling or data migration is provided for older formats; start a new project.",
-    "Unsupported inputs: future/unknown config or schema versions, malformed inputs, and resume artifacts",
+    "Unsupported inputs: future/unknown config or schema versions, malformed inputs, and resume records",
     "whose plan fingerprint, semantic digest, or recovery authority does not match the current setup.",
     "",
     "Historical policy: docs/development/archive/v1/release-compatibility-policy.md",
@@ -497,16 +496,6 @@ function usageRun(subcommand?: RunSubcommand): string {
     ].join("\n");
   }
 
-  if (subcommand === "artifact") {
-    return [
-      "Usage:",
-      "  ogs run artifact promote <run-id> --source <shared-relative-path> --destination <workspace-relative-path> [--ogs-dir <path>] [--workspace-dir <path>]",
-      "",
-      "Promotes a sealed artifact only when its run is done, its referenced test report passed, and all source hashes match.",
-      "The destination must not exist. The source run and its audit artifacts are never modified."
-    ].join("\n");
-  }
-
   return [
     "Usage:",
     "  ogs run start [--system <file.mmd>] --input <text> [options]",
@@ -517,14 +506,12 @@ function usageRun(subcommand?: RunSubcommand): string {
     "  ogs run inspect <run-id> [options]",
     "  ogs run logs <run-id> [options]",
     "  ogs run review <list|inspect|decide> ...",
-    "  ogs run artifact promote <run-id> [options]",
     "",
     "Drill down:",
     "  ogs run start --help",
     "  ogs run resume --help",
     "  ogs run logs --help",
-    "  ogs run review --help",
-    "  ogs run artifact --help"
+    "  ogs run review --help"
   ].join("\n");
 }
 
@@ -769,6 +756,17 @@ function asString(value: string | boolean | undefined): string | undefined {
 
 function asBool(value: string | boolean | undefined): boolean {
   return value === true;
+}
+
+function projectPublicRunDetail(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map((entry) => projectPublicRunDetail(entry));
+  if (!value || typeof value !== "object") return value;
+  const hidden = new Set(["artifactRef", "artifactRefs", "artifactId", "artifacts", "artifactAllowedByBranchId"]);
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([key]) => !hidden.has(key))
+      .map(([key, entry]) => [key, projectPublicRunDetail(entry)])
+  );
 }
 
 function parseDryRunScenario(value: string | undefined): "review-reject-once" | undefined {
@@ -1539,45 +1537,6 @@ async function runRunCommand(argv: string[]): Promise<void> {
     await runResumeCommand(argv.slice(1));
     return;
   }
-  if (subcommand === "artifact") {
-    const nested = argv[1];
-    if (!nested || nested === "--help" || nested === "-h") {
-      console.log(usage("run", "artifact"));
-      return;
-    }
-    if (nested !== "promote") {
-      throw createCliInputError("CLI_RUN_ARTIFACT_UNKNOWN_SUBCOMMAND", `unknown run artifact subcommand: ${nested}`);
-    }
-    const { values, positionals } = parseLifecycleArgs(argv.slice(2), {
-      "ogs-dir": { type: "string" },
-      "workspace-dir": { type: "string" },
-      source: { type: "string" },
-      destination: { type: "string" },
-      help: { type: "boolean", short: "h" }
-    });
-    if (asBool(values.help)) {
-      console.log(usage("run", "artifact"));
-      return;
-    }
-    const runId = positionals[0];
-    const source = asString(values.source);
-    const destination = asString(values.destination);
-    if (!runId || !source || !destination) {
-      throw createCliInputError(
-        "CLI_RUN_ARTIFACT_PROMOTE_MISSING_ARGS",
-        "run artifact promote requires <run-id>, --source, and --destination"
-      );
-    }
-    const promoted = await promoteSealedArtifact({
-      workdir: asString(values["ogs-dir"]) ?? process.cwd(),
-      workspaceDir: asString(values["workspace-dir"]),
-      runId,
-      source,
-      destination
-    });
-    console.log(JSON.stringify({ status: "promoted", ...promoted }, null, 2));
-    return;
-  }
   if (subcommand === "stop") {
     const { values, positionals } = parseLifecycleArgs(argv.slice(1), {
       workdir: { type: "string" },
@@ -1702,7 +1661,7 @@ async function runRunCommand(argv: string[]): Promise<void> {
       throw createCliInputError("CLI_RUN_INSPECT_MISSING_RUN_ID", "run inspect requires <run-id>");
     }
     const detail = await inspectRun(asString(values.workdir) ?? process.cwd(), runId);
-    console.log(JSON.stringify(detail, null, 2));
+    console.log(JSON.stringify(projectPublicRunDetail(detail), null, 2));
     return;
   }
   if (subcommand === "review") {

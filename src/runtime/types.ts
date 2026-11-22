@@ -1,5 +1,6 @@
 import type { SemanticIR, SemanticIRConditionAst } from "./semantic-ir.js";
 import type { EffectiveEnvironmentPolicy, RunCapabilitySnapshot } from "./v2-execution-policy.js";
+import type { WorkspaceRef } from "./workspace-contracts.js";
 
 /**
  * Core System & Graph Definitions
@@ -314,8 +315,6 @@ export type RoleExecutionOutput = {
   event?: string;
   content?: string;
   data?: Record<string, unknown>;
-  /** Model-declared candidates; Runtime verifies them before creating artifactRef. */
-  artifacts?: DeclaredRoleArtifact[];
 };
 
 export type DecisionCriterionConfig = {
@@ -324,41 +323,6 @@ export type DecisionCriterionConfig = {
   severity: "required" | "advisory" | "critical";
   failureAction: "rework" | "reject";
   evidenceHint?: string;
-};
-
-export type ArtifactKind =
-  | "text"
-  | "source"
-  | "business_document"
-  | "business_data"
-  | "technical_artifact";
-
-export type DeclaredRoleArtifact = {
-  artifactId: string;
-  kind: ArtifactKind;
-  path: string;
-  mediaType: string;
-  encoding?: "utf-8" | "binary";
-  entrypoint?: string;
-  publishTarget?: string;
-};
-
-export type VerifiedArtifactFileEntry = {
-  path: string;
-  sha256: string;
-  sizeBytes: number;
-  mediaType: string;
-  encoding?: "utf-8" | "binary";
-};
-
-export type VerifiedArtifactManifest = {
-  version: 1;
-  artifactId: string;
-  runId: string;
-  producerRoleId: string;
-  executionId: string;
-  files: VerifiedArtifactFileEntry[];
-  manifestSha256: string;
 };
 
 export type RolePackageManifest = {
@@ -792,14 +756,11 @@ export type StoredRoleResult = {
   event?: string;
   content?: string;
   data?: Record<string, unknown>;
+  /** Framework-authorized immutable references produced by the committed Workspace result. */
+  workspaceRefs?: WorkspaceRef[];
   branchId: string;
   lineageId: string;
   loopIteration: number;
-  artifactRef?: {
-    artifactId: string;
-    runId: string;
-    mediaType?: string;
-  };
   provenance?: {
     runId?: string;
     executionId?: string;
@@ -930,8 +891,6 @@ export type GraphState = {
   loopBudgetAuthorizationsByScope?: Record<string, number>;
   /** Per-role activation guards keyed by lineageId + roleId. */
   roleActivationsByScope?: Record<string, number>;
-  /** Artifact ids authorized when each branch invocation was activated. */
-  artifactAllowedByBranchId?: Record<string, string[]>;
   joinScopes?: Record<string, JoinScopeState>;
   joinSourceOutcomesByScope?: Record<string, Record<string, "pending" | "arrived" | "skipped" | "failed">>;
   resultCommit?: ResultCommitState;

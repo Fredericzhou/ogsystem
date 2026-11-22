@@ -27,7 +27,7 @@ export type RunSummaryProjection = {
   stopOutcome?: "stopped" | "terminated" | "failed";
   finalRoleIds?: string[];
   executionDirCount: number;
-  artifactIndexSummary: {
+  evidenceIndexSummary: {
     roleCount: number;
     executionDirCount: number;
     resumeConsumedPaths: string[];
@@ -220,7 +220,7 @@ export function buildRunSummaryProjection(args: {
         : undefined,
     finalRoleIds: args.state.finalRoleIds?.length ? args.state.finalRoleIds : undefined,
     executionDirCount: args.runContext.executionDirCount,
-    artifactIndexSummary: {
+    evidenceIndexSummary: {
       roleCount: args.plan.roleIds.length,
       executionDirCount: args.runContext.executionDirCount,
       resumeConsumedPaths: [

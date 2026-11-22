@@ -2,7 +2,27 @@ import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import { lstat, link, mkdir, open, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
-import type { VerifiedArtifactFileEntry, VerifiedArtifactManifest } from "./types.js";
+/**
+ * Internal verifier records. These are deliberately kept out of the v2 Runtime
+ * state types; Project-facing file identity is WorkspaceRef plus Task/Run output.
+ */
+export type InternalVerifiedFileEntry = {
+  path: string;
+  sha256: string;
+  sizeBytes: number;
+  mediaType: string;
+  encoding?: "utf-8" | "binary";
+};
+
+export type InternalVerifiedManifest = {
+  version: 1;
+  artifactId: string;
+  runId: string;
+  producerRoleId: string;
+  executionId: string;
+  files: InternalVerifiedFileEntry[];
+  manifestSha256: string;
+};
 
 export type ArtifactVerificationLimits = {
   maxFiles?: number;
@@ -15,7 +35,7 @@ export type ArtifactVerificationLimits = {
 export const DEFAULT_MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 
 export type ArtifactVerificationResult = {
-  manifest: VerifiedArtifactManifest;
+  manifest: InternalVerifiedManifest;
   manifestSha256: string;
   /** Bytes read from the same no-follow handles used for verification. */
   contentsByPath: ReadonlyMap<string, Buffer>;
@@ -116,7 +136,7 @@ export async function verifyArtifactDirectory(args: {
   if (limits.maxFiles !== undefined && paths.length > limits.maxFiles) {
     fail("ARTIFACT_FILE_QUOTA_EXCEEDED", `${paths.length} files exceed limit ${limits.maxFiles}`);
   }
-  const files: VerifiedArtifactFileEntry[] = [];
+  const files: InternalVerifiedFileEntry[] = [];
   const contentsByPath = new Map<string, Buffer>();
   let totalBytes = 0;
   for (const path of paths) {
@@ -167,13 +187,13 @@ export async function verifyArtifactDirectory(args: {
   } as const;
   const unsignedBytes = Buffer.from(`${JSON.stringify(unsignedManifest, null, 2)}\n`, "utf8");
   const manifestSha256 = createHash("sha256").update(unsignedBytes).digest("hex");
-  const manifest: VerifiedArtifactManifest = { ...unsignedManifest, manifestSha256 };
+  const manifest: InternalVerifiedManifest = { ...unsignedManifest, manifestSha256 };
   return { manifest, manifestSha256, contentsByPath };
 }
 
 export async function writeVerifiedArtifactManifest(args: {
   executionDir: string;
-  manifest: VerifiedArtifactManifest;
+  manifest: InternalVerifiedManifest;
 }): Promise<{ path: string; sha256: string }> {
   const executionDir = resolve(args.executionDir);
   await mkdir(executionDir, { recursive: true });

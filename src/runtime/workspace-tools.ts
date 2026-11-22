@@ -39,7 +39,7 @@ function safeRelativePath(value: string): string {
   }
   const normalized = value.replaceAll("\\", "/");
   const segments = normalized.split("/");
-  if (segments.some((segment) => !segment || segment === "." || segment === ".." || segment.startsWith("."))) {
+  if (segments.some((segment) => !segment || segment === "." || segment === "..")) {
     fail("WORKSPACE_PATH_INVALID", "path contains an unsafe segment");
   }
   return segments.join(sep);
@@ -83,7 +83,7 @@ async function collectFiles(root: string, current = ""): Promise<WorkspaceFileEn
     const relativePath = current ? `${current}/${entry.name}` : entry.name;
     const candidate = resolve(root, relativePath);
     if (entry.isSymbolicLink()) fail("WORKSPACE_SYMLINK_NOT_ALLOWED", `symbolic link: ${relativePath}`);
-    if (entry.name.startsWith(".")) continue;
+    if (entry.name === ".ogs") continue;
     if (entry.isDirectory()) {
       entries.push(...await collectFiles(root, relativePath));
       continue;

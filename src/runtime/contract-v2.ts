@@ -1,4 +1,5 @@
 import type { ReasoningEffort } from "./types.js";
+import type { WorkspaceRef } from "./workspace-contracts.js";
 
 /**
  * Contract Set v2 core objects.
@@ -63,7 +64,6 @@ export type BusinessGraphV2 = ContractRoot & {
     toRoleId: string;
     eventType: string;
     contextMap?: Record<string, string>;
-    artifactRefs?: string[];
   }>;
 };
 
@@ -74,7 +74,8 @@ export type HandoffProjectionV2 = ContractRoot & {
   toRoleId: string;
   eventType: string;
   contextMap: Record<string, string>;
-  artifactRefs: string[];
+  /** Authorized immutable Workspace references; field validation belongs to the Workspace contract. */
+  workspaceRefs: WorkspaceRef[];
 };
 
 export type EnvironmentIntentV2 = {

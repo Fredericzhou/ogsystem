@@ -1,6 +1,6 @@
 /**
  * Bridges CLI inputs, resume checkpoints, and fingerprinting into the runtime orchestrator.
- * Responsibilities stop at setup composition, artifact bookkeeping, and executor coordination;
+ * Responsibilities stop at setup composition, run-evidence bookkeeping, and executor coordination;
  * graph execution is delegated to graph-runner and the execution backends.
  */
 import { createDefaultExecutor } from "./executor.js";
@@ -42,14 +42,12 @@ export { compileSemanticIR } from "./semantic-ir-compiler.js";
 export { buildLoopScopeKey, getTargetLoopIteration, wouldExceedLoopBudget } from "./graph-runtime-state.js";
 export { validateEventCandidate } from "./event-contract.js";
 export { resolveJoinPolicy } from "./join-policy.js";
-export { buildArtifactReference, buildAllowedArtifactSet, createArtifactResolver } from "./artifact-access.js";
 export { createWorkspaceTools } from "./workspace-tools.js";
 export {
   assertWorkspaceExecutionDirectory,
   projectWorkspaceCapabilities,
   validateWorkspaceCapabilityPolicy
 } from "./backend-capabilities.js";
-export { artifactVerificationError, DEFAULT_MAX_IMAGE_BYTES, verifyArtifactDirectory, writeSealManifest, writeVerifiedArtifactManifest } from "./artifact-verifier.js";
 export { buildRolePromptInput } from "./role-input-projector.js";
 export { projectOgsSpan, toOgsCloudEvent } from "./observability.js";
 export { validateCapabilityPolicy } from "./capability-policy.js";
@@ -95,12 +93,51 @@ export {
   createGitCollaboration,
   probeGitCollaboration
 } from "./git-collaboration.js";
+export {
+  WORKSPACE_CONTRACT_VERSION,
+  WORKSPACE_SCHEMA_VERSION,
+  WORKSPACE_EVENT_TYPES,
+  assertWorkspaceRef,
+  assertWorkspaceCheckpoint,
+  assertCanonicalWorkspaceLock,
+  assertRelease,
+  assertEvidenceManifest,
+  assertMaterializationManifest,
+  assertWorkspaceEvent,
+  buildWorkspaceRef,
+  buildWorkspaceEvent,
+  digestRecord
+} from "./workspace-contracts.js";
+export type {
+  WorkspaceRef,
+  WorkspaceCheckpoint,
+  CanonicalWorkspaceLock,
+  ReleaseRecord,
+  ReleaseStatus,
+  ReleaseFailureCode,
+  EvidenceManifest,
+  MaterializationManifest,
+  MaterializationManifestEntry,
+  WorkspaceEventEnvelope,
+  WorkspaceEventType
+} from "./workspace-contracts.js";
+export {
+  WorkspaceLockError,
+  readCanonicalWorkspaceLock,
+  acquireCanonicalWorkspaceLock,
+  assertCanonicalWorkspaceLock as assertWorkspaceLock,
+  replaceCanonicalWorkspaceLock
+} from "./workspace-lock.js";
+export { WorkspaceReleaseService, createWorkspaceReleaseService } from "./workspace-release.js";
+export { WorkspaceCoordinator, createWorkspaceCoordinator } from "./workspace-coordinator.js";
+export type { WorkspaceCoordinatorOptions } from "./workspace-coordinator.js";
 export type {
   GitCollaboration,
   GitCollaborationOptions,
   GitCollaborationProbe,
   GitMergeVerification,
   GitMergeResult,
+  GitRestoreResult,
   GitRoleCommit,
   GitRoleWorktree
 } from "./git-collaboration.js";
@@ -184,6 +221,8 @@ export async function runSystemWithAdapter(args: {
     collaboration: GitCollaboration;
     baseCommit: string;
     publish?: (merge: import("./git-collaboration.js").GitMergeResult) => Promise<void>;
+    onRoleCommit?: (branchId: string, commit: import("./git-collaboration.js").GitRoleCommit) => Promise<import("./workspace-contracts.js").WorkspaceEventEnvelope | void> | import("./workspace-contracts.js").WorkspaceEventEnvelope | void;
+    onMerge?: (merge: import("./git-collaboration.js").GitMergeResult, phase: "join" | "final") => Promise<import("./workspace-contracts.js").WorkspaceEventEnvelope | void> | import("./workspace-contracts.js").WorkspaceEventEnvelope | void;
   };
   projectDigest?: string;
   projectRunLock?: boolean;
@@ -571,7 +610,7 @@ export async function runSystemWithAdapter(args: {
       const envelope = executionError instanceof RuntimeError ? executionError.envelope : undefined;
       try {
         await markResumeFailure({
-          runDir: args.resumeRunDir,
+          runDir: setup?.runContext.runDir ?? args.resumeRunDir,
           errorCode: envelope?.errorCode ?? "RUNTIME_RESUME_FAILED",
           message: envelope?.message ?? (executionError instanceof Error ? executionError.message : String(executionError))
         });

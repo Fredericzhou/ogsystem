@@ -21,14 +21,14 @@ export function listContextSelectorCandidates(args: {
         selectors.add(`source(${source}).content`);
         selectors.add(`source(${source}).event`);
         selectors.add(`source(${source}).data`);
-        selectors.add(`source(${source}).artifact`);
+        selectors.add(`source(${source}).workspaceRefs`);
       }
     }
   } else if (sources.length) {
     selectors.add("direct.content");
     selectors.add("direct.event");
     selectors.add("direct.data");
-    selectors.add("direct.artifact");
+    selectors.add("direct.workspaceRefs");
   }
   return Array.from(selectors).sort((left, right) => left.localeCompare(right));
 }
@@ -54,22 +54,22 @@ export function summarizeContextSelector(selector: string): SelectorSummary {
   const value = optional ? selector.slice(0, -1) : selector;
   const optionalAllowed = value.startsWith("global.human_review.current") ||
     value === "direct.data" ||
-    value === "direct.artifact" ||
+    value === "direct.workspaceRefs" ||
     value.startsWith("direct.data.") ||
-    /^source\([A-Za-z0-9._:-]+\)\.(?:content|event|data|artifact)(?:\.|$)/.test(value);
+    /^source\([A-Za-z0-9._:-]+\)\.(?:content|event|data|workspaceRefs)(?:\.|$)/.test(value);
   if (optional && !optionalAllowed) return { selectorKind: "unsupported", validPath: false, optional };
   if (value === "global.task" || value === "global.user_profile") return { selectorKind: value, validPath: true, optional };
   if (value.startsWith("global.user_profile.")) return { selectorKind: "global.user_profile.path", validPath: isValidSelectorPath(value.slice("global.user_profile.".length)), optional };
   if (value === "global.human_review.current") return { selectorKind: value, validPath: true, optional };
   if (value === "global.human_review.current.comment" || value === "global.human_review.current.round" || value === "global.human_review.current.previous_output") return { selectorKind: value, validPath: true, optional };
   if (value.startsWith("global.human_review.current.previous_output.")) return { selectorKind: "global.human_review.current.previous_output.path", validPath: isValidSelectorPath(value.slice("global.human_review.current.previous_output.".length)), optional };
-  if (["direct.content", "direct.event", "direct.data", "direct.artifact"].includes(value)) return { selectorKind: "direct", validPath: true, optional };
+  if (["direct.content", "direct.event", "direct.data", "direct.workspaceRefs"].includes(value)) return { selectorKind: "direct", validPath: true, optional };
   if (value.startsWith("direct.data.")) return { selectorKind: "direct.data.path", validPath: isValidSelectorPath(value.slice("direct.data.".length)), optional };
   const sourceEnd = value.startsWith("source(") ? value.indexOf(").") : -1;
   if (sourceEnd > 7) {
     const sourceRoleId = value.slice(7, sourceEnd);
     const sourceValue = value.slice(sourceEnd + 2);
-    const validSourceValue = ["content", "event", "data", "artifact"].includes(sourceValue)
+    const validSourceValue = ["content", "event", "data", "workspaceRefs"].includes(sourceValue)
       || (sourceValue.startsWith("data.") && isValidSelectorPath(sourceValue.slice("data.".length)));
     if (isValidSourceRoleId(sourceRoleId) && validSourceValue) return { selectorKind: "source", sourceRoleId, validPath: true, optional };
   }
@@ -85,7 +85,7 @@ export type SchemaPropertyPath = {
 /**
  * Extract flat dot-notation property paths from a JSON Schema.
  * If properties.data exists, paths are scoped inside data (for direct.data.* and source(*).data.*).
- * Otherwise top-level domain properties (excluding envelope event/content/artifacts/data) are extracted.
+ * Otherwise top-level domain properties (excluding envelope event/content/data) are extracted.
  */
 export function extractSchemaPropertyPaths(schema: unknown): SchemaPropertyPath[] {
   if (!schema || typeof schema !== "object" || Array.isArray(schema)) return [];
@@ -106,7 +106,7 @@ export function extractSchemaPropertyPaths(schema: unknown): SchemaPropertyPath[
   if (!targetProperties) {
     const filtered: Record<string, unknown> = {};
     for (const [key, val] of Object.entries(properties)) {
-      if (key !== "event" && key !== "content" && key !== "artifacts" && key !== "data") {
+      if (key !== "event" && key !== "content" && key !== "data") {
         filtered[key] = val;
       }
     }

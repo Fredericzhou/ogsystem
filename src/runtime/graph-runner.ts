@@ -6,7 +6,8 @@
  * persistence calls (checkpoints, audit output) instead of hiding them behind helpers to keep
  * crash handling transparent.
  */
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 
 import {
@@ -39,6 +40,13 @@ import {
 import { applyGraphUpdateToIndexes, buildRuntimeIndexes } from "./runtime-indexes.js";
 import type { RuntimeIndexes } from "./runtime-indexes.js";
 import { executeRoleNode } from "./role-executor.js";
+import {
+  loadRoleExecutionCandidateRecord,
+  persistCommittedExecutionResult,
+  recordAudit,
+  recordRoleResult,
+  removeRoleExecutionCandidateRecord
+} from "./role-execution-recorder.js";
 import { reconcilePromptBudgetLedger } from "./prompt-budget.js";
 import { isRuntimeOnlyErrorEvent } from "./error-flow-utils.js";
 import type { CompiledExecutionSnapshot } from "./compiler.js";
@@ -54,6 +62,8 @@ import { projectStages } from "./stage-projector.js";
 import { applySemanticBusinessState } from "./semantic-state.js";
 import { resolveJoinPolicy } from "./join-policy.js";
 import type { GitCollaboration, GitMergeResult, GitMergeVerification, GitRoleCommit, GitRoleWorktree } from "./git-collaboration.js";
+import { assertWorkspaceCheckpoint, assertWorkspaceEvent, assertWorkspaceRef, WORKSPACE_EVENT_TYPES, type WorkspaceCheckpoint, type WorkspaceEventEnvelope, type WorkspaceRef } from "./workspace-contracts.js";
+import { acquireCanonicalWorkspaceLock } from "./workspace-lock.js";
 import {
   RUNTIME_EVENT_HUMAN_REVIEW_DECISION_REJECTED,
   RUNTIME_EVENT_LOOP_EXHAUSTED
@@ -66,6 +76,7 @@ import {
   appendEvent as appendFilesystemEvent,
   clearRunStopRequest,
   cleanupHistoricalExecutionSnapshots,
+  createValidatedAuditAppender,
   eventIdsForContext,
   flushBufferedRunArtifacts,
   loadAuditTrailFromEvents,
@@ -110,11 +121,30 @@ const runtimeServicesByContext = new WeakMap<object, RuntimeExecutionServices>()
 
 /** Routes every graph event through the adapter port when one is active. */
 async function appendEvent(context: RunContext, payload: Record<string, unknown>): Promise<void> {
+  const type = typeof payload.type === "string" ? payload.type : "runtime_event";
+  if ((WORKSPACE_EVENT_TYPES as readonly string[]).includes(type)) {
+    payload = {
+      ...payload,
+      eventId: typeof payload.eventId === "string" && payload.eventId ? payload.eventId : `${context.runId}:${type}:${randomUUID()}`,
+      at: typeof payload.at === "string" && !Number.isNaN(Date.parse(payload.at)) ? payload.at : new Date().toISOString()
+    };
+    const { type: _type, eventId: _eventId, at: _at, ...eventPayload } = payload;
+    assertWorkspaceEvent({
+      ogsContractVersion: 2,
+      schemaVersion: 1,
+      eventId: payload.eventId,
+      runId: context.runId,
+      eventType: type,
+      recordedAt: payload.at,
+      payload: eventPayload
+    });
+  }
   const eventId = typeof payload.eventId === "string" && payload.eventId ? payload.eventId : undefined;
   const eventIds = eventId ? await eventIdsForContext(context) : undefined;
   const runtimeServices = runtimeServicesByContext.get(context);
   if (runtimeServices) {
-    await runtimeServices.audit.append({
+    const append = createValidatedAuditAppender(context, runtimeServices.audit.append);
+    await append({
       ...payload,
       type: typeof payload.type === "string" ? payload.type : "runtime_event"
     });
@@ -123,6 +153,15 @@ async function appendEvent(context: RunContext, payload: Record<string, unknown>
   }
   await appendFilesystemEvent(context, payload);
   if (eventIds && eventId) eventIds.add(eventId);
+}
+
+async function appendWorkspaceEvent(context: RunContext, event: WorkspaceEventEnvelope): Promise<void> {
+  await appendEvent(context, {
+    ...event.payload,
+    type: event.eventType,
+    eventId: event.eventId,
+    at: event.recordedAt
+  });
 }
 
 async function ensureResultCommitEvent(args: {
@@ -138,6 +177,7 @@ async function ensureResultCommitEvent(args: {
     type: "result_committed",
     eventId,
     at: args.resultCommit.committedAt ?? new Date().toISOString(),
+    runId: args.context.runId,
     resultId: args.resultCommit.resultId,
     roleId: args.roleId,
     stateVersion: args.stateVersion
@@ -217,6 +257,9 @@ const GANTT_RENDER_LIMIT = 200;
 const TEST_HOOKS_ENABLED_ENV = "OGSYSTEM_ENABLE_TEST_HOOKS";
 const TEST_CRASH_AFTER_EXECUTION_OUTCOME_ENV = "OGSYSTEM_TEST_CRASH_AFTER_EXECUTION_OUTCOME";
 const TEST_CRASH_AFTER_REVIEW_STATE_COMMIT_ENV = "OGSYSTEM_TEST_CRASH_AFTER_REVIEW_STATE_COMMIT";
+const TEST_INTERRUPT_AFTER_PREPARED_WORKSPACE_ENV = "OGSYSTEM_TEST_INTERRUPT_AFTER_PREPARED_WORKSPACE";
+const TEST_CRASH_AFTER_WORKSPACE_GIT_COMMIT_ENV = "OGSYSTEM_TEST_CRASH_AFTER_WORKSPACE_GIT_COMMIT";
+const TEST_WORKSPACE_COMMIT_FILE_ENV = "OGSYSTEM_TEST_WORKSPACE_COMMIT_FILE";
 const DEFAULT_ROLE_EXECUTION_TIMEOUT_MS = 600000;
 const ROLE_NODE_TIMEOUT_GRACE_MS = 15000;
 
@@ -252,6 +295,8 @@ export type RunnerInput = {
     collaboration: GitCollaboration;
     baseCommit: string;
     publish?: (merge: GitMergeResult) => Promise<void>;
+    onRoleCommit?: (branchId: string, commit: GitRoleCommit) => Promise<WorkspaceEventEnvelope | void> | WorkspaceEventEnvelope | void;
+    onMerge?: (merge: GitMergeResult, phase: "join" | "final") => Promise<WorkspaceEventEnvelope | void> | WorkspaceEventEnvelope | void;
   };
 };
 
@@ -401,10 +446,6 @@ const GraphStateAnnotation = Annotation.Root({
     reducer: (current, update) => ({ ...current, ...update }),
     default: () => ({})
   }),
-  artifactAllowedByBranchId: Annotation<Record<string, string[]>>({
-    reducer: (current, update) => ({ ...current, ...update }),
-    default: () => ({})
-  }),
   joinScopes: Annotation<NonNullable<GraphState["joinScopes"]>>({
     reducer: (current, update) => ({ ...current, ...update }),
     default: () => ({})
@@ -504,7 +545,6 @@ function mergeGraphUpdates(current: GraphUpdate, update: GraphUpdate): GraphUpda
       ? { loopBudgetAuthorizationDeltasByScope: mergedBudgetDeltas }
       : {}),
     roleActivationsByScope: { ...(current.roleActivationsByScope ?? {}), ...(update.roleActivationsByScope ?? {}) },
-    artifactAllowedByBranchId: { ...(current.artifactAllowedByBranchId ?? {}), ...(update.artifactAllowedByBranchId ?? {}) },
     joinScopes: { ...(current.joinScopes ?? {}), ...(update.joinScopes ?? {}) },
     joinSourceOutcomesByScope: { ...(current.joinSourceOutcomesByScope ?? {}), ...(update.joinSourceOutcomesByScope ?? {}) },
     resultCommit: update.resultCommit ?? current.resultCommit,
@@ -571,7 +611,6 @@ export function applyGraphUpdate(state: GraphState, update: GraphUpdate): GraphS
     loopCountersByScope: { ...(state.loopCountersByScope ?? {}), ...(update.loopCountersByScope ?? {}) },
     loopBudgetAuthorizationsByScope,
     roleActivationsByScope: { ...(state.roleActivationsByScope ?? {}), ...(update.roleActivationsByScope ?? {}) },
-    artifactAllowedByBranchId: { ...(state.artifactAllowedByBranchId ?? {}), ...(update.artifactAllowedByBranchId ?? {}) },
     resultCommit: update.resultCommit ?? state.resultCommit,
     joinScopes: { ...(state.joinScopes ?? {}), ...(update.joinScopes ?? {}) },
     joinSourceOutcomesByScope: { ...(state.joinSourceOutcomesByScope ?? {}), ...(update.joinSourceOutcomesByScope ?? {}) },
@@ -782,6 +821,29 @@ function maybeCrashAfterHumanReviewStateCommit(): never | void {
     `[test-failpoint] forced crash after human review state commit before decision markers\n`
   );
   process.exit(92);
+}
+
+function maybeInterruptAfterPreparedWorkspace(): void {
+  if (process.env[TEST_HOOKS_ENABLED_ENV] !== "1") return;
+  const remaining = Number.parseInt(process.env[TEST_INTERRUPT_AFTER_PREPARED_WORKSPACE_ENV] ?? "", 10);
+  if (!Number.isInteger(remaining) || remaining <= 0) return;
+  process.env[TEST_INTERRUPT_AFTER_PREPARED_WORKSPACE_ENV] = String(remaining - 1);
+  if (remaining > 1) return;
+  process.stderr.write("[test-failpoint] forced process exit after prepared Workspace checkpoint\n");
+  process.exit(93);
+}
+
+async function maybeWriteTestWorkspaceFile(worktreePath: string): Promise<void> {
+  if (process.env[TEST_HOOKS_ENABLED_ENV] !== "1") return;
+  const name = process.env[TEST_WORKSPACE_COMMIT_FILE_ENV];
+  if (!name || name.startsWith("/") || name.split(/[\\/]/).includes("..")) return;
+  await writeFile(resolve(worktreePath, name), "test-only workspace commit\n", "utf8");
+}
+
+function maybeCrashAfterWorkspaceGitCommit(): void {
+  if (process.env[TEST_HOOKS_ENABLED_ENV] !== "1" || process.env[TEST_CRASH_AFTER_WORKSPACE_GIT_COMMIT_ENV] !== "1") return;
+  process.stderr.write("[test-failpoint] forced process exit after Workspace Git commit before evidence append\n");
+  process.exit(94);
 }
 
 function buildGraphUpdateFromOutcome(args: {
@@ -1274,6 +1336,9 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
   if (args.runtimeServices) {
     runtimeServicesByContext.set(args.runContext, args.runtimeServices);
   }
+  const validatedAuditAppend = args.runtimeServices
+    ? createValidatedAuditAppender(args.runContext, args.runtimeServices.audit.append)
+    : undefined;
   if (args.gitCollaboration) {
     const probe = await args.gitCollaboration.collaboration.probe(args.workdir);
     if (!probe.supported) {
@@ -1309,7 +1374,7 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
       if (!line.trim()) continue;
       try {
         const event = JSON.parse(line) as Record<string, unknown>;
-        if (event.type !== "git_collaboration_role_commit") continue;
+        if (event.type !== "git_collaboration_role_commit" && event.type !== "git_collaboration_role_result") continue;
         const branchId = typeof event.branchId === "string" ? event.branchId : undefined;
         const roleId = typeof event.roleId === "string" ? event.roleId : undefined;
         const executionId = typeof event.executionId === "string" ? event.executionId : undefined;
@@ -1320,7 +1385,18 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
         const changedPaths = Array.isArray(event.changedPaths) && event.changedPaths.every((item) => typeof item === "string")
           ? event.changedPaths as string[]
           : undefined;
-        if (!branchId || !roleId || !executionId || !branch || !path || !baseCommit || !resultCommit || !changedPaths) continue;
+        const isContentCommit = event.type === "git_collaboration_role_commit";
+        const workspaceRefs = Array.isArray(event.workspaceRefs)
+          ? event.workspaceRefs.flatMap((item) => {
+              try { assertWorkspaceRef(item); return [item as WorkspaceRef]; } catch { return []; }
+            })
+          : [];
+        const lfsObjectIds = Array.isArray(event.lfsObjectIds) && event.lfsObjectIds.every((item) => typeof item === "string")
+          ? event.lfsObjectIds as string[]
+          : [];
+        if (event.ogsContractVersion !== 2 || event.schemaVersion !== 1 || !branchId || !roleId || !executionId || !branch || !path || !baseCommit || !resultCommit || !changedPaths
+          || (isContentCommit && (changedPaths.length === 0 || !event.provenance))
+          || (!isContentCommit && (changedPaths.length !== 0 || resultCommit !== baseCommit))) continue;
         const commit: GitRoleCommit = {
           roleId,
           executionId,
@@ -1329,7 +1405,11 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
           baseCommit,
           resultCommit,
           changedPaths,
+          workspaceRefs,
+          lfsObjectIds,
           provenance: {
+            ogsContractVersion: 2,
+            schemaVersion: 1,
             version: 1,
             kind: "role-commit",
             runId: args.runContext.runId,
@@ -1340,7 +1420,7 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
             changedPaths
           }
         };
-        await args.gitCollaboration.collaboration.registerRoleCommit(commit);
+        if (isContentCommit) await args.gitCollaboration.collaboration.registerRoleCommit(commit);
         gitRoleCommitsByBranchId.set(branchId, commit);
         gitRoleExecutionSucceededByBranchId.set(branchId, true);
       } catch {
@@ -1370,6 +1450,8 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
         const provenanceMergeCommit = typeof provenance?.mergeCommit === "string" ? provenance.mergeCommit : undefined;
         if (!mergeId || !path || !branch || !baseCommit || !status || !candidateCommits || !conflictPaths
           || (status === "merged" && !mergeCommit)
+          || provenance?.ogsContractVersion !== 2
+          || provenance?.schemaVersion !== 1
           || provenance?.version !== 1
           || provenance.kind !== "merge"
           || provenance.runId !== args.runContext.runId
@@ -1389,6 +1471,8 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
           ...(mergeCommit ? { mergeCommit } : {}),
           conflictPaths,
           provenance: {
+            ogsContractVersion: 2,
+            schemaVersion: 1,
             version: 1,
             kind: "merge",
             runId: args.runContext.runId,
@@ -1405,11 +1489,12 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
       }
     }
   }
-  const persistGitRoleCommit = async (branchId: string, commit: GitRoleCommit): Promise<void> => {
+  const persistGitRoleCommit = async (branchId: string, commit: GitRoleCommit): Promise<WorkspaceRef[]> => {
     gitRoleCommitsByBranchId.set(branchId, commit);
+    const hasContentCommit = commit.changedPaths.length > 0;
     await appendEvent(args.runContext, {
-      type: "git_collaboration_role_commit",
-      eventId: `git-role-commit:${branchId}:${commit.executionId}`,
+      type: hasContentCommit ? "git_collaboration_role_commit" : "git_collaboration_role_result",
+      eventId: `${hasContentCommit ? "git-role-commit" : "git-role-result"}:${branchId}:${commit.executionId}`,
       at: new Date().toISOString(),
       branchId,
       roleId: commit.roleId,
@@ -1419,9 +1504,285 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
       baseCommit: commit.baseCommit,
       resultCommit: commit.resultCommit,
       changedPaths: commit.changedPaths,
-      provenance: commit.provenance
+      workspaceRefs: commit.workspaceRefs,
+      lfsObjectIds: commit.lfsObjectIds,
+      ...(hasContentCommit ? { provenance: commit.provenance } : {})
     });
+    const checkpointDir = resolve(args.runContext.runDir, "workspace", "checkpoints");
+    const worktreeId = `${commit.roleId}:${commit.executionId}`;
+    const preparedNames = await readdir(checkpointDir).catch((error: unknown) => {
+      if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") return [];
+      throw error;
+    });
+    let preparedCheckpoint: WorkspaceCheckpoint | undefined;
+    for (const name of preparedNames.filter((item) => item.startsWith("prepared-") && item.endsWith(".json"))) {
+      const candidate = JSON.parse(await readFile(resolve(checkpointDir, name), "utf8")) as WorkspaceCheckpoint;
+      if (candidate.runId === args.runContext.runId && candidate.worktreeId === worktreeId && candidate.branch === commit.branch) {
+        assertWorkspaceCheckpoint(candidate);
+        preparedCheckpoint = candidate;
+        break;
+      }
+    }
+    const checkpoint: WorkspaceCheckpoint = {
+      ...(preparedCheckpoint ?? {}),
+      ogsContractVersion: 2,
+      schemaVersion: 1,
+      runId: args.runContext.runId,
+      nodeId: commit.roleId,
+      attempt: preparedCheckpoint?.attempt ?? 1,
+      status: "completed",
+      worktreeId,
+      branch: commit.branch,
+      baseCommit: commit.baseCommit,
+      ...(hasContentCommit ? { roleCommit: commit.resultCommit } : {}),
+      changedPaths: commit.changedPaths,
+      branchId: preparedCheckpoint?.branchId ?? branchId,
+      lineageId: preparedCheckpoint?.lineageId ?? branchId,
+      round: preparedCheckpoint?.round ?? 1,
+      loopIteration: preparedCheckpoint?.loopIteration ?? 1,
+      stateVersion: preparedCheckpoint?.stateVersion ?? 0,
+      decisionBackground: preparedCheckpoint?.decisionBackground ?? {},
+      evidenceRefs: hasContentCommit ? [commit.resultCommit] : []
+    };
+    assertWorkspaceCheckpoint(checkpoint);
+    await mkdir(checkpointDir, { recursive: true });
+    await writeAtomicFile(resolve(checkpointDir, `${branchId}-${commit.executionId}.json`), stringifyJson(checkpoint));
+    if (hasContentCommit) {
+      const workspaceEvent = await args.gitCollaboration?.onRoleCommit?.(branchId, commit);
+      if (workspaceEvent) {
+        await appendWorkspaceEvent(args.runContext, workspaceEvent);
+      } else {
+        await appendEvent(args.runContext, {
+          type: "result_committed",
+          eventId: `result_committed:${args.runContext.runId}:${branchId}:${commit.resultCommit}`,
+          at: new Date().toISOString(),
+          nodeId: commit.roleId,
+          roleId: commit.roleId,
+          runId: args.runContext.runId,
+          baseCommit: commit.baseCommit,
+          resultCommit: commit.resultCommit,
+          changedPaths: commit.changedPaths,
+          lfsObjectIds: commit.lfsObjectIds,
+          decisionBackground: checkpoint.decisionBackground,
+          evidenceRefs: checkpoint.evidenceRefs
+        });
+      }
+    } else {
+      await appendEvent(args.runContext, {
+        type: "result_committed",
+        eventId: `result_committed:${args.runContext.runId}:${branchId}:${commit.executionId}`,
+        at: new Date().toISOString(),
+        resultId: `result:${args.runContext.runId}:${branchId}:${commit.executionId}`,
+        roleId: commit.roleId,
+        runId: args.runContext.runId,
+        stateVersion: checkpoint.stateVersion + 1
+      });
+    }
+    return commit.workspaceRefs;
   };
+  const persistPreparedGitRoleCheckpoint = async (checkpointArgs: {
+    roleId: string;
+    branch: BranchRecord;
+    attempt: number;
+    execution: { executionId: string };
+    worktree: GitRoleWorktree;
+    stateVersion: number;
+  }): Promise<void> => {
+    const checkpoint: WorkspaceCheckpoint = {
+      ogsContractVersion: 2,
+      schemaVersion: 1,
+      runId: args.runContext.runId,
+      nodeId: checkpointArgs.roleId,
+      attempt: checkpointArgs.attempt,
+      status: "prepared",
+      worktreeId: `${checkpointArgs.roleId}:${checkpointArgs.execution.executionId}`,
+      branch: checkpointArgs.worktree.branch,
+      baseCommit: checkpointArgs.worktree.baseCommit,
+      changedPaths: [],
+      branchId: checkpointArgs.branch.branchId,
+      lineageId: checkpointArgs.branch.lineageId,
+      round: 1,
+      loopIteration: checkpointArgs.branch.loopIteration,
+      stateVersion: checkpointArgs.stateVersion,
+      decisionBackground: {},
+      evidenceRefs: []
+    };
+    assertWorkspaceCheckpoint(checkpoint);
+    const serialized = stringifyJson(checkpoint);
+    const digest = createHash("sha256").update(serialized, "utf8").digest("hex").slice(0, 16);
+    const checkpointPath = resolve(args.runContext.runDir, "workspace", "checkpoints", `prepared-${checkpointArgs.branch.branchId}-${checkpointArgs.execution.executionId}-${digest}.json`);
+    await mkdir(resolve(checkpointPath, ".."), { recursive: true });
+    const existing = await readFile(checkpointPath, "utf8").catch((error: unknown) => {
+      if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") return undefined;
+      throw error;
+    });
+    if (existing !== undefined) {
+      if (existing !== serialized) throw new Error("WORKSPACE_CHECKPOINT_INVALID: prepared checkpoint identity collision");
+      return;
+    }
+    await writeAtomicFile(checkpointPath, serialized);
+  };
+  const prepareNewGitRoleWorktree = async (checkpointArgs: {
+    roleId: string;
+    branch: BranchRecord;
+    attempt: number;
+    execution: { executionId: string };
+    baseCommit: string;
+    stateVersion: number;
+  }): Promise<GitRoleWorktree> => {
+    const worktree = await args.gitCollaboration!.collaboration.addWorktree({
+      roleId: checkpointArgs.roleId,
+      executionId: checkpointArgs.execution.executionId,
+      baseCommit: checkpointArgs.baseCommit
+    });
+    try {
+      await persistPreparedGitRoleCheckpoint({ ...checkpointArgs, worktree });
+      return worktree;
+    } catch (error) {
+      await args.gitCollaboration!.collaboration.removeWorktree(worktree.path, true).catch(() => undefined);
+      throw error;
+    }
+  };
+  if (args.gitCollaboration && args.initialState) {
+    const checkpointDir = resolve(args.runContext.runDir, "workspace", "checkpoints");
+    const checkpointNames = await readdir(checkpointDir).catch((error: unknown) => {
+      if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") return [];
+      throw error;
+    });
+    const stalePrepared: Array<{ checkpoint: WorkspaceCheckpoint; executionId: string }> = [];
+    for (const name of checkpointNames.filter((item) => item.startsWith("prepared-") && item.endsWith(".json"))) {
+      const checkpoint = JSON.parse(await readFile(resolve(checkpointDir, name), "utf8")) as WorkspaceCheckpoint;
+      assertWorkspaceCheckpoint(checkpoint);
+      if (checkpoint.runId !== args.runContext.runId || checkpoint.status !== "prepared") continue;
+      if (checkpoint.worktreeId !== `${checkpoint.nodeId}:${checkpoint.worktreeId.slice(checkpoint.nodeId.length + 1)}`) {
+        throw new Error("WORKSPACE_CHECKPOINT_INVALID: prepared worktree identity mismatch");
+      }
+      const executionId = checkpoint.worktreeId.slice(checkpoint.nodeId.length + 1);
+      if (!checkpoint.branch.startsWith(`ogs/${args.runContext.runId}/role/`)
+        && !checkpoint.branch.startsWith(`ogs/${args.runContext.runId}/merge/`)) continue;
+      const loggedCommit = Array.from(gitRoleCommitsByBranchId.values()).find((commit) =>
+        commit.roleId === checkpoint.nodeId && commit.executionId === executionId
+      );
+      const recoveredCommit = loggedCommit ?? await args.gitCollaboration.collaboration.recoverPreparedRoleCommit({
+          roleId: checkpoint.nodeId,
+          executionId,
+          branch: checkpoint.branch,
+          baseCommit: checkpoint.baseCommit
+        });
+      if (recoveredCommit) {
+        if (recoveredCommit.branch !== checkpoint.branch || recoveredCommit.baseCommit !== checkpoint.baseCommit) {
+          throw new Error("WORKSPACE_PREPARED_COMMIT_IDENTITY_MISMATCH");
+        }
+        // Re-run the idempotent persistence boundary even when the generic Git
+        // event was already logged. A crash can occur after that event and
+        // before the checkpoint, coordinator provenance, or workspace event.
+        // appendEvent and the checkpoint/coordinator stores deduplicate their
+        // stable identities while restoring any missing side effects.
+        await persistGitRoleCommit(checkpoint.branchId, recoveredCommit);
+        const roleDirs = args.runContext.roleDirsById.get(checkpoint.nodeId);
+        if (!roleDirs) throw new Error(`Role run directory missing for "${checkpoint.nodeId}"`);
+        const executionDir = resolve(roleDirs.executionsDir, executionId);
+        const candidate = await loadRoleExecutionCandidateRecord(executionDir);
+        if (candidate) {
+          if (candidate.execution.executionId !== executionId
+            || candidate.execution.roleId !== checkpoint.nodeId
+            || candidate.execution.branchId !== checkpoint.branchId
+            || candidate.execution.executionDir !== executionDir
+            || candidate.branch.roleId !== checkpoint.nodeId
+            || candidate.branch.branchId !== checkpoint.branchId
+            || candidate.branch.lineageId !== checkpoint.lineageId
+            || candidate.branch.loopIteration !== checkpoint.loopIteration
+            || candidate.audit.attempt !== checkpoint.attempt
+            || candidate.audit.executionId !== executionId
+            || candidate.audit.roleId !== checkpoint.nodeId
+            || candidate.audit.branchId !== checkpoint.branchId
+            || candidate.audit.status !== "ok"
+            || candidate.output.event !== candidate.audit.selectedEvent) {
+            throw new Error("WORKSPACE_EXECUTION_CANDIDATE_IDENTITY_MISMATCH");
+          }
+          const existingOutcome = await readFile(resolve(executionDir, "execution-outcome.json"), "utf8").catch((error: unknown) => {
+            if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") return undefined;
+            throw error;
+          });
+          if (existingOutcome === undefined) {
+            const storedResult: StoredRoleResult = {
+              roleId: candidate.execution.roleId,
+              event: candidate.output.event,
+              content: candidate.output.content,
+              data: candidate.output.data,
+              ...(recoveredCommit.workspaceRefs.length ? { workspaceRefs: recoveredCommit.workspaceRefs } : {}),
+              branchId: candidate.branch.branchId,
+              lineageId: candidate.branch.lineageId,
+              loopIteration: candidate.branch.loopIteration,
+              provenance: {
+                runId: args.runContext.runId,
+                executionId,
+                producerRoleId: candidate.execution.roleId,
+                branchId: candidate.branch.branchId,
+                lineageId: candidate.branch.lineageId,
+                loopIteration: candidate.branch.loopIteration
+              }
+            };
+            const result = {
+              status: "ok" as const,
+              audit: candidate.audit,
+              storedResult,
+              selectedEvent: candidate.output.event,
+              executionId,
+              branchId: candidate.branch.branchId,
+              loopIteration: candidate.branch.loopIteration
+            };
+            await recordRoleResult({
+              roleId: checkpoint.nodeId,
+              context: args.runContext,
+              execution: candidate.execution,
+              output: candidate.output,
+              audit: candidate.audit
+            });
+            await persistCommittedExecutionResult({ execution: candidate.execution, branch: candidate.branch, result });
+            await recordAudit({
+              context: args.runContext,
+              audit: candidate.audit,
+              executionId,
+              append: validatedAuditAppend
+            });
+          }
+          await removeRoleExecutionCandidateRecord(executionDir);
+        }
+      } else {
+        const roleDirs = args.runContext.roleDirsById.get(checkpoint.nodeId);
+        if (roleDirs) await removeRoleExecutionCandidateRecord(resolve(roleDirs.executionsDir, executionId));
+        stalePrepared.push({ checkpoint, executionId });
+      }
+    }
+    if (stalePrepared.length) {
+      const collaboration = args.gitCollaboration.collaboration;
+      const probe = await collaboration.probe(args.workdir);
+      if (!probe.head) throw new Error("GIT_COLLABORATION_CANONICAL_HEAD_UNAVAILABLE");
+      const claim = await acquireCanonicalWorkspaceLock({
+        workspaceDir: args.workdir,
+        workspaceId: collaboration.workspaceId,
+        owner: `resume-cleanup-${args.runContext.runId}`,
+        expectedCanonicalHead: probe.head,
+        currentCanonicalHead: probe.head
+      });
+      try {
+        for (const { checkpoint, executionId } of stalePrepared) {
+          await collaboration.discardPreparedWorktree({
+            roleId: checkpoint.nodeId,
+            executionId,
+            branch: checkpoint.branch,
+            baseCommit: checkpoint.baseCommit,
+            workspaceDir: args.workdir,
+            expectedCanonicalHead: probe.head,
+            lock: claim.lock
+          });
+        }
+      } finally {
+        await claim.release();
+      }
+    }
+  }
   const persistGitMerge = async (merge: GitMergeResult, phase: "join" | "final", verification?: { passed: boolean; reason?: string }): Promise<void> => {
     await appendEvent(args.runContext, {
       type: "git_collaboration_merge",
@@ -1439,6 +1800,24 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
       provenance: merge.provenance,
       ...(verification ? { verification } : {})
     });
+    const workspaceEvent = await args.gitCollaboration?.onMerge?.(merge, phase);
+    if (workspaceEvent) {
+      await appendWorkspaceEvent(args.runContext, workspaceEvent);
+    } else {
+      const contractEventType = merge.status === "conflict" ? "join_conflict" : "workspace_integrated";
+      await appendEvent(args.runContext, {
+        type: contractEventType,
+        eventId: `${contractEventType}:${merge.mergeId}`,
+        at: new Date().toISOString(),
+        phase,
+        mergeId: merge.mergeId,
+        baseCommit: merge.baseCommit,
+        candidateCommits: merge.candidateCommits,
+        ...(merge.status === "merged" ? { mergeCommit: merge.mergeCommit } : {}),
+        conflictPaths: merge.conflictPaths,
+        provenance: merge.provenance
+      });
+    }
   };
   const latestGitMerge = (predicate: (merge: GitMergeResult) => boolean): GitMergeResult | undefined => {
     for (let index = gitMergeResults.length - 1; index >= 0; index -= 1) {
@@ -1496,13 +1875,18 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
       let superseded = false;
       for (const { leaf, chain } of leafChains) {
         if (leaf.branchId === entry.branchId) continue;
-        if (chain.some((ancestor) => ancestor.branchId === entry.branchId)) {
+        const entryIndex = chain.findIndex((ancestor) => ancestor.branchId === entry.branchId);
+        const hasChangedDescendant = entryIndex > 0 && chain
+          .slice(0, entryIndex)
+          .some((descendant) => descendant.commit.changedPaths.length > 0);
+        if (entryIndex >= 0 && hasChangedDescendant) {
           superseded = true;
           break;
         }
         for (const ancestor of chain) {
           if (ancestor.branchId === entry.branchId) continue;
-          if (await args.gitCollaboration!.collaboration.isCommitAncestor(entry.commit.resultCommit, ancestor.commit.resultCommit)) {
+          if (entry.commit.resultCommit !== ancestor.commit.resultCommit
+            && await args.gitCollaboration!.collaboration.isCommitAncestor(entry.commit.resultCommit, ancestor.commit.resultCommit)) {
             superseded = true;
             break;
           }
@@ -1511,7 +1895,28 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
       }
       if (!superseded && !selected.includes(entry.commit.resultCommit)) selected.push(entry.commit.resultCommit);
     }
-    return selected;
+    const baseCommit = args.gitCollaboration!.baseCommit;
+    const selectedWithoutBase = selected.filter((commit) => commit !== baseCommit);
+    if (selectedWithoutBase.length > 0) return selectedWithoutBase;
+
+    // A serial no-content-change child can point at the frozen base even when
+    // its parent Role produced the only real Workspace commit. Preserve that
+    // content commit instead of publishing the base-only candidate set.
+    const substantiveEntries = entries.filter((entry) => entry.commit.resultCommit !== baseCommit
+      && entry.commit.changedPaths.length > 0);
+    const substantive = [] as string[];
+    for (const entry of substantiveEntries) {
+      let superseded = false;
+      for (const other of substantiveEntries) {
+        if (other.commit.resultCommit === entry.commit.resultCommit || other.commit.resultCommit === baseCommit) continue;
+        if (await args.gitCollaboration!.collaboration.isCommitAncestor(entry.commit.resultCommit, other.commit.resultCommit)) {
+          superseded = true;
+          break;
+        }
+      }
+      if (!superseded && !substantive.includes(entry.commit.resultCommit)) substantive.push(entry.commit.resultCommit);
+    }
+    return substantive.length > 0 ? substantive : selected;
   };
   if (initialState.stateVersion === 0) {
     for (const roleId of initialState.selectedEntryRoleIds) {
@@ -1627,24 +2032,30 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
           rolePackagesByRoleId: args.rolePackagesByRoleId, contractPlan: args.contractPlan,
           compilerSnapshot: args.compilerSnapshot, runContext: args.runContext, executor: args.executor,
           userProfile: args.userProfile, workdir: args.workdir, commandBaseDir: args.commandBaseDir,
-          logger, signal: config?.signal, auditAppend: args.runtimeServices?.audit.append,
+          logger, signal: config?.signal, auditAppend: validatedAuditAppend,
           dryRunScenario: args.dryRunScenario,
           ...(args.gitCollaboration && !joinMerge ? {
             prepareExecutionWorkspace: async (execution) => {
-              const worktree = await args.gitCollaboration!.collaboration.addWorktree({
+              const worktree = await prepareNewGitRoleWorktree({
                 roleId,
-                executionId: execution.executionId,
-                baseCommit: args.gitCollaboration!.baseCommit
+                branch,
+                attempt: 1,
+                execution,
+                baseCommit: args.gitCollaboration!.baseCommit,
+                stateVersion: workingState.stateVersion
               });
+              maybeInterruptAfterPreparedWorkspace();
               return {
                 path: worktree.path,
                 finalize: async () => {
+                  await maybeWriteTestWorkspaceFile(worktree.path);
                   const commit = await args.gitCollaboration!.collaboration.commitWorktree(
                     worktree,
                     `OGS ${roleId} ${execution.executionId}`,
                     { allowNoChanges: true }
                   );
-                  await persistGitRoleCommit(branch.branchId, commit);
+                  maybeCrashAfterWorkspaceGitCommit();
+                  return persistGitRoleCommit(branch.branchId, commit);
                 },
                 discard: async () => args.gitCollaboration!.collaboration.removeWorktree(worktree.path, true)
               };
@@ -1659,6 +2070,7 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
                 path: joinMerge!.path,
                 baseCommit: joinMerge!.baseCommit
               };
+              await persistPreparedGitRoleCheckpoint({ roleId, branch, attempt: 1, execution, worktree: mergeWorktree, stateVersion: workingState.stateVersion });
               return {
                 path: joinMerge!.path,
                 finalize: async () => {
@@ -1667,7 +2079,7 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
                     `OGS merge ${roleId} ${execution.executionId}`,
                     { allowNoChanges: true }
                   );
-                  await persistGitRoleCommit(branch.branchId, commit);
+                  return persistGitRoleCommit(branch.branchId, commit);
                 },
                 discard: async () => {
                   if (!joinMerge?.mergeCommit) return;
@@ -1705,7 +2117,7 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
           rolePackagesByRoleId: args.rolePackagesByRoleId, contractPlan: args.contractPlan,
           compilerSnapshot: args.compilerSnapshot, runContext: args.runContext, executor: args.executor,
           userProfile: args.userProfile, workdir: args.workdir, commandBaseDir: args.commandBaseDir,
-          logger, signal: config?.signal, auditAppend: args.runtimeServices?.audit.append,
+          logger, signal: config?.signal, auditAppend: validatedAuditAppend,
           dryRunScenario: args.dryRunScenario,
           ...(joinMerge ? {
             prepareExecutionWorkspace: async (execution) => {
@@ -1717,6 +2129,7 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
                 baseCommit: joinMerge!.baseCommit
               };
               await args.gitCollaboration!.collaboration.resetWorktree(joinMerge!.path, joinMerge!.mergeCommit!);
+              await persistPreparedGitRoleCheckpoint({ roleId, branch, attempt, execution, worktree: mergeWorktree, stateVersion: workingState.stateVersion });
               return {
                 path: joinMerge!.path,
                 finalize: async () => {
@@ -1725,7 +2138,7 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
                     `OGS merge ${roleId} ${execution.executionId}`,
                     { allowNoChanges: true }
                   );
-                  await persistGitRoleCommit(branch.branchId, commit);
+                  return persistGitRoleCommit(branch.branchId, commit);
                 },
                 discard: async () => {
                   if (!joinMerge?.mergeCommit) return;
@@ -1735,11 +2148,11 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
             }
           } : args.gitCollaboration ? {
             prepareExecutionWorkspace: async (execution) => {
-              const worktree = await args.gitCollaboration!.collaboration.addWorktree({ roleId, executionId: execution.executionId, baseCommit: args.gitCollaboration!.baseCommit });
+              const worktree = await prepareNewGitRoleWorktree({ roleId, branch, attempt, execution, baseCommit: args.gitCollaboration!.baseCommit, stateVersion: workingState.stateVersion });
               return {
                 path: worktree.path,
                 finalize: async () => {
-                  await persistGitRoleCommit(
+                  return persistGitRoleCommit(
                     branch.branchId,
                     await args.gitCollaboration!.collaboration.commitWorktree(
                       worktree,
@@ -2043,6 +2456,14 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
     });
     finalState = reviewReconciled.state;
     runtimeIndexes = reviewReconciled.indexes;
+    const activeBranchIds = new Set(args.plan.roleIds.flatMap((roleId) =>
+      listActiveBranches(finalState, roleId).map((branch) => branch.branchId)
+    ));
+    for (const [branchId, commit] of gitRoleCommitsByBranchId) {
+      if (activeBranchIds.has(branchId)) {
+        throw new Error(`WORKSPACE_COMMITTED_ROLE_OUTCOME_MISSING: ${commit.roleId} execution ${commit.executionId} has a Git commit but no durable Runtime outcome`);
+      }
+    }
   } else {
     runtimeIndexes = buildRuntimeIndexes(finalState);
   }

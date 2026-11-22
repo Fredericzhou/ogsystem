@@ -57,10 +57,12 @@ import type {
   SystemDefinition
 } from "./types.js";
 import { stringifyJson } from "./runtime-support.js";
+import { assertWorkspaceEvent, WORKSPACE_EVENT_TYPES } from "./workspace-contracts.js";
 
 export const RUN_PLAN_FINGERPRINT_FILE = "plan-fingerprint.json";
 export const RESOLVED_CONFIG_FILE = "resolved-config.json";
 export const ROLE_EXECUTION_OUTCOME_FILE = "execution-outcome.json";
+export const ROLE_EXECUTION_CANDIDATE_FILE = "execution-candidate.json";
 export const RESUME_RUN_LOCK_FILE = ".resume.lock";
 const BUFFER_RECOVERY_DIR = ".buffer-recovery";
 
@@ -1307,9 +1309,6 @@ export async function loadResumeGraphState(args: {
     typeof graphState.loopIterations !== "object" ||
     graphState.loopIterations === null ||
     Array.isArray(graphState.loopIterations) ||
-    typeof graphState.artifactAllowedByBranchId !== "object" ||
-    graphState.artifactAllowedByBranchId === null ||
-    Array.isArray(graphState.artifactAllowedByBranchId) ||
     typeof graphState.selectedEventByBranchId !== "object" ||
     graphState.selectedEventByBranchId === null ||
     Array.isArray(graphState.selectedEventByBranchId) ||
@@ -1706,6 +1705,61 @@ export async function persistRoleExecutionOutcome(args: {
     getRoleExecutionOutcomePath(args.execution.executionDir),
     stringifyJson(args.outcome)
   );
+}
+
+export type RoleExecutionCandidateRecord = {
+  version: 1;
+  execution: RoleExecutionRecord;
+  branch: BranchRecord;
+  output: RoleExecutionOutput;
+  audit: AuditRecord;
+};
+
+function isRoleExecutionCandidateRecord(value: unknown): value is RoleExecutionCandidateRecord {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const candidate = value as Partial<RoleExecutionCandidateRecord>;
+  return candidate.version === 1
+    && !!candidate.execution && typeof candidate.execution === "object"
+    && typeof candidate.execution.executionId === "string"
+    && typeof candidate.execution.roleId === "string"
+    && typeof candidate.execution.sessionKey === "string"
+    && !!candidate.branch && isBranchRecord(candidate.branch)
+    && !!candidate.output && typeof candidate.output === "object" && !Array.isArray(candidate.output)
+    && !!candidate.audit && typeof candidate.audit === "object" && !Array.isArray(candidate.audit);
+}
+
+export async function persistRoleExecutionCandidate(args: {
+  execution: RoleExecutionRecord;
+  branch: BranchRecord;
+  output: RoleExecutionOutput;
+  audit: AuditRecord;
+}): Promise<void> {
+  const candidate: RoleExecutionCandidateRecord = {
+    version: 1,
+    execution: args.execution,
+    branch: args.branch,
+    output: args.output,
+    audit: args.audit
+  };
+  await writeAtomicFile(
+    resolve(args.execution.executionDir, ROLE_EXECUTION_CANDIDATE_FILE),
+    stringifyJson(candidate)
+  );
+}
+
+export async function loadRoleExecutionCandidate(executionDir: string): Promise<RoleExecutionCandidateRecord | undefined> {
+  const path = resolve(executionDir, ROLE_EXECUTION_CANDIDATE_FILE);
+  const raw = await readJsonFile(path).catch((error: unknown) => {
+    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") return undefined;
+    throw error;
+  });
+  if (raw === undefined) return undefined;
+  if (!isRoleExecutionCandidateRecord(raw)) throw new Error(`Invalid role execution candidate: ${path}`);
+  return raw;
+}
+
+export async function removeRoleExecutionCandidate(executionDir: string): Promise<void> {
+  await rm(resolve(executionDir, ROLE_EXECUTION_CANDIDATE_FILE), { force: true });
 }
 
 export async function markRoleExecutionOutcomeReconciled(args: {
@@ -2385,10 +2439,7 @@ export async function persistRoleResult(args: {
   });
 }
 
-export async function appendEvent(
-  context: RunContext,
-  payload: Record<string, unknown>
-): Promise<void> {
+function buildRuntimeEventEnvelope(context: Pick<RunContext, "runId" | "redaction">, payload: Record<string, unknown>): Record<string, unknown> {
   // Every durable evidence line has the v2 envelope. Keep the original fields
   // flattened as a read-only projection for existing timeline/console readers;
   // the canonical payload is available under `payload`.
@@ -2413,6 +2464,29 @@ export async function appendEvent(
     recordedAt,
     payload: redactedPayload
   };
+  if ((WORKSPACE_EVENT_TYPES as readonly string[]).includes(eventType)) {
+    assertWorkspaceEvent(evidence);
+  }
+  return evidence;
+}
+
+export type ValidatedRuntimeEvent = Record<string, unknown> & { type: string };
+
+export function createValidatedAuditAppender(
+  context: Pick<RunContext, "runId" | "redaction">,
+  append: (event: ValidatedRuntimeEvent) => Promise<void>
+): (event: ValidatedRuntimeEvent) => Promise<void> {
+  return async (event) => {
+    buildRuntimeEventEnvelope(context, event);
+    await append(event);
+  };
+}
+
+export async function appendEvent(
+  context: RunContext,
+  payload: Record<string, unknown>
+): Promise<void> {
+  const evidence = buildRuntimeEventEnvelope(context, payload);
   const encoded = `${JSON.stringify(evidence)}\n`;
   const state = getBufferedAppendState(context.runDir);
   const suppliedEventId = typeof payload.eventId === "string" ? payload.eventId : typeof payload.id === "string" ? payload.id : undefined;
