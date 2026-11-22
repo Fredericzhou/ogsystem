@@ -4,7 +4,9 @@ import test from "node:test";
 import {
   BUSINESS_EVENT_TYPES,
   RUNTIME_AUDIT_EVENT_TYPES,
+  RUNTIME_CONTRACT_EVENT_TYPES,
   isBusinessEvent,
+  isRuntimeContractEvent,
   isRuntimeAuditEvent,
   validateSystemEventBoundaries
 } from "../dist/business-events.js";
@@ -28,4 +30,12 @@ test("runtime review rejection records are registered separately from routable b
     "NEEDS_REWORK",
     "BLOCKED"
   ]);
+});
+
+test("the V2 Runtime contract event registry covers the complete Workspace event set", () => {
+  assert.equal(RUNTIME_CONTRACT_EVENT_TYPES.length, 30);
+  for (const eventType of ["join_conflict", "workspace_integrated", "result_committed"]) {
+    assert.equal(isRuntimeContractEvent(eventType), true);
+  }
+  assert.equal(isRuntimeContractEvent("READY"), false);
 });

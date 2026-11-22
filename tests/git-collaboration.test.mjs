@@ -59,16 +59,41 @@ test("probe rejects tracked submodules", async () => {
   }
 });
 
-test("probe rejects repositories with tracked LFS attributes", async () => {
+test("probe accepts repositories with tracked LFS attributes when Git LFS is available", async () => {
   const item = await fixture();
   try {
     await writeFile(join(item.repo, ".gitattributes"), "*.bin filter=lfs diff=lfs merge=lfs -text\n", "utf8");
     await git(item.repo, ["add", ".gitattributes"]);
     await git(item.repo, ["commit", "--quiet", "-m", "add lfs attributes"]);
     const result = await probeGitCollaboration({ repositoryRoot: item.repo, workspaceDir: item.repo });
-    assert.equal(result.supported, false);
-    assert.equal(result.reason, "LFS_ATTRIBUTES_UNSUPPORTED");
+    let lfsAvailable = true;
+    try {
+      await git(item.repo, ["lfs", "version"]);
+    } catch {
+      lfsAvailable = false;
+    }
+    assert.equal(result.supported, lfsAvailable);
+    if (!lfsAvailable) assert.equal(result.reason, "LFS_UNAVAILABLE");
   } finally {
+    await rm(item.root, { recursive: true, force: true });
+  }
+});
+
+test("commit fails closed when a committed Git LFS pointer has no local object", async () => {
+  const item = await fixture();
+  let collaboration;
+  let worktree;
+  try {
+    collaboration = createGitCollaboration({ repositoryRoot: item.repo, worktreeRoot: item.worktrees, runId: "run-lfs-missing" });
+    const baseCommit = (await git(item.repo, ["rev-parse", "HEAD"])).stdout.trim();
+    worktree = await collaboration.addWorktree({ roleId: "writer", executionId: "exec-lfs", baseCommit });
+    await writeFile(join(worktree.path, "payload.bin"), `version https://git-lfs.github.com/spec/v1\noid sha256:${"a".repeat(64)}\nsize 3\n`, "utf8");
+    await assert.rejects(
+      () => collaboration.commitWorktree(worktree, "missing lfs object"),
+      /WORKSPACE_LFS_UNAVAILABLE/
+    );
+  } finally {
+    if (worktree && collaboration) await collaboration.removeWorktree(worktree.path, true).catch(() => undefined);
     await rm(item.root, { recursive: true, force: true });
   }
 });
@@ -147,7 +172,7 @@ test("recovers a committed Role result after the worker process exits", async ()
 
 test("records changed paths when a Role commits inside its worktree", async () => {
   const item = await fixture();
-  const collaboration = createGitCollaboration({ repositoryRoot: item.repo, worktreeRoot: item.worktrees, runId: "run-worker-commit" });
+  const collaboration = createGitCollaboration({ repositoryRoot: item.repo, worktreeRoot: item.worktrees, runId: "run-worker-commit", workspaceId: "workspace-project-stable" });
   let role;
   try {
     const base = (await git(item.repo, ["rev-parse", "HEAD"])).stdout.trim();
@@ -157,6 +182,7 @@ test("records changed paths when a Role commits inside its worktree", async () =
     await git(role.path, ["commit", "--quiet", "-m", "worker commit"]);
     const commit = await collaboration.commitWorktree(role, "record worker commit", { allowNoChanges: true });
     assert.deepEqual(commit.changedPaths, ["worker-committed.txt"]);
+    assert.equal(commit.workspaceRefs[0].workspaceId, "workspace-project-stable");
   } finally {
     if (role) await collaboration.removeWorktree(role.path, true).catch(() => undefined);
     await rm(item.root, { recursive: true, force: true });
@@ -317,6 +343,45 @@ test("rejects persisted merge verification when Role provenance is missing", asy
     });
     assert.equal(verification.passed, false);
     assert.equal(verification.reason, "MERGE_CANDIDATE_PROVENANCE_MISMATCH");
+  } finally {
+    for (const value of created.reverse()) await collaboration.removeWorktree(value.path, true).catch(() => undefined);
+    await rm(item.root, { recursive: true, force: true });
+  }
+});
+
+test("recovers a committed Role from a merge worktree checkpoint", async () => {
+  const item = await fixture();
+  const runId = "run-merge-role-recovery";
+  const collaboration = createGitCollaboration({ repositoryRoot: item.repo, worktreeRoot: item.worktrees, runId });
+  const created = [];
+  try {
+    const base = (await git(item.repo, ["rev-parse", "HEAD"])).stdout.trim();
+    const source = await collaboration.addWorktree({ roleId: "source", executionId: "source-exec", baseCommit: base });
+    created.push(source);
+    await writeFile(join(source.path, "source.txt"), "source\n", "utf8");
+    const sourceCommit = await collaboration.commitWorktree(source, "source change");
+    const merged = await collaboration.mergeCommits({ mergeId: "merge-role", baseCommit: base, candidateCommits: [sourceCommit.resultCommit] });
+    created.push(merged);
+    await writeFile(join(merged.path, "join-output.txt"), "join\n", "utf8");
+    const mergeRole = {
+      roleId: "join-role",
+      executionId: "join-exec",
+      branch: merged.branch,
+      path: merged.path,
+      baseCommit: merged.baseCommit
+    };
+    const committed = await collaboration.commitWorktree(mergeRole, "merge role change");
+    const recoveredCollaboration = createGitCollaboration({ repositoryRoot: item.repo, worktreeRoot: item.worktrees, runId });
+    const recovered = await recoveredCollaboration.recoverPreparedRoleCommit({
+      roleId: mergeRole.roleId,
+      executionId: mergeRole.executionId,
+      branch: mergeRole.branch,
+      baseCommit: mergeRole.baseCommit
+    });
+    assert.equal(recovered?.resultCommit, committed.resultCommit);
+    assert.equal(recovered?.branch, merged.branch);
+    assert.deepEqual(recovered?.changedPaths, ["join-output.txt"]);
+    assert.equal(recovered?.path.endsWith("/merge-merge-role"), true);
   } finally {
     for (const value of created.reverse()) await collaboration.removeWorktree(value.path, true).catch(() => undefined);
     await rm(item.root, { recursive: true, force: true });

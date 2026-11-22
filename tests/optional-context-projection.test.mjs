@@ -2,7 +2,6 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { buildProjectedContext, buildRolePromptInput } from "../dist/runtime/role-input-projector.js";
-import { buildArtifactReference } from "../dist/runtime/artifact-access.js";
 
 const roleResult = (roleId, data, lineageId = "lineage-1") => ({
   roleId,
@@ -33,7 +32,8 @@ function project(contextMap, args = {}) {
     state: {
       userPrompt: "request",
       roleResults: args.roleResults ?? {},
-      humanReviewContextByBranchId: {}
+      humanReviewContextByBranchId: {},
+      ...(args.stateExtra ?? {})
     }
   });
 }
@@ -55,35 +55,21 @@ test("optional direct data selectors preserve explicit null and present values",
   assert.deepEqual(project({ issueId: "direct.data.issue.id?" }, { roleResults }), { issueId: "ISSUE-7" });
 });
 
-test("direct and join artifact selectors project opaque references with optional omission", () => {
-  const artifactRef = buildArtifactReference({ runId: "run-1", executionId: "exec-1", mediaType: "text/plain" });
-  const producer = { ...roleResult("producer", { findings: ["A"] }), artifactRef, provenance: { runId: "run-1", executionId: "exec-1", producerRoleId: "producer", branchId: "producer@1#1", lineageId: "lineage-1", loopIteration: 1, mediaType: "text/plain" } };
-  assert.deepEqual(project({ artifact: "direct.artifact" }, { roleResults: { "producer@1#1": producer } }), { artifact: artifactRef });
-  assert.deepEqual(project({ artifact: "direct.artifact?" }, { parentBranchId: null }), {});
+test("artifact selectors are rejected because file delivery belongs to Workspace", () => {
+  assert.throws(() => project({ artifact: "direct.artifact" }), /unsupported context selector/);
 });
 
-test("handoff projection preserves business and artifact metadata without technical execution fields", () => {
-  const artifactRef = buildArtifactReference({ runId: "run-1", executionId: "exec-1", mediaType: "application/json" });
+test("handoff projection preserves business data without technical execution fields", () => {
   const producer = {
     ...roleResult("producer", {
       decision: "publish",
-      artifact: {
+      document: {
         path: "reports/brief.json",
         mediaType: "application/json",
         sizeBytes: 42,
         sha256: "a".repeat(64)
       }
     }),
-    artifactRef,
-    provenance: {
-      runId: "run-1",
-      executionId: "exec-1",
-      producerRoleId: "producer",
-      branchId: "producer@1#1",
-      lineageId: "lineage-1",
-      loopIteration: 1,
-      mediaType: "application/json"
-    },
     // These fields model accidental technical metadata attached by an adapter.
     backend: "opencode",
     model: "codex-gateway/gpt-6-luna",
@@ -103,7 +89,6 @@ test("handoff projection preserves business and artifact metadata without techni
   const node = {
     contextMap: {
       business: "direct.data",
-      artifact: "direct.artifact"
     },
     outgoing: []
   };
@@ -119,14 +104,13 @@ test("handoff projection preserves business and artifact metadata without techni
   const projected = JSON.parse(prompt.input);
   assert.deepEqual(projected.business, {
     decision: "publish",
-    artifact: {
+    document: {
       path: "reports/brief.json",
       mediaType: "application/json",
       sizeBytes: 42,
       sha256: "a".repeat(64)
     }
   });
-  assert.deepEqual(projected.artifact, artifactRef);
   for (const forbidden of [
     "backend",
     "model",
@@ -154,6 +138,35 @@ test("optional join source selectors omit missing source data while required sel
     () => project({ findings: "source(worker-b).data.findings" }, args),
     (error) => error.envelope.errorCode === "ROLE_CONTEXT_SOURCE_UNAVAILABLE"
   );
+});
+
+test("quorum join input uses the activation snapshot when a late source result exists", () => {
+  const args = {
+    joinMode: "quorum_of",
+    joinSources: ["worker-a", "worker-b"],
+    roleResults: {
+      "worker-a@1#1": roleResult("worker-a", { findings: ["A"] }),
+      "worker-b@1#2": roleResult("worker-b", { findings: ["B-late"] })
+    },
+    stateExtra: {
+      joinScopes: {
+        '["consumer","lineage-1",1]': {
+          status: "activated",
+          sourceArrivalByRoleId: {
+            "worker-a": { branchId: "worker-a@1#1", arrivedAt: "2026-01-01T00:00:00.000Z" }
+          }
+        }
+      }
+    }
+  };
+  assert.deepEqual(project({ findings: "source(worker-b).data.findings?" }, args), {});
+  assert.throws(
+    () => project({ findings: "source(worker-b).data.findings" }, args),
+    (error) => error.envelope.errorCode === "ROLE_CONTEXT_SOURCE_UNAVAILABLE"
+  );
+  assert.deepEqual(project({ joined: "source(worker-a).data.findings" }, args), {
+    joined: ["A"]
+  });
 });
 
 test("optional join source selectors still reject undeclared sources", () => {

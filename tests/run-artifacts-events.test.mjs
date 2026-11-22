@@ -6,6 +6,7 @@ import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 
 import {
   appendEvent,
+  createValidatedAuditAppender,
   flushBufferedRunArtifacts,
   loadAuditTrailFromEvents,
   persistHumanReviewDecision,
@@ -196,6 +197,7 @@ test("appendEvent keeps redacted events as single-line jsonl records", async () 
   const logsDir = path.resolve(tempRoot, "logs");
   const roleLogsDir = path.resolve(logsDir, "roles");
   const runContext = {
+    runId: "run-1",
     runDir: tempRoot,
     eventsPath: path.resolve(tempRoot, "events.ndjson"),
     engineLogPath: path.resolve(logsDir, "engine.ndjson"),
@@ -225,7 +227,7 @@ test("appendEvent keeps redacted events as single-line jsonl records", async () 
   assert.equal(record.ogsContractVersion, 2);
   assert.equal(record.schemaVersion, 1);
   assert.equal(record.eventType, "audit");
-  assert.equal(record.runId, "unknown");
+  assert.equal(record.runId, "run-1");
   assert.equal(record.recordedAt, "2026-04-18T00:00:00.000Z");
   assert.equal(record.payload.type, "audit");
   assert.equal(record.payload.roleId, "role-a");
@@ -241,6 +243,7 @@ test("appendEvent de-duplicates a stable result commit event id", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-result-event-idempotency-"));
   const logsDir = path.resolve(tempRoot, "logs");
   const runContext = {
+    runId: "run-1",
     runDir: tempRoot,
     eventsPath: path.resolve(tempRoot, "events.ndjson"),
     engineLogPath: path.resolve(logsDir, "engine.ndjson"),
@@ -251,7 +254,9 @@ test("appendEvent de-duplicates a stable result commit event id", async () => {
   const event = {
     type: "result_committed",
     eventId: "result_committed:result:run-1",
+    runId: "run-1",
     resultId: "result:run-1",
+    stateVersion: 0,
     at: "2026-04-18T00:00:00.000Z"
   };
   await appendEvent(runContext, event);
@@ -260,6 +265,30 @@ test("appendEvent de-duplicates a stable result commit event id", async () => {
   const lines = (await readFile(runContext.eventsPath, "utf8")).trim().split("\n");
   assert.equal(lines.length, 1);
   assert.equal(JSON.parse(lines[0]).eventId, event.eventId);
+});
+
+test("an injected audit writer receives only Workspace events with valid run identity", async () => {
+  const runContext = { runId: "run-validated-writer", redaction: { enabled: true } };
+  const received = [];
+  const append = createValidatedAuditAppender(runContext, async (event) => received.push(event));
+
+  await assert.rejects(append({
+    type: "result_committed",
+    eventId: "result-1",
+    runId: "other-run",
+    resultId: "result-1",
+    stateVersion: 1
+  }), /WORKSPACE_EVENT_INVALID/);
+  assert.equal(received.length, 0);
+
+  await append({
+    type: "result_committed",
+    eventId: "result-1",
+    runId: runContext.runId,
+    resultId: "result-1",
+    stateVersion: 1
+  });
+  assert.equal(received.length, 1);
 });
 
 test("human review persistence writes v2 request and decision metadata", async () => {

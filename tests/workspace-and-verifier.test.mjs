@@ -3,7 +3,8 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { createWorkspaceTools, verifyArtifactDirectory } from "../dist/runtime/adapter.js";
+import { createWorkspaceTools } from "../dist/runtime/adapter.js";
+import { verifyArtifactDirectory } from "../dist/runtime/artifact-verifier.js";
 
 test("workspace tools enforce clean-room paths and quotas", async () => {
   const root = await mkdtemp(join(tmpdir(), "ogs-workspace-tools-"));

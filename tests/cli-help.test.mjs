@@ -81,7 +81,7 @@ test("ogs help command surfaces layered guidance", async () => {
   assert.strictEqual(runHelp.code, 0);
   assert.match(runHelp.stdout, /ogs run start \[--system <file\.mmd>\] --input <text> \[options\]/);
   assert.match(runHelp.stdout, /ogs run logs <run-id> \[options\]/);
-  assert.match(runHelp.stdout, /ogs run artifact promote <run-id> \[options\]/);
+  assert.doesNotMatch(runHelp.stdout, /run artifact|artifact promote/);
   assert.match(runHelp.stdout, /ogs run logs --help/);
   assert.doesNotMatch(runHelp.stdout, /run reindex/);
 
@@ -99,10 +99,6 @@ test("ogs help command surfaces layered guidance", async () => {
   assert.match(runLogsHelp.stdout, /--json          Emit one JSON array/);
   assert.match(runLogsHelp.stdout, /--ndjson        Emit one JSON object per line/);
   assert.match(runLogsHelp.stdout, /default text    human-readable one-line summaries/);
-
-  const runArtifactHelp = await runNodeCli(runtimeCliPath, ["run", "artifact", "--help"]);
-  assert.strictEqual(runArtifactHelp.code, 0);
-  assert.match(runArtifactHelp.stdout, /ogs run artifact promote <run-id> --source <shared-relative-path> --destination <workspace-relative-path> \[--ogs-dir <path>\] \[--workspace-dir <path>\]/);
 
   const runResumeHelp = await runNodeCli(runtimeCliPath, ["run", "resume", "--help"]);
   assert.strictEqual(runResumeHelp.code, 0);

@@ -73,10 +73,10 @@ test("run summary keeps wall clock and execution duration separate for runs with
   assert.equal(projection.lastRoleId, "reviewer");
   assert.equal(projection.lastErrorCode, undefined);
   assert.equal(projection.stopReason, undefined);
-  assert.equal(projection.artifactIndexSummary.roleCount, 2);
-  assert.equal(projection.artifactIndexSummary.executionDirCount, 2);
-  assert.ok(projection.artifactIndexSummary.resumeConsumedPaths.includes("state.json"));
-  assert.ok(projection.artifactIndexSummary.operatorProjectionPaths.includes("summary.json"));
+  assert.equal(projection.evidenceIndexSummary.roleCount, 2);
+  assert.equal(projection.evidenceIndexSummary.executionDirCount, 2);
+  assert.ok(projection.evidenceIndexSummary.resumeConsumedPaths.includes("state.json"));
+  assert.ok(projection.evidenceIndexSummary.operatorProjectionPaths.includes("summary.json"));
   assert.equal(projection.reviewRoundCount, 0);
   assert.equal(projection.latestPendingReviewId, undefined);
 });

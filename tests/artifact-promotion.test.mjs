@@ -234,7 +234,7 @@ test("Role artifact sealing recovers an interrupted stale bundle before retry", 
   }
 });
 
-test("CLI promotes from the selected project and emits a machine-readable receipt", async () => {
+test("CLI rejects the removed legacy delivery command", async () => {
   const fixture = await createRun();
   try {
     const result = await runCli([
@@ -243,11 +243,8 @@ test("CLI promotes from the selected project and emits a machine-readable receip
       "--source", "shared/miniprogram",
       "--destination", "release/mini-program"
     ]);
-    assert.equal(result.code, 0, result.stderr);
-    const payload = JSON.parse(result.stdout);
-    assert.equal(payload.status, "promoted");
-    assert.equal(payload.runId, fixture.runId);
-    assert.equal(payload.fileCount, 2);
+    assert.equal(result.code, 1, result.stdout);
+    assert.match(result.stderr, /CLI_UNKNOWN_SUBCOMMAND|Unknown run subcommand/);
   } finally {
     await rm(fixture.workdir, { recursive: true, force: true });
   }
