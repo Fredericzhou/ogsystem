@@ -1,4 +1,7 @@
-# v2 Gate C Real Workflow Attempts
+# v2 Gate C Real Workflow Attempts (Historical)
+
+> These records predate the final Workspace contract. They are retained for failure diagnosis and
+> cannot close current V2 Project, Task, Run, or Release acceptance rows.
 
 ## Scope
 
@@ -12,10 +15,10 @@ failure evidence and do not close Gate C.
 - Backend: OpenCode
 - Earlier Run `20261116-011127-1fe48ab0`: planner and implementer completed; the implementer
   wrote and tested `gate-c-output.mjs` and `gate-c-output.test.mjs`, and Runtime verified/sealed
-  the Artifact. Reviewer failed with `OPENCODE_EXECUTION_ERROR` / `TypeError` before a decision.
+  the delivery bundle. Reviewer failed with `OPENCODE_EXECUTION_ERROR` / `TypeError` before a decision.
 - Later retries exposed unstable model-level native tool subsets (`write`, `edit`, and
   `apply_patch` were not consistently present in fresh capability responses). No reviewer
-  promotion or owner sign-off was recorded.
+  decision, Release record, or owner sign-off was recorded.
 
 ## Documentation workflow
 
@@ -23,18 +26,18 @@ failure evidence and do not close Gate C.
 - Roles: researcher -> writer -> reviewer
 - Run `20261116-012349-d79f3d8b` with `codex-gateway/gpt-6-luna`: researcher completed, but the
   writer returned a declaration for `gate-c-document.md` without creating the file; Runtime
-  correctly failed closed with `ARTIFACT_VERIFICATION_FAILED` / `ARTIFACT_FILE_NOT_FOUND`.
+  correctly failed closed with the delivery verification error / missing-file condition.
 - Run `20261116-012521-ab00a756` with OpenCode `opencode/beam-free`: the first Role failed with
   `OPENCODE_EXECUTION_ERROR` / `TypeError` before producing a result.
-- No final document Artifact, reviewer decision, promotion, or product-owner sign-off was
+- No final document delivery, reviewer decision, Release record, or product-owner sign-off was
   recorded.
 
 ## Gate status
 
-`Gate C: Blocked`. These attempts prove that the Runtime rejects missing or unverified Artifact
+`Gate C: Blocked`. These attempts prove that the Runtime rejects missing or unverified delivery
 outputs and records real Backend failures. They do not satisfy the production workflow acceptance
 criteria. The remaining release blocker is a stable, verified writable native-tool capability for
-the locally available model, followed by successful reviewer and promotion evidence.
+the locally available model, followed by successful reviewer and Release evidence.
 
 ## Follow-up bounded team retry
 

@@ -3,15 +3,30 @@
 This document defines how business Roles bind to Harness Templates and become resolved,
 auditable executions.
 
-> **Status: Contract Set v2 architecture standard.** This document is the sole v2 architecture
-> authority after the direct replacement. Source code and executable tests define the implemented
-> behavior; historical v1 documents are archived and are not runtime inputs.
+> **Status: Contract Set v2 architecture standard.** Within the Constitution and immutable decisions, this document is
+> the sole v2 architecture authority. The direct replacement remains subject to the release gates
+> below. Source code and executable tests report implemented behavior and must conform to the active
+> contracts; historical v1 documents are archived and are not runtime inputs.
 
-Workspace content and delivery vocabulary is defined by
-[`v2-workspace-collaboration-design-and-acceptance.md`](v2-workspace-collaboration-design-and-acceptance.md).
-Any remaining `Artifact` wording in this document is transitional implementation text. Before the
-V2 freeze it must be replaced by `WorkspaceRef`, Run evidence, or Release materialization; it is not
-an additional product object or compatibility contract.
+Workspace fields, states, events, provenance, manifests, and APIs are defined by
+[`v2-workspace-contracts.md`](v2-workspace-contracts.md). Workspace behavior and the Workspace-specific
+acceptance baseline are described by [`v2-workspace-collaboration-design-and-acceptance.md`](v2-workspace-collaboration-design-and-acceptance.md);
+release acceptance and evidence requirements are defined by [`v2-validation-and-acceptance.md`](v2-validation-and-acceptance.md)
+and [`release-uat-checklist.md`](release-uat-checklist.md).
+OGSystem coordinates general knowledge and office collaboration workflows; it is not modeled around
+software delivery or project publication. Projects organize teams, materials, tasks, Reviews, and
+collaboration outputs. A TeamVersion becomes eligible for mounting when it is trained and frozen.
+Workspace materialization records remain Runtime implementation contracts, not a Project-level
+publication object.
+
+This architecture contains no public content-reference or delivery object outside those contracts.
+Runtime parser, verifier, and persistence modules may retain internal transition symbols temporarily
+during the rename, but those symbols are not contract fields. They must not be serialized into a
+public architecture, schema, API, checkpoint, or UI. Public collaboration DTOs use WorkspaceRef,
+Project Workspace binding, and Run evidence defined by the active contracts. Operational contract
+reads separately expose checkpoint, lock, provenance, manifest, and event records as defined by the
+Workspace API. Materialization is an access mechanism for committed collaboration files, not a
+Project publication lifecycle or a claim that the framework is limited to file delivery.
 
 ## Contract Set Version
 
@@ -46,7 +61,7 @@ Version ownership is split explicitly:
 
 ## v2 Cutover Gate
 
-Contract Set v2 is released only while every gate below remains closed. Historical v1 inputs are
+Contract Set v2 is released only after every gate below is satisfied. Historical v1 inputs are
 rejected by the active Runtime.
 
 ```text
@@ -88,7 +103,7 @@ migration, offline migration tool, compatibility reader, fallback branch, or dua
 
 ## Core v2 Scope
 
-The v2 cutover keeps one small core contract. The mandatory product objects are:
+The v2 cutover keeps one small Role/Execution core contract. Its mandatory product objects are:
 
 ```text
 Role Contract
@@ -115,6 +130,10 @@ Business Review semantics
 Evidence / Review Records
   Append-only facts and the minimal persisted review control record.
 ```
+
+Workspace records such as `WorkspaceRef`, checkpoints, canonical locks, Releases, manifests, and
+Workspace events are defined by [`v2-workspace-contracts.md`](v2-workspace-contracts.md). They are
+cross-layer Workspace/Evidence records, not additional Role/Execution product layers.
 
 The v2 core does not add Service Agent, Human Agent, Remote Agent, API/Cmd Role, Profile,
 Tool, or `local_shell` objects. Fixed commands must be exposed as verified Backend-native
@@ -241,7 +260,7 @@ Current implementation status is deliberately narrower than the target model:
 
 | Capability | Current status |
 | --- | --- |
-| Runtime, staging, Law, quota, audit, artifacts, and recovery | Existing foundation |
+| Runtime, staging, Law, quota, audit, Workspace provenance, and recovery | Existing foundation |
 | Backend/model discovery and registered adapters | Partially available and Backend-specific |
 | Unified native tool discovery and resource enforceability | Not complete |
 | Codex/OpenCode policy mapping | Partially available; requires final capability/readiness integration |
@@ -443,34 +462,29 @@ Policy.
 
 Role-to-Role information transfer has one structural contract and three business channels:
 
-```ts
-type RoleResult = {
-  event: BusinessEventType;
-  data: Record<string, unknown>;
-  workspaceRefs: WorkspaceRef[];
-};
+```text
+Role result
+  Business Event + typed data + optional committed WorkspaceRef values.
 
-type RoleInput = {
-  task: unknown;             // immutable Task request
-  input: Record<string, unknown>; // current hop input
-  sourceEvent: BusinessEventType;
-  data: Record<string, unknown>;
-  workspaceRefs: WorkspaceRef[];
-};
+Role input
+  Immutable Task request + current-hop input + source event + projected typed data.
 
-// A read-only projection of an existing FlowContract; it is not a new persisted contract.
-type HandoffProjection = {
-  sourceRole: string;
-  targetRole: string;
-  event: BusinessEventType;
-  contextMap: FieldMapping[];
-  workspaceRefs: WorkspaceRef[];
-};
+HandoffProjection
+  A read-only view of an existing FlowContract that may authorize WorkspaceRef values.
 ```
+
+The WorkspaceRef value and its `workspaceRefs` carrier fields, optionality, validation, and
+authorization rules are defined only by [`v2-workspace-contracts.md`](v2-workspace-contracts.md).
+This architecture describes the handoff boundary; the projection does not create a new persisted
+contract.
 
 `workspaceRefs` contains immutable commit/path/digest references authorized by the existing Flow
 edge. Runtime verifies each reference against the committed Git tree and Workspace policy before
 exposing it to the downstream Role; it never copies raw Workspace data across a Role boundary.
+
+WorkspaceRef transfer is empty by default. An explicit `context.map` may select authorized
+references with `direct.workspaceRefs` or `source(<roleId>).workspaceRefs`; required and optional
+selector behavior remains the existing fail-closed projection rule.
 
 `HandoffProjection` is an in-memory, read-only join of the existing sources. It does not
 create `handoff-contracts.json`, a second compiler, or a second validation source. The unique
@@ -483,7 +497,7 @@ contextMap
 Flow Contract
   Existing `handoff.contracts.json` / Flow Contract compiler; it validates the payload schema
   and relation metadata. `FlowContractDefinition` is not extended with `contextMap` or
-  `artifactRefs` by this proposal.
+  `workspaceRefs` by this proposal.
 
 workspaceRefs
   A read-only list of declared `WorkspaceRef` values authorized by the Framework. It is not a
@@ -577,7 +591,7 @@ flowchart TB
     subgraph Evidence["Evidence layer"]
         AUDIT["Runtime audit"]
         RECOVERY["Recovery / resume"]
-        ARTIFACT["Artifact verification"]
+        WCV["Workspace content verification"]
     end
 
     RC --> IR
@@ -601,8 +615,8 @@ flowchart TB
     PP --> AUDIT
     BS --> AUDIT
     AUDIT --> RECOVERY
-    BS --> ARTIFACT
-    ARTIFACT --> HR
+    BS --> WCV
+    WCV --> HR
     HR --> IR
 ```
 
@@ -617,7 +631,7 @@ flowchart TB
     B["Business layer<br/>Role Contract + Flow Semantic IR"]
     T["Technical binding layer<br/>Backend reference + Model reference + preset + optional overrides"]
     X["Execution layer<br/>Capability + Policy + Permission + Adapter + Backend"]
-    E["Evidence layer<br/>Audit + Artifacts + Recovery + Review records"]
+    E["Evidence layer<br/>Audit + Workspace provenance + Recovery + Review records"]
 
     B --> T
     T --> X
@@ -632,7 +646,7 @@ flowchart TB
 | Business | responsibility, inputs, outputs, acceptance, topology, state, events, handoffs, explicit Human Review intent | business requirements and graph design | Role Contract and Semantic IR | Backend, model, native tool, resource permission |
 | Technical binding | Harness Template, Backend/model reference, preset, selected `allowedTools`, environment intent | project or TeamVersion technical configuration and Backend catalog | normalized binding input for execution | business acceptance rules, capability snapshot, native tool implementation |
 | Execution | Backend Registry, capability discovery/snapshot, effective policy, permission allow/deny, staging, Law, quota, Adapter, Backend session, exception review requests | normalized technical binding, Run context, and business execution plan | Role result, native tool events, execution outcome, Runtime-triggered review request | business review policy and mutable Role configuration |
-| Evidence | audit, artifacts, recovery, Human Review records | events and durable results from all relevant layers | replayable Run evidence | mutable business and technical configuration |
+| Evidence | audit, Workspace provenance, recovery, Human Review records | events and durable results from all relevant layers | replayable Run evidence | mutable business and technical configuration |
 
 Evidence may record Graph transitions, Policy decisions, Run state, checkpoints, and
 Human Review records, and may restore them during recovery. It does not define Graph
@@ -649,7 +663,7 @@ five-stage implementation view used by the v1 Constitution:
 | Business | Authoring + business parts of Compilation | Defines Role, Flow, state, events, and review intent |
 | Technical Binding | Authoring bindings + binding parts of Compilation | Resolves Backend/Model/Harness references and validates configuration |
 | Execution | Execution Plan lowering + Runtime | Discovers capabilities, computes policy, starts sessions, and applies transitions |
-| Evidence | Evidence | Persists audit, artifacts, review records, checkpoints, and recovery facts |
+| Evidence | Evidence | Persists audit, Workspace provenance, review records, checkpoints, and recovery facts |
 | Product projections | Cross-cutting views over all stages | Studio, Team Site, CLI, and diagnostics; not a fifth product layer |
 
 Compilation is therefore an implementation stage shared by Business and Technical Binding;
@@ -706,7 +720,7 @@ flowchart TB
     TP["Technical Binding page"] --> L3U["Technical binding"]
     CP["Capability Preview / Readiness panel"] --> L4U["Execution layer<br/>capability read-only"]
     RP["Run / Diagnostics panel"] --> L5U["Execution layer<br/>effective policy read-only"]
-    RP --> EU["Evidence Layer<br/>audit / artifacts / recovery"]
+    RP --> EU["Evidence Layer<br/>audit / Workspace provenance / recovery"]
     L3U --> L5U
     L4U --> L5U
     L5U --> EU
@@ -720,7 +734,7 @@ flowchart TB
 | Capability Preview / Readiness | Execution | refresh discovery and readiness checks | verified models, native tool IDs, adapter readiness, preview time and digest |
 | Runtime Policy / Diagnostics | Execution | normally none; technical overrides are edited in Technical Binding | effective tools, staging root, Law, quota, degradation, allow/deny reasons |
 | Adapter / Backend Diagnostics | Execution | normally none | native permission mapping, adapter version, unsupported policy fields, native tool events |
-| Run / Evidence / Review | Evidence | Human Review decision, rework, terminate; automatic retry history | tool calls, permission decisions, artifacts, errors, recovery history |
+| Run / Evidence / Review | Evidence | Human Review decision, rework, terminate; automatic retry history | tool calls, permission decisions, Workspace provenance, errors, recovery history |
 
 The normal user workflow is:
 
@@ -766,7 +780,7 @@ Input contract
 Output contract
   Result fields
   Type
-  Artifact declarations
+  Workspace reference declarations
   Postconditions
   Acceptance criteria
 ```
@@ -1033,7 +1047,7 @@ Orca
 
 OGS
   Business semantics, Technical Binding, Graph orchestration, Policy resolution,
-  Audit, Artifact, and Recovery
+  Audit, Workspace provenance, and Recovery
 ```
 
 The integration boundaries are fixed:
@@ -1106,7 +1120,7 @@ Backend sandbox or approval internals
 Capability Snapshots
 Effective Policies
 Run staging directories
-Audit, Artifact, and Recovery records
+Audit, Workspace provenance, and Recovery records
 Credentials and Secrets
 Machine-specific Backend discovery results
 ```
@@ -1130,7 +1144,7 @@ created, after Run context, staging, Law, and quota are available. The Run freez
 (`allowedTools`, `verifiedTools`, and environment policy); the intersection is recomputed from
 those facts during execution and recovery.
 
-When a target environment does not have a referenced Backend or Model, the Team can still be imported. The Harness Template is marked unresolved and the Team cannot be released or run until the binding is repaired.
+When a target environment does not have a referenced Backend or Model, the Team can still be imported. The Harness Template is marked unresolved and the Team cannot be trained or run until the binding is repaired.
 
 This keeps the portable Team package small:
 
@@ -1186,7 +1200,7 @@ Evidence and Review is the operational page:
 ```text
 Role result
 Acceptance criteria status
-Artifacts and verification
+Workspace content and verification
 Native tool invocation history
 Permission allow/deny history
 Errors and recovery history
@@ -1206,7 +1220,7 @@ Runtime exception:
 Explicit result review actions are business decisions about the Role's durable result and
 declared handoff. V2 exception Review currently covers loop-budget exhaustion and its declared
 continuation, rework, reject, and termination controls. Automatic retry remains an internal
-Runtime policy. Join timeout, Artifact verification failure, notification, and other exception
+Runtime policy. Join timeout, Workspace content verification failure, notification, and other exception
 Review matrices are Deferred RFCs. Both implemented triggers use the same request, action enum,
 decision payload, and Evidence schema. Neither class approves or rejects an individual Backend
 tool call.
@@ -1335,7 +1349,7 @@ refreshes these sections and validates existing overrides.
 The primary action is `Use default`. The secondary action is `Customize`, which creates
 or updates a Harness Template rather than adding fields to each Role. Changing a Role's
 selector changes its technical binding; editing a shared template can affect every Role
-that references it and therefore creates a new template revision for released
+that references it and therefore creates a new template revision for trained
 TeamVersions.
 
 #### Operate workspace
@@ -1346,7 +1360,7 @@ Flow progress
 Current Role
 Current Harness Template
 Effective policy summary
-Artifacts
+Workspace references and verification
 Audit timeline
 Recovery controls
 Human Review panel
@@ -1386,7 +1400,7 @@ Input preconditions:
   facts that must be true before the Role starts
 
 Output business fields:
-  result fields, artifact declarations, and their business meaning
+  result fields, Workspace reference declarations, and their business meaning
 
 Output acceptance criteria:
   checks that determine whether the result is acceptable
@@ -1404,7 +1418,7 @@ task and original user input
 allowed_events derived from outgoing Flow edges
 upstream and join context selectors
 runId, roleId, executionId, branchId, and loop iteration
-workspace root and artifact declaration envelope
+workspace root and Workspace reference envelope
 technical tool and permission metadata
 ```
 
@@ -1414,7 +1428,7 @@ The Runtime prompt shell and audit envelope are not part of the business input/o
 
 ```text
 context map from upstream Flow edges to Role input fields
-output schema skeleton from declared events and artifact declarations
+output schema skeleton from declared events and Workspace reference declarations
 event labels from outgoing Flow edges
 required input fields inferred from the Role schema
 ```
@@ -1515,7 +1529,7 @@ read-only projection.
 
 ## 7. Technical Binding Resolution
 
-Technical template references are kept outside the business Role package, for example in `.ogs/execution-bindings.json` or the released TeamVersion. The file is a binding index; the Harness Template is the only v2 user-facing technical object.
+Technical template references are kept outside the business Role package, for example in `.ogs/execution-bindings.json` or the trained and frozen TeamVersion. The file is a binding index; the Harness Template is the only v2 user-facing technical object.
 
 The preferred persisted form is a template plus a Role-to-template reference. The expanded object below is the resolved form used by the Runtime.
 
@@ -1879,7 +1893,7 @@ unknown resource request = deny
 
 All access remains subject to Law, staging, and quotas. Staging is the physical execution boundary;
 it does not grant a Role access to arbitrary upstream context or files. Handoff `contextMap` and
-the authorized Artifact set remain the business data boundary.
+the authorized WorkspaceRef set remain the business data boundary.
 
 ## 12. Permission Protocol
 
@@ -1931,7 +1945,7 @@ explicit
 
 exception
   Runtime produced the currently supported reviewable exception: loop budget exhaustion.
-  Retry exhaustion, Join timeout, Artifact verification failure, and other exception Review
+  Retry exhaustion, Join timeout, Workspace content verification failure, and other exception Review
   triggers remain Deferred RFCs.
 ```
 
@@ -1997,7 +2011,7 @@ loop_exhausted
   terminate must resolve to branch or run through the exception policy
 
 other exception
-  Runtime automatic retry, Join timeout, Artifact verification failure, and other exception
+  Runtime automatic retry, Join timeout, Workspace content verification failure, and other exception
   Review action matrices are Deferred RFCs. They must not create a V2 exception Review until a
   versioned policy and action subset are implemented.
 ```
@@ -2173,7 +2187,7 @@ is recomputed from the frozen `allowedTools` and `verifiedTools` during recovery
 ## 15. Audit
 
 Core Evidence uses the existing `events.ndjson` and Runtime event contract as its single
-serialization boundary. Evidence is append-only; Artifact, Review, Policy Decision, and recovery
+serialization boundary. Evidence is append-only; Workspace provenance, Review, Policy Decision, and recovery
 facts remain traceable there. At the v2 cutover, every new v2 record in `events.ndjson` must carry
 the following minimum root fields:
 
@@ -2219,7 +2233,7 @@ type PermissionRequestEvidence = {
 
 `eventType: "tool_invocation"` stores `ToolInvocationEvidence` and
 `eventType: "permission_request"` stores `PermissionRequestEvidence`; both are appended to
-`events.ndjson` with the minimum root fields above. Review, Artifact, graph transition, and
+`events.ndjson` with the minimum root fields above. Review, Workspace provenance, graph transition, and
 recovery records use the same existing append-only boundary and their owning Runtime event
 contracts.
 
@@ -2333,7 +2347,7 @@ v1 schemas, parsers, runtime branches, and Studio inputs
 v1 fixtures, examples, tests, and active authoring documentation
   -> archived and excluded from the active v2 distribution
 
-v1 Run data and released Team data
+v1 Run data and trained Team data
   -> remain outside v2; no conversion, import, or compatibility read
 ```
 
@@ -2427,7 +2441,7 @@ Contract Set v2. A new v2 project or TeamVersion starts from v2 schemas and v2 H
     exception-triggered Review is the loop-budget control boundary.
 16. Recovery reuses the original Run Capability Snapshot and EffectiveEnvironmentPolicy.
 17. Every native tool invocation produces an audit event.
-18. Every Role handoff uses declared event, data, and Artifact mappings.
+18. Every Role handoff uses declared event, data, and WorkspaceRef mappings.
 19. Explicit and loop-budget exception Human Review use the same request schema and action enum.
 20. Core Review requests and decisions are bound to `reviewId`, `round`, `lineageId`, `branchId`,
     and `stateVersion`; Runtime projection fields live under the declared internal `payload`.
@@ -2455,4 +2469,5 @@ Contract Set v2. A new v2 project or TeamVersion starts from v2 schemas and v2 H
 32. Loop-budget exception actions and terminate scope are read-only compiled projections; users do
     not maintain a second exception action registry.
 33. The v2 validation baseline covers semantic scenarios, technical readiness/recovery, verified
-    cross-Backend collaboration, and real software and documentation production workflows.
+    cross-Backend collaboration, and real office, research, documentation, software, or other
+    collaboration workflows.

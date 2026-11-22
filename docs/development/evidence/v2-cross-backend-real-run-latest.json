@@ -1,4 +1,6 @@
 {
+  "evidenceStatus": "historical-pre-workspace-contract",
+  "acceptanceUse": "diagnostic-only",
   "generatedAt": "2026-11-16T15:52:44.797Z",
   "model": "gpt-6-luna",
   "backends": [

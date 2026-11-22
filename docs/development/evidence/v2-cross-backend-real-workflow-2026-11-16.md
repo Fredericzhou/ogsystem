@@ -1,4 +1,7 @@
-# v2 Cross-Backend Real Workflow Evidence
+# v2 Cross-Backend Real Workflow Evidence (Historical)
+
+> This record predates the final Workspace contract. The JSON record is marked
+> `diagnostic-only`; it cannot close the current Project/Task/Run or UAT acceptance gate.
 
 ## Result
 
@@ -38,9 +41,10 @@ provider naming remains inside the Technical Binding and Adapter boundary.
 - Both Roles used separate Harness Template references in `.ogs/execution-bindings.json`.
 - Both Roles had frozen Capability Snapshot, EffectiveEnvironmentPolicy, policy digest, capability
   digest, staging root, and recovery identity in `resolved-config.json`.
-- The downstream Role received the business handoff and returned `CROSS_BACKEND_HANDOFF_OK` with
-  `data.handoff=true`; no Backend, Harness, tool, permission, or
-  workspace fields were projected into its business input.
+- The downstream Role received the business handoff and returned `CROSS_BACKEND_HANDOFF_OK`. The
+  historical run also emitted `data.handoff=true`, but that field belongs to the pre-contract
+  record and is not required by the current V2 role Schema or reproducibility probe; no Backend,
+  Harness, tool, permission, or workspace fields were projected into its business input.
 
 The probe creates a disposable fixture and sanitizes its evidence before writing the repository
 record. It is rerunnable with `pnpm exec tsx scripts/run-cross-backend-evidence.mjs`; temporary
@@ -49,5 +53,5 @@ absolute paths and credentials are excluded from the checked-in evidence.
 ## Failure evidence retained
 
 Earlier Codex -> OpenCode attempts remain retained as failure evidence. The latest successful
-Codex -> OpenCode run closes the current cross-Backend business-flow requirement without masking
-those adapter failures.
+Codex -> OpenCode run remains diagnostic evidence without masking those adapter failures. A new
+final-contract Project Run is required for current acceptance.

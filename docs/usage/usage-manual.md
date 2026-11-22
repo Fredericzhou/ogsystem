@@ -6,7 +6,7 @@ and [v2 acceptance standard](../development/v2-validation-and-acceptance.md).
 ## Authoring
 
 Create a Business Graph whose nodes reference v2 Role Contracts. Declare events, context mappings,
-Flow Contracts, Artifact references, Join/Loop rules, and Human Review actions explicitly.
+Flow Contracts, WorkspaceRef projections, Join/Loop rules, and Human Review actions explicitly.
 Persist technical execution in a v2 Harness Template and Execution Binding root:
 
 ```json
@@ -40,7 +40,9 @@ those records and does not rediscover or widen access.
 
 ## Evidence and Review
 
-Role results carry a registered Business Event, declared data, and authorized ArtifactReferences.
+Role results carry a registered Business Event, declared data, and authorized WorkspaceRef values or
+Run evidence references. A Project records collaboration outcomes through its Task Runs and shared
+Workspace; verified files are materialized from committed Workspace content for access and download.
 Evidence events are append-only. Human Review decisions are idempotent and bound to the Review
 scope (`reviewId`, round, lineage, branch, loop iteration, and state version).
 
@@ -57,8 +59,8 @@ pnpm build
 pnpm test
 ```
 
-For production evidence execute the semantic scenarios and the
-software and documentation workflows in `v2-validation-and-acceptance.md`. A dry-run graph preview
-does not count as a production delivery.
+For production evidence execute the semantic scenarios and representative collaboration workflows in
+`v2-validation-and-acceptance.md`. A dry-run graph preview does not count as evidence of a completed
+collaboration outcome.
 
 Historical v1 operating instructions are archived at `docs/usage/archive/usage-manual-v1.md`.

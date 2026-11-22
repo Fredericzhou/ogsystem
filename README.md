@@ -1,7 +1,10 @@
 # OGSystem
 
 OGSystem is a console runtime for a restricted Mermaid flowchart DSL. This branch implements the
-Contract Set v2 cutover defined by `docs/development/role-execution-architecture.md`.
+Contract Set v2 cutover follows `docs/development/DECISIONS.md`, `docs/development/role-execution-architecture.md`, and the sole Workspace machine contract at `docs/development/v2-workspace-contracts.md`.
+
+The active/current v2 documents define the normative implementation target; they do not by themselves
+mean that the release gate, UAT evidence, or required sign-offs have passed.
 
 Implemented scope:
 
@@ -21,13 +24,12 @@ Product boundaries:
 - Shared Platform: model/tool discovery, shared defaults, reusable tool/storage metadata, immutable
   dataset snapshots, and shared execution infrastructure including Runtime/Harness adapters.
   TeamVersion owns Harness Templates and selected model references; platform catalogs describe
-  available resources and do not own Team, Task,
-  Run, or Deliverable records.
+  available resources and do not own Team, Task, Run, or Release records.
 - OGS Studio: Team and TeamVersion authoring, role templates, graph design, Simulation evidence,
-  diagnostics, and release.
+  diagnostics, and team training.
 - OGS Projects: Collaboration Projects, Materials, Tasks, Project Run evidence, Reviews, and
-  Deliverables. Each Project mounts one released TeamVersion; different Projects may mount
-  different versions.
+  collaboration outputs. Each Project mounts one trained TeamVersion; different Projects may
+  mount different versions.
 - Team definition: a reusable static collaboration structure. Graph members are Responsibility
   Roles, not specific people or separately identified agents.
 - Project Run and Studio Simulation use the same execution base but have separate owners, storage,
@@ -65,10 +67,11 @@ Non-goals:
 Product introduction:
 
 - `docs/development/role-execution-architecture.md`
+- `docs/development/v2-workspace-contracts.md`
 - `docs/development/v2-validation-and-acceptance.md`
 - `docs/development/ogsystem-constitution-v2.md`
 - `docs/README.md`
-- `docs/development/role-execution-architecture.md`
+- `docs/development/v2-workspace-implementation-runbook.md`
 
 Detailed usage manual:
 
@@ -228,7 +231,10 @@ For day-to-day use, start with `docs/usage/usage-manual.md`. It keeps the comman
 - Each run persists under `.ogs/runs/<run-id>/`, including run-level state, `sessions.json`, and per-role execution history under `roles/<roleId>/executions/`.
 - Run-id format is `YYYYMMDD-HHMMSS-<shortHash>`.
 - Each run gets its own isolated `.ogs/runs/<run-id>/shared/` directory, and role directories do not receive a `shared` symlink by default.
-- Each execution uses a fresh clean-room workspace. Verified artifacts are tied to a canonical `artifact-manifest.json`; seals and readers authenticate that manifest and file hashes.
+- Each execution uses a fresh clean-room workspace. Workspace content is versioned by Git commits
+  (with Git LFS for large objects); collaboration outputs are exposed through their owning Task and
+  Run. Framework-private Release materialization records verify the recorded Commit and output
+  digest without becoming a Project publication lifecycle.
 - `.ogs/runs/` is generated runtime state and should stay out of version control.
 - `state.json.graphState` and `sessions.json` are the runtime-consumed resume sources. `events.ndjson` remains append-only audit history.
 - `state.json` and `sessions.json` writes are atomic, and resume rejects partial/corrupted snapshots before execution starts.
@@ -314,5 +320,7 @@ node skills/ogsystem-nl-to-mmd/scripts/validate_ogsystem_mmd.mjs \
 - `docs/development/ogsystem-constitution-v2.md` is the governance entry point for principles, design boundaries, and hard rules.
 - `docs/usage/usage-manual.md` is the main operator/developer manual.
 - `docs/development/role-execution-architecture.md` is the v2 architecture source of truth.
+- `docs/development/v2-workspace-contracts.md` is the sole Workspace machine contract for fields, states, events, provenance, manifests, and APIs.
 - `docs/development/v2-validation-and-acceptance.md` is the release acceptance source of truth.
 - `docs/development/DECISIONS.md` records architecture decisions.
+- Conflicts are resolved in this order: `DECISIONS.md` -> Role Execution Architecture -> V2 Workspace Contracts -> Workspace Design -> V2 Validation and Acceptance -> Release UAT -> Implementation Runbook.

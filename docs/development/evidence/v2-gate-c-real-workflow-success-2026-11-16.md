@@ -1,8 +1,13 @@
-# v2 Gate C Real Workflow Success Evidence
+# v2 Gate C Real Workflow Execution Record (Historical)
+
+> This record predates the final Workspace contract and is retained for execution diagnosis.
+> It is not current V2 Release or UAT evidence and cannot close a release gate. Current evidence
+> must use the Workspace contracts, Run evidence, and Release materialization records.
 
 ## Scope
 
-This record closes the engineering execution portion of Gate C for the final v2 worktree.
+This record documents a pre-contract engineering execution against the then-current v2 worktree;
+it does not close the current Gate C.
 Both workflows used the real Codex Backend Adapter, the only locally available model
 `gpt-6-luna`, and the v2 CLI Runtime path. The earlier failure record remains in
 `v2-gate-c-real-workflow-attempts-2026-11-16.md`.
@@ -38,14 +43,13 @@ Both workflows used the real Codex Backend Adapter, the only locally available m
   staging root is the Run's writer execution workspace.
 - Reviewer result: finalization approved after checking Purpose, Workflow, Evidence, Acceptance,
   traceability, and unsupported-claim constraints.
-- Artifact: `gate-c-document.md`, 1,114 bytes, media type `text/markdown`.
-- Manifest digest: `ff4beda75d73a8bc6ace9fd34cca6e6e21cdd980e973fd0b8a167dd72e676663`.
+- Delivered file: `gate-c-document.md`, 1,114 bytes, media type `text/markdown`.
+- Historical evidence manifest digest: `ff4beda75d73a8bc6ace9fd34cca6e6e21cdd980e973fd0b8a167dd72e676663`.
 - Evidence files: the Run `summary.json`, `resolved-config.json`, `audit/summary.md`,
-  `shared/artifact-manifest.json`, `shared/seal-manifest.json`, and `shared/verification.json`.
-- Promotion: `ogs run artifact promote` published `shared/artifacts` to
-  `release/gate-c-document-final`; the receipt reported manifest digest
-  `2b5047e53fb80a3b9d850b701c8123113a607854063d3b694108ce3828db27b8` and test report digest
-  `17273a3110851c96746bfdb70033b8ff708b9cb08aba656ff4c1527bb9660739`.
+  the sealed Run evidence manifest, `shared/seal-manifest.json`, and `shared/verification.json`.
+- The pre-contract run materialized its sealed output under `release/gate-c-document-final`.
+  This directory and its receipt are historical diagnostics; they are not a current V2 Release
+  record or download reference.
 
 ## Software workflow
 
@@ -60,15 +64,14 @@ Both workflows used the real Codex Backend Adapter, the only locally available m
   policy digest: `aa288844a7e91a9e8dd0215188f1ef4ecbf805be9e589b3223897cd68286ce7c`;
   staging root is the Run's implementer execution workspace.
 - Reviewer result: approved `node gate-c-output.test.mjs` with exit code 0.
-- Artifacts: `gate-c-output.mjs` (60 bytes) and `gate-c-output.test.mjs` (128 bytes), both
+- Delivered files: `gate-c-output.mjs` (60 bytes) and `gate-c-output.test.mjs` (128 bytes), both
   `text/javascript`.
-- Manifest digest: `e9d97285e6a872db90e6dab4ecd7004641062924a5b11b7d3cb4b292f2cb3567`.
+- Historical evidence manifest digest: `e9d97285e6a872db90e6dab4ecd7004641062924a5b11b7d3cb4b292f2cb3567`.
 - Evidence files: the Run `summary.json`, `resolved-config.json`, `audit/summary.md`,
-  `shared/artifact-manifest.json`, `shared/seal-manifest.json`, and `shared/verification.json`.
-- Promotion: `ogs run artifact promote` published `shared/artifacts` to
-  `release/gate-c-output-final`; the receipt reported manifest digest
-  `2b52edc7e61305d0726d3cae2582634a6ddace0e0b3af52b6e73f9755ccd1a57` and test report digest
-  `6024b34cd54643bcadab8af46fe50ad8a1a8ce7abab9602164c88b17612cbd58`.
+  the sealed Run evidence manifest, `shared/seal-manifest.json`, and `shared/verification.json`.
+- The pre-contract run materialized its sealed output under `release/gate-c-output-final`.
+  This directory and its receipt are historical diagnostics; they are not a current V2 Release
+  record or download reference.
 
 ## Boundary and regression evidence
 
@@ -94,19 +97,20 @@ Both workflows used the real Codex Backend Adapter, the only locally available m
   completion and that the two-Role handoff completes without the earlier indefinite
   `running` state.
 
-- Downstream handoff tests preserve business data and Artifact metadata/reference while excluding
+- Downstream handoff tests preserve business data and delivery metadata while excluding
   Backend, model, Harness, tool, permission, policy, and workspace execution fields.
-- Artifact resolver tests authenticate path, media type, size, file digest, and manifest digest
-  before exposing manifest metadata.
+- Legacy delivery verification tests authenticate path, media type, size, file digest, and manifest
+  digest before exposing metadata; they are implementation regression tests, not the Workspace
+  contract source.
 - Codex adapter tests cover strict schema projection, native permission mapping, and capability
-  discovery. OpenCode adapter tests cover provider configuration and artifact tool phase ordering.
+  discovery. OpenCode adapter tests cover provider configuration and delivery tool phase ordering.
 - Pi native RPC capability discovery is covered, but Pi filesystem/process execution remains
   unavailable for production claims because its current cwd boundary does not prove staging
   isolation; explicit resource tools are rejected fail-closed.
 - Final browser regression after layout and boundary-input race fixes: `17 passed`, `2 skipped`;
-  Build layout regression: `4 passed`. The current full Node regression is `444 passed`,
-  `1 skipped`, `0 failed` across `445` tests (`pnpm test`, 2026-11-17); Team Site tests are
-  `34 passed`. Earlier counts from
+  Build layout regression: `4 passed`. The current full Node regression is `460 passed`,
+  `1 skipped`, `0 failed` (`pnpm test`, final v2 worktree); Team Site tests are
+  `49 passed`. Earlier counts from
   pre-cutover test enumeration are historical and are not used as the current release total.
 - Tarball installation smoke passed through both npm and pnpm. The smoke now verifies the v2
   Role Package/project layout and dry-run entrypoint; it no longer expects the removed v1
@@ -126,9 +130,9 @@ Both workflows used the real Codex Backend Adapter, the only locally available m
 - The acceptance script now distinguishes an incomplete Runtime/publish from a missing
   test fixture and preserves a pre-existing `tests/__init__.py` during unittest discovery.
 
-Engineering Gate C execution criteria are passed for both required workflows. Product-owner and
-workflow-operator sign-off required by the release UAT governance document remains a separate
-release approval record; this evidence does not claim that human signature.
+The pre-contract execution criteria were observed for both workflows. Product-owner and
+workflow-operator sign-off required by the release UAT governance document remains outstanding,
+and this historical record cannot substitute for current final-contract Project Runs or signatures.
 The later bounded Python-team retry is recorded separately as a real Backend/model hang and does
 not claim repeatability beyond the successful Run records above.
 
@@ -137,9 +141,9 @@ not claim repeatability beyond the successful Run records above.
 `pnpm --dir apps/team-site verify:cases` completed with all four model cases passing against the
 same final worktree: `cross-backend-review-loop`, `management-consulting`, `software-team`, and
 `structured-debate`. The runs used real Codex `gpt-6-luna` execution; no dry-run result was used.
-The management case completed 9/9 Roles and verified 1 declared/delivered Artifact (manifest
-`04861d3028a2bd1e588c2ddb1b19435154511c2e2dd96138dec190d74ca125f9`). The structured debate case
-completed 5/5 Roles and verified 5 declared/delivered Artifacts including `debate-brief.md`
-(manifest `9ceef6fa874189c6d0fd29d60c3c6056a1b05d52d2d5f2392f314cc0ea1a030`). The verifier now
-prints the Run ID and Artifact manifest digest on every passing case so the next evidence capture
-can attach immutable identities before temporary workspaces are removed.
+The management case completed 9/9 Roles and verified one delivered file set. This pre-contract
+case output is retained as diagnostics only; current acceptance must attach a Workspace commit,
+Release ID, materialization manifest digest, and output digest.
+The structured debate case completed 5/5 Roles and verified five delivered files including
+`debate-brief.md`. This pre-contract output is also retained as diagnostics only; it cannot satisfy
+the current Project/Task/Run and Release evidence requirements.

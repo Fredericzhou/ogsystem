@@ -134,7 +134,7 @@ External Source / Project Event
 Recommended integration modes:
 
 1. **OGSystem as controller, DeerFlow as a role executor**: use DeerFlow for research, browser, or document-heavy roles and return a schema-validated result to the OGS graph.
-2. **DeerFlow as a general workbench, OGSystem as a controlled workflow service**: DeerFlow invokes a released OGS TeamVersion through an API when approval, multi-role routing, or auditable delivery is required.
+2. **DeerFlow as a general workbench, OGSystem as a controlled workflow service**: DeerFlow invokes a trained OGS TeamVersion through an API when approval, multi-role routing, or auditable collaboration is required.
 3. **DSH-inspired Project Orchestration above the OGS Graph Runtime**: add Trigger, Mandate, Task/Assignment, Attention, and Outbox concepts without replacing System, Role, Run, or Semantic IR.
 
 ## Designs to Borrow
