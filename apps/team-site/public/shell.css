@@ -436,26 +436,16 @@ body { min-width: 0; }
 }
 @media (min-width: 1024px) {
   #project-workspace-view .page-frame[data-template="B"] .page-frame-body {
-    display: grid;
-    grid-template-rows: minmax(0, 1fr);
-    overflow: hidden;
+    display: block;
+    overflow: auto;
   }
   #project-workspace-view .project-detail-sections {
-    grid-template-columns: minmax(320px, 390px) minmax(0, 1fr);
-    grid-template-rows: minmax(0, 1fr);
-    grid-template-areas:
-      "info tasks"
-      "resources tasks"
-      "releases tasks";
-    align-items: stretch;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
     min-height: 0;
-    overflow: hidden;
+    overflow: visible;
   }
-  #project-workspace-view .project-detail-sections > .project-panel { min-height: 0; overflow: auto; overscroll-behavior: contain; }
-  #project-workspace-view #project-info-panel { grid-area: info; }
-  #project-workspace-view #project-resources-panel { grid-area: resources; }
-  #project-workspace-view #project-releases-panel { grid-area: releases; }
-  #project-workspace-view #project-run-panel { grid-area: tasks; }
+  #project-workspace-view .project-detail-sections > .project-panel { min-height: 0; overflow: visible; }
 }
 @media (max-width: 767px) {
   .page-frame { padding: 8px 12px 8px; }
