@@ -1,6 +1,6 @@
 # OGSystem 学术与工程实践论文专区 (Paper & Publications Hub)
 
-本目录为 **OGSystem** 的论文全套成果文稿、可溯源文献数据库与独立研究者发表指南。
+本目录为 **OGSystem** 的多角色 AI 协作论文、工程证据、可溯源文献与实验方案。其应用范围包括办公及其他文件型项目协作；软件开发是其中一种应用和已有运行验证场景。
 
 ---
 
@@ -8,50 +8,56 @@
 
 | 文件名 | 类型 / 定位 | 适用目标 |
 | :--- | :--- | :--- |
-| **[`ogsystem-paper-zh.md`](ogsystem-paper-zh.md)** | **中文版工程实践论文** (完整文稿) | 面向中国大陆计算机学报、核心期刊（如《计算机系统应用》《计算机工程与设计》《计算机集成制造系统》）或大模型软件工程专刊。 |
-| **[`ogsystem-paper-en.md`](ogsystem-paper-en.md)** | **英文版工程实践论文** (完整文稿) | 面向国际顶级软件工程期刊（如 Elsevier *SoftwareX*, IEEE *Software*）或顶会工程轨（*ICSE/FSE/ASE Tool Track*）。 |
-| **[`multi-agent-collaboration-models-and-tech-stacks.md`](multi-agent-collaboration-models-and-tech-stacks.md)** | **多智能体编排与协作模型专题调研报告** (深度对照) | 深度解构 9 种编排范式、通信工具、底层技术栈（Herdr, Orca, OMP, Codex v2, Claude Code 等）及数学超集证明，**方便快速参考与横向对照**。 |
-| **[`traceable-references.md`](traceable-references.md)** | **可溯源文献与标准数据库** | 包含 2015–2016 分布式状态机奠基、形式化理论、2024–2026 MAS 前沿以及 2026 中国智能体国家标准的全部可查官方网址、DOI 与代码库。 |
+| **[`ogsystem-paper-zh.md`](ogsystem-paper-zh.md)** | **中文版工程实践论文** (完整文稿) | 面向多角色 AI 协作、智能体运行时治理与协同工作流相关期刊或会议。 |
+| **[`ogsystem-paper-en.md`](ogsystem-paper-en.md)** | **英文版工程实践论文** (完整文稿) | 面向多智能体系统、AI 协作治理与可信工作流相关期刊或会议。 |
+| **[`ogsystem-submission-paper-en.md`](ogsystem-submission-paper-en.md)** | **英文投稿稿（V2）** | 按 RQ 组织的系统设计与工程验证论文；含先行工作归属、四层架构、共享 Workspace/Join/Release 状态、证据边界和研究限制。 |
+| **[`experimental-validation-plan-bilingual.md`](experimental-validation-plan-bilingual.md)** | **中英双语实验设计** | 预注册导向的单 Agent / 通用多 Agent / OGS V2 对照方案；定义交付成功、Evidence 支持陈述、幻觉测量边界、故障恢复、样本量规划、统计方法和论文直达地址。 |
+| **[`multi-agent-collaboration-models-and-tech-stacks.md`](multi-agent-collaboration-models-and-tech-stacks.md)** | **多智能体编排与协作模型专题调研报告** (深度对照) | 深度解构 9 种编排范式、通信工具、底层技术栈（Herdr, Orca, OMP, Codex v2, Claude Code 等）及 EFSM/DAG 模型包含关系，**方便快速参考与横向对照**。 |
+| **[`traceable-references.md`](traceable-references.md)** | **可溯源文献与标准研究线索** | 包含经典理论与 2024–2026 MAS 研究的 DOI、代码库、公开地址，以及待官方核验的 GB/Z 候选条目。 |
 
 ---
 
-## 核心立论体系概览
+## 理论基础、公开能力与候选贡献边界
 
 ```text
-【理论基座 (2015-2016)】                          【时代挑战与前沿路线 (2024-2026)】
-AWS Step Functions (声明式状态机)                 Anthropic: "确定性工作流优于自主Swarm"
-Uber Cadence / Temporal (持久化执行)   ───反思融合──>   OpenAI Codex v2: 密文交接争议 / 树状派生缺乏对等制衡
-Sam Newman (中心编排 vs 自由编舞)                  Google Opal: SaaS 办公流水线 / 超长上下文注意力稀释
-                                                  Orca: Git Worktree 终端总线 / 缺乏应用层契约与状态机
-                                                  Herdr: 终端多路复用与跨窗格委派 / 缺乏业务状态代数
-                                                  OMP: 角色感知模型分流 / 缺乏持久化 WAL 与责任席位
-                                                  DAG 流水线 (n8n/Dify/Coze): 严禁回环的退化子集
-                                                          │
-                                                          ▼
-                                            【OGSystem 核心创新突破】
-                                   1. 责任席位优先 (Role-First 抽象六元组)
-                                   2. 标记转移系统 (LTS 离散业务事件字典)
-                                   3. 扩展有限状态机 (EFSM 持久化全要素状态)
-                                   4. 源状态感知汇聚 (State-Aware Join 代数)
-                                   5. 有界循环预算 (Bounded Loop Review)
-                                   6. 双路径交付 (Artifact Promotion + Git Worktree Merge)
-                                   7. 工具能力投影 (Role Contract + Backend Policy)
-                                   8. 2026 智能体国家标准 (GB/Z 185/242 落地)
+【公开理论与工程能力】                    【OGS 工程实现】
+LTS / EFSM / Workflow Patterns             四层产品责任划分
+WAL / durable execution / Git / CAS        LangGraph 图执行引擎
+最小特权 / provenance / attestation       Harness / Backend / Model 绑定
+LangGraph / 多角色 Agent / Git Worktree   V2 单 Project Workspace 状态协议
+                    │                     Role Worktree / WorkspaceRef / Evidence
+                    │                     Join / CAS / Release Materialization
+                    └─────────┬───────────┘
+                              ▼
+              【候选系统集成贡献】
+       语义合同边界 + 单一 Workspace 状态模型
+       + 四值源状态及声明式异常策略的 Join/Release 协议
+
+尚未排除 OpenHands、Orca 与持久化工作流系统中的同类组合；学术新颖性仍需更广泛检索和同条件比较。
+四层架构、适配器接线与验证结果属于工程实现证据，不单独构成学术创新主张。
 ```
 
-## 2026-11-15 工程增补与证据边界
+## 2026-11-19 V2 工程增补与证据边界
 
-> **文档边界：** 本论文和研究材料描述当前 Contract Set v1 的实现证据与行业对照，或明确
-> 标注为目标架构；其中的 `allowedToolsByRoleId`、`constraints.allowedTools` 和
-> `workspace.*` 三层能力描述不是 Contract Set v2 的规范输入，也不应被当作 v2 Studio 设计。
+> **文档边界：** 本论文和研究材料以 Contract Set v2 为当前架构基线。四层产品架构是
+> Business、Technical Binding、Execution、Evidence；Studio、Team Site、CLI 是跨层产品投影，
+> 不是第五层。Workspace 字段、状态、事件、来源和 API 以 V2 Workspace Contracts 为唯一规范来源。
 
-当前实现把协作交付明确分成两条路径：文档和普通文件经过 per-Run staging、路径/符号链接/配额/SHA-256 校验、单一 sealed bundle 和 Promotion；并行源码从固定 `baseCommit` 进入独立 Git worktree，Role commit 记录 provenance，由 Join 在独立 merge worktree 中按确定顺序合并，最终只选择每条 lineage 的最新成功 leaf。冲突只进入 Run evidence，不向业务目录写入编号冲突文件。
+V2 将每个 Project 绑定到一个 Git + LFS Workspace。Role 从固定 `baseCommit` 进入独立
+worktree，Framework 创建并记录 Role commit，Join 在独立 merge worktree 中按候选集合和血缘
+确定性合并；canonical ref 的更新必须经过 canonical lock 与 expected-head CAS。冲突进入
+`join_conflict` 和 Run evidence，canonical Workspace 保持不变。
 
-工具访问由 Semantic IR 的 `allowedToolsByRoleId`、Role Contract 的 `constraints.allowedTools` 和 backend workspace capability policy 三层约束。`workspace.write`、`workspace.patch_text`、`workspace.run` 分别显式授权；缺少 policy 的旧 adapter 仍是兼容放行路径，不能表述为完整 fail-closed 门禁。
+跨 Role 文件交接使用只读 `WorkspaceRef`（Workspace ID、完整 commit、仓库相对路径和 digest），
+默认不投影，必须由显式 HandoffProjection 授权。Checkpoint、commit provenance、Evidence
+manifest 和 Release record 形成双向审计链；Release 从 `releaseCommit` 生成 Materialization
+manifest 和 output digest，只有 published Release 暴露 download reference。
 
-真实模型证据来自 2026-11-15 的 Python 计算器团队：同一 `gpt-6-luna` 配置连续 3 次完成 `dispatch -> implementation/tests -> join`、4 个 Role commit、Join/final merge、fast-forward publish 和 8 项 unittest。该样本证明端到端可用性，不证明跨模型或长期稳定性；并行同路径冲突、并行 artifact 互斥和 whitespace 拒绝也已作为边界证据记录。确定性 `local_shell` 回归测试与真实模型运行在论文中分开统计。最近一次全量 `pnpm test` 共发现 819 项测试，818 项通过，1 项按 Windows 环境跳过。
+真实模型证据包括 2026-11-15 与 2026-11-16 的 Python 计算器团队运行（基于 `gpt-6-luna`，仓库证据分别记录了 8 项 unittest 通过与 10 项测试通过的端到端 `dispatch -> implementation/tests -> join`、Role commit、Join/final merge 与 fast-forward publish）。该样本证明端到端可用性，不证明跨模型或长期稳定性；并行同路径冲突、陈旧 canonical head 的 CAS 拒绝和 whitespace 拒绝也已作为边界证据记录。确定性 `local_shell` 回归测试与真实模型运行在论文中分开统计。当前仓库最新全量 `pnpm test` 共发现 587 项测试（核心套件 486 项通过、1 项按 Windows 环境跳过，Team Site 100 项通过，0 失败；早期文档中的 819 项为将旧版 v1 测试移入 `tests/archive/v1/` 之前的历史计数）。
 
-当前限制包括：没有 AI resolver；项目级 promotion lock/CAS、外部发布补偿和自动构建/测试质量门禁由调用方负责；Git capability probe 已拒绝 tracked submodule、LFS attributes 和 sparse checkout，Graph Runner 会在显式启用 Git 协作时调用 probe，底层直接调用者仍需自行调用。
+当前限制包括：没有 AI resolver；外部系统的发布补偿、自动质量门禁和跨系统事务仍由调用方负责。
+Framework 管理 canonical ref、Worktree、Git LFS、锁、checkpoint、merge、restore 和 Release；
+Role 不能直接 commit、push、update-ref、操作 LFS 锁或修改 checkpoint。
 
 ---
 
@@ -61,15 +67,15 @@ Sam Newman (中心编排 vs 自由编舞)                  Google Opal: SaaS 办
 
 | 范式编号与名称 | 代表系统 / 产品 | 核心协作模型 (Collaboration Model) | 关键核心特点 (Key Characteristics) | 底层技术栈与通信协议 (Tech Stack & Protocols) |
 | :--- | :--- | :--- | :--- | :--- |
-| **1. 前向数据流图 (DAG)** | n8n, Dify, Coze Workflow, Google Opal | **有向无环偏序管道**：前置节点数据满足即单次激发 | 严格禁止有向回边；循环退化为节点内黑盒或离线展开；数据无防御累加 | TypeScript/Python, Celery/Redis, PostgreSQL, Canvas 连线引擎 |
-| **2. 分层树状派生 (Tree-Forking)** | Anthropic Claude Code, OpenAI Codex v2 | **主从调用树 (Master-Worker)**：主控动态派生子 Agent 并收敛摘要 | 支配式分工，子代理无法对等否决；Codex v2 引入密文委托破坏可审计性 | Node.js/Rust/Python CLI, JSON-RPC / MCP 工具协议, 子进程沙箱 |
-| **3. 动态交接编舞 (Choreography)** | OpenAI Swarm, AutoGen, ChatDev | **点对点动态交接 (P2P Handoffs)**：无中心即兴自主编舞 | 智能体即函数对象；无全局状态持久化，极易陷入对话发散与死循环 | Pure Python, OpenAI Function Calling, 内存事件循环 |
+| **1. 前向数据流图 (DAG)** | n8n, Dify, Coze Workflow, Google Opal | **有向无环依赖模型**；产品级循环、条件路由、持久化和数据传递取决于具体控制结构 | 本文仅将 DAG 本身定义为无环，不据此推断产品整体禁止循环或缺少状态治理 | 各产品技术栈依公开文档和具体部署而异 |
+| **2. 分层树状派生 (Tree-Forking)** | Anthropic Claude Code, OpenAI Codex v2 | **父子任务委派**：派发子任务并收集结果 | 上下文暴露、权限和控制边界依产品与配置而异 | 依具体产品公开的 CLI、工具接口和运行能力 |
+| **3. 动态交接编舞 (Choreography)** | OpenAI Swarm, AutoGen, ChatDev | **点对点交接或群聊调度**：在 Agent 之间传递控制 | 持久化、终止和状态约束依具体框架及部署方式而异 | 依具体项目的语言、工具接口和调度机制而异 |
 | **4. 终端多路复用底座 (Mux Harness)** | Herdr (`herdr.dev`, `herdr-core`) | **窗格多路复用与跨窗格委派** ("tmux for Agents") | 后台守护服务管理 Panes/Tabs；`hc send/wait/read` 跨窗格注入；ANSI 状态感知 | 高性能 Rust, Unix Domain Socket, OpenRPC 规范, ANSI OSC 7501 扩展 |
-| **5. 终端工作树总线 (Fleet Bus)** | Orca (`onorca.dev`, `stablyai/orca`) | **Git 物理隔离终端总线**：每任务独占 Worktree 与终端 | 从文件系统层面物理杜绝并发脏写；基于 CLI 终端管道交互驱动 | Node.js/CLI, Git Worktree 引擎, stdio 管道重定向, Playwright 浏览器 |
-| **6. 角色模型分流 (Dispatcher)** | OMP (`omp.sh`, `can1357/oh-my-pi`) | **算力标签模型路由与伴生守护者** | 将角色映射为模型调度策略 (`plan/slow/advisor`)；内置 P0–P3 缺陷专用评审 | 高性能 Rust, Hashline 行哈希紧凑编辑, Tree-sitter, 内置 LSP/DAP |
-| **7. 消息池黑板 (Blackboard)** | MetaGPT, OpenHands | **标准 SOP 驱动的异步发布-订阅黑板** | 围绕规范将结构化动作与产物发布至消息池；下游按需拉取；拓扑较固化 | Python 异步运行时, Docker 容器沙箱, Pydantic Schema, 事件队列 |
-| **8. 命令式状态图 (StateGraph)** | LangGraph + LangSmith | **编程式有向循环状态图与条件跳转边** | 允许任意有向回边；通过开放共享状态字典传参；侧重链路可观测与追踪 | Python/TS, LangSmith 链路控制塔, PostgreSQL/Redis/SQLite Checkpoints |
-| **9. 责任席位状态机 (EFSM/LTS)** | **OGSystem (本系统)** | **闭合有向图责任席位扩展状态机** ($DAG \subset EFSM$) | 席位与执行器解耦；离散业务事件字典驱动；Fail-Closed 上下文投影；有界循环预算；Artifact 与 Git Worktree 双路径交付；独立沙箱跑测与产物原子晋升 | **TypeScript/Node.js, Semantic IR 编译器, 追加 WAL (`events.ndjson`), CAS 提交 (`state.json`), Verifier, Git provenance/Join merge** |
+| **5. 终端工作树总线 (Fleet Bus)** | Orca (`onorca.dev`, `stablyai/orca`) | **Git Worktree 与终端会话隔离任务执行** | 隔离工作目录可减少共享工作树写入干扰，但不消除提交合并冲突；此处只归纳公开产品资料 | 按项目公开文档和具体版本记录，不推断未公开组件 |
+| **6. 角色模型分流 (Dispatcher)** | OMP (`omp.sh`, `can1357/oh-my-pi`) | **算力标签模型路由与伴生守护者** | 将角色映射为模型调度策略 (`plan/slow/advisor`)；内置 P0–P3 缺陷专用评审 | Rust 核心 + TypeScript/Bun CLI, Hashline 行哈希紧凑编辑, Tree-sitter, 内置 LSP/DAP |
+| **7. 消息与共享状态协作** | MetaGPT, OpenHands | **项目各自定义角色、消息、事件或共享工作区机制** | 两个项目不是同一种黑板实现；其状态/执行细节应分别按论文和版本文档核对 | 依具体项目公开资料而异 |
+| **8. 命令式状态图 (StateGraph)** | LangGraph；LangSmith（独立追踪产品） | **LangGraph 提供节点、边、条件路由、循环与 checkpoint 等执行能力** | 应用状态结构和失败策略由应用与配置决定；不概括为任意回边或统一共享状态字典 | LangGraph / LangSmith 的技术栈和 checkpoint 后端依具体配置而异 |
+| **9. 责任席位状态机 (EFSM/LTS)** | **OGSystem (本系统)** | **闭合有向图责任席位扩展状态机** ($DAG \subset EFSM$) | 席位与执行器解耦；离散业务事件驱动；Fail-Closed 上下文投影；有界循环预算；四层产品架构；Git+LFS Workspace、checkpoint、canonical lock/CAS、Evidence 与 Release Materialization | **TypeScript/Node.js, Semantic IR, WAL (`events.ndjson`), CAS (`state.json`), Git/LFS provenance, Worktree/Join, Workspace 与 Release verifier** |
 
 ### 拓扑结构原型与形式化对照速查 (Topological Archetypes Summary)
 
@@ -78,55 +84,57 @@ Sam Newman (中心编排 vs 自由编舞)                  Google Opal: SaaS 办
   A ──► B ──► C ──► End          Master Coordinator            Agent A ◄────► Agent B
         │       ▲                │                │               ▲  \        /  ▲
         └── D ──┘          Child Sub 1      Child Sub 2           │   ▼      ▼   │
-  (严禁有向回边)            (支配式分工，无对等否决)              Agent C ◄────► Agent D
-                                                             (自由跳转，极易死锁)
+  (DAG 模型无环)            (父子委派)                            Agent C ◄────► Agent D
+                                                             (点对点交接)
 
 [4. 平铺总线/窗格阵列]                         [5. 责任席位闭合有向图 (OGSystem)]
-  Daemon / IPC Bus                                席位 V1 (Architect)
+  Daemon / IPC Bus                                Role A (Architect)
   ══╦════════╦════════╦════════╦══                       │ APPROVED (LTS 业务事件)
     ▼        ▼        ▼        ▼                         ▼
   Pane 1   Pane 2   Pane 3   Pane 4               ┌──────┴──────┐
   (无内生图结构，外置调度)                         ▼             ▼
-                                             席位 V2       席位 V3
+                                             Role B       Role C
                                                   │             │ READY
                                                   └──────┬──────┘
                                                          ▼
                                                State-Aware Join Scope
                                                   (all_of / quorum)
                                                          ▼
-                                                  席位 V4 (Reviewer)
+                                                  Role D (Reviewer)
                                                          │
                                         ┌────────────────┴────────────────┐
                                         │ NEEDS_REWORK (有界拓扑回边)      │ APPROVED
                                         ▼                                 ▼
-                                 [Loop Budget]                     [Deliverable]
+                                 [Loop Budget]                     [Release]
                                  iter <= maxIter ? 回跳 : CAS 挂起
 ```
 
-### 工业界同质化沉疴与 OGSystem 八大非同质化创新突破 (Non-Homogenized Breakthroughs)
+### 工业界同质化模式与 OGS 设计/新颖性边界
 
-| 核心维度 | 行业主流同质化模式 (Homogenized Patterns) | OGSystem 非同质化突破 (Non-Homogenized Breakthroughs) |
+本目录把先行技术与 OGS 的工程集成分开归属：LangGraph 提供当前已验证的图执行能力，LTS/EFSM、Git、WAL/CAS、最小特权和多角色 Agent 均有公开先例。候选集成包括责任合同、事件路由、数据投影和 Workspace/Release 状态协议；OpenHands、Orca 与持久化工作流系统尚未完成同条件协议比较，故不主张首创或相对优势。Codex -> OpenCode 运行中 Implementer 未产生文件改动，不能证明下游实际消费 `WorkspaceRef`；该运行也没有证明跨模型泛化、双向后端互操作或图执行引擎替换。详细归属、研究问题和证据边界见中英文论文第 3.0–3.1 节。
+
+| 核心维度 | 行业主流同质化模式 (Homogenized Patterns) | OGS 设计画像与新颖性边界 |
 | :--- | :--- | :--- |
-| **1. 节点本体** | **智能体 = 模型 + 提示词 + 内存**（换模型即换身份，无固定职责边界） | **责任席位优先 (Role-First Seat) 本体**：席位是不可变组织资产，模型仅是动态绑定的无状态劳动力。 |
-| **2. 控制代数** | **自然语言即兴交接或随意字符串**（`handoff_to("tester")` 易漂移、礼貌推诿） | **标记转移系统 (LTS) 离散业务事件代数**（$\Sigma_{\text{fixed}}$ 离散封闭字典，模型无权发明事件）。 |
-| **3. 数据安全** | **全局上下文无序堆叠透传**（造成注意力稀释 Attention Dilution 与提示词越权） | **Fail-Closed 字段级 Context Map 显式投影**（未声明字段物理阻断，最小特权安全闭锁）。 |
-| **4. 并发汇聚** | **无状态计数器屏障 (`Promise.all`)**（分支异常易致死锁或静默吞掉错误） | **四值源状态感知 Join 代数**（$S_{\text{src}} \in \{pending, arrived, skipped, failed\}$，严禁静默降级为 skipped）。 |
-| **5. 循环博弈** | **无界递归死循环或 DAG 禁止回环**（While 循环烧尽 Token，审批缺乏状态绑定） | **血缘绑定有界配额与 CAS 五元组凭证**（配额超额挂起，绑定 $\langle reviewId, round, lineageId, branchId, stateVersion \rangle$；容灾配额补偿）。 |
-| **6. 产物交付** | **主代码库就地脏写覆写**（测试失败或中断后严重污染代码库） | **三段式不透明产物原子晋升管道**（`Opaque ArtifactRef` $\to$ 独立沙箱跑测验证 $\to$ 封存清单原子晋升）。 |
-| **7. 社会技术分权**| **单体画布混杂或纯 Python 代码**（模板与实例混淆，或缺乏可视化合规审计） | **双工作台分权解耦**（OGS Studio 架构设计/编译仿真 vs. OGS Projects 业务交付/运行归档）。 |
-| **8. 崩溃一致性** | **粗粒度会话序列化或重头重放**（重发历史 Prompt 成本高且输出发散） | **WAL + CAS + SHA-256 语义指纹校验**（追加预写事实 + 原子快照提交 + 拓扑防篡改，毫秒级幂等恢复）。 |
+| **1. 节点本体** | 各系统以不同方式表示 Agent、Role、会话和执行器。 | **责任席位优先 (Role-First Seat)**：OGS 将稳定 Role Contract 与运行时 Backend/模型绑定分别建模；角色化协作本身已有先例。 |
+| **2. 控制代数** | 不同系统采用自然语言交接、工具调用或显式路由等机制。 | **标记转移系统 (LTS) 离散业务事件代数**（$\Sigma_{\text{fixed}}$ 离散封闭字典，未声明事件不能驱动转移）。 |
+| **3. 数据安全** | 不同系统采用不同上下文传递和授权策略；本文不将其归为单一行业模式。 | **Fail-Closed 字段级 Context Map**（按声明投影跨 Role 字段和只读文件引用；安全效果尚未作对照测量）。 |
+| **4. 并发汇聚** | 通用 Join 与同步模式已有工作流理论和框架实现；失败处理取决于具体实现。 | **四值源状态跟踪**（OGS 不将 `failed` 静默改写为 `skipped`）。 |
+| **5. 循环博弈** | 循环和回退行为取决于工作流模型及具体运行时实现。 | **血缘绑定有界配额与 CAS 决策凭证**（配额耗尽进入审核路径，决策绑定 Run、血缘和状态版本）。 |
+| **6. 交付边界** | Agent 工具对工作区的修改边界依产品和权限配置而异；本文未作逐产品比较。 | **WorkspaceRef + Release Materialization**（Git/LFS commit 溯源、内容验证、Materialization manifest 与 output digest）。 |
+| **7. 社会技术分权**| 不同产品以各自方式组织设计、配置、执行和审计界面；本文不作统一优劣判断。 | **四层产品架构**（Business / Technical Binding / Execution / Evidence；Studio、Team Site、CLI 为跨层投影）。 |
+| **8. 崩溃一致性** | **不同的会话恢复策略**（恢复行为随框架和持久化配置而异） | **WAL + CAS + SHA-256 语义指纹校验**（恢复时检查计划指纹；故障注入测试覆盖指定崩溃窗口）。 |
 
-### 理论原则与国家标准严格对应索引 (Standards Mapping Index)
+### 标准主题候选线索（条款全文待核验）
 
-所有结论与设计原则均严格对齐权威文献与国家标准（详见 [`traceable-references.md`](traceable-references.md) 与 [`multi-agent-collaboration-models-and-tech-stacks.md`](multi-agent-collaboration-models-and-tech-stacks.md)）：
-* **原则 1（责任席位抽象六元组）：** 遵循 Milner 1989 (LTS) 与 Meyer 1992 (DbC)，对标 **GB/Z 185.1—2026** 第 5.2 条与 **GB/Z 185.4—2026**。
-* **原则 2（离散标记业务事件转移）：** 遵循 Milner 1989 与 Newman 2015，对标 **GB/Z 185.6—2026** 第 6.3 条。
-* **原则 3（全要素状态元组持久化）：** 遵循 Cheng & Krishnakumar 1993 (EFSM) 与 Gray 1992 (WAL)，对标 **GB/Z 242—2026** 第 6.4 条与 **GB/Z 185.1—2026** 第 7.1 条。
-* **原则 4（有界循环配额与 CAS 断点）：** 遵循 Alshiekh 2024 (Runtime Shielding) 与 Lee & Yannakakis 1996，对标 **GB/Z 242—2026** 第 5.3 条与 **GB/Z 185.6—2026** 第 8.2 条。
-* **原则 5（源状态感知汇聚作用域）：** 遵循 van der Aalst 2003 (Workflow Patterns)，对标 **GB/Z 185.1—2026** 第 6.4 条。
-* **原则 6（Fail-Closed 字段投影）：** 遵循 Saltzer & Schroeder 1975 (Fail-safe Defaults)，对标 **GB/Z 185.7—2026** 第 7.2 条。
-* **原则 7（沙箱独立跑测与产物晋升）：** 遵循 SWE-agent NeurIPS 2024 与 SWE-bench，对标 **GB/Z 242—2026** 第 7.1 条。
-* **原则 8（宪法级明文防黑盒审计）：** 遵循 WAL 事务一致性与 Open Design 公理，对标 **GB/Z 185.3—2026** 第 8 条。
+下列 2026 年中国国家标准化指导性技术文件（`GB/Z 185.1~185.7—2026`、`GB/Z 242—2026`）的标准编号与题名已公开发布核实，但**本目录尚未核验标准全文具体条款**，因此下列主题关联仅作研究线索，不构成权威条款映射、标准符合性或性能优越性证明：
+* **原则 1（责任席位抽象六元组）：** 遵循 Milner 1989 (LTS) 与 Meyer 1992 (DbC)，主题关联 **GB/Z 185.1—2026**（总体架构）与 **GB/Z 185.4—2026**（智能体描述）（条款待核验）。
+* **原则 2（离散标记业务事件转移）：** 遵循 Milner 1989 与 Newman 2015，主题关联 **GB/Z 185.6—2026**（智能体交互）（条款待核验）。
+* **原则 3（全要素状态元组持久化）：** 遵循 Cheng & Krishnakumar 1993 (EFSM) 与 Gray 1992 (WAL)，主题关联 **GB/Z 242—2026**（智能体技术要求）与 **GB/Z 185.1—2026**（条款待核验）。
+* **原则 4（有界循环配额与 CAS 断点）：** 遵循 Alshiekh et al. 2018 (AAAI, Runtime Shielding) 与 Lee & Yannakakis 1996，主题关联 **GB/Z 242—2026** 与 **GB/Z 185.6—2026**（条款待核验）。
+* **原则 5（源状态感知汇聚作用域）：** 遵循 van der Aalst 2003 (Workflow Patterns)，主题关联 **GB/Z 185.1—2026**（条款待核验）。
+* **原则 6（Fail-Closed 字段投影）：** 遵循 Saltzer & Schroeder 1975 (Fail-safe Defaults)，主题关联 **GB/Z 185.7—2026**（智能体工具调用）（条款待核验）。
+* **原则 7（Workspace 内容验证与 Release Materialization）：** 遵循 SWE-agent NeurIPS 2024 与 SWE-bench，主题关联 **GB/Z 242—2026**（条款待核验）。
+* **原则 8（运行事件记录）：** 采用 WAL 记录运行事件并关联审核状态；支持系统内审计追踪，不表示日志存储防篡改或具备形式化因果证明。GB/Z 185.3 为身份管理部分，不据此建立审计标准映射。
 
 ---
 
@@ -150,9 +158,10 @@ Sam Newman (中心编排 vs 自由编舞)                  Google Opal: SaaS 办
          ┌──────────────────┴──────────────────┐
          ▼                                     ▼
 【方案 A: 国际高水平 SCI (推荐)】     【方案 B: 顶会工业演示轨 (高曝光)】
-  Elsevier SoftwareX (SCIE Q2)          ICSE / FSE / ASE (Tool Track)
+  Elsevier SoftwareX (SCIE)             ICSE / FSE / ASE (Tool Track)
   - 篇幅约 6~7 页，专收开源软件系统      - 4~5 页短文 + 3分钟 Demo 视频
-  - 零版面费 (选择传统订阅模式)         - 与全球顶尖学者同台展示系统
+  - 纯 Gold OA，标准 APC 约 $1,200 USD  - 与全球顶尖学者同台展示系统
+    (无免费传统订阅模式；机构协议或 Research4Life 可减免)
   - 审稿人极其看重代码与复现能力
 ```
 
@@ -160,6 +169,8 @@ Sam Newman (中心编排 vs 自由编舞)                  Google Opal: SaaS 办
 
 ## 关联研发与语义规范文档
 *   [OGSystem v2 宪法与硬规则](../development/ogsystem-constitution-v2.md)
+*   [V2 Workspace 合同](../development/v2-workspace-contracts.md)
+*   [V2 Workspace 共享协作设计与验收](../development/v2-workspace-collaboration-design-and-acceptance.md)
 *   [扩展状态机与社会化协作形式化模型](../development/extended-state-machine-and-dag-bilingual.md)
 *   [主流多智能体框架对比分析](../development/framework-comparison.md)
 *   [2026 国家智能体标准覆盖评估报告（历史 v1）](../development/archive/v1/ai-agent-standards-coverage-2026.md)
