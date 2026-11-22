@@ -4847,6 +4847,9 @@ export function renderPageShellStyles(): string {
       padding: 0;
       overflow: hidden;
     }
+    @media (min-width: 901px) {
+      body.show-build-workspace .stage-stack { padding-inline: 15px; }
+    }
     body.show-build-workspace .main-stage { overflow: hidden; }
     body.show-build-workspace #console-panel-build,
     body.show-build-workspace #console-panel-build > article,

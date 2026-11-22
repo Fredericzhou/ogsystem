@@ -796,7 +796,7 @@ export async function exportTeamPackage(workdir: string): Promise<Record<string,
   return {
     mode: "team-v2",
     ogsContractVersion: 2,
-    releaseManifest: {
+    packageManifest: {
       manifestVersion: 1,
       packageMode: "team-v2",
       ogsContractVersion: 2,
@@ -804,23 +804,6 @@ export async function exportTeamPackage(workdir: string): Promise<Record<string,
       projectId: asString(projectRecord?.projectId),
       systemPath: "system.mmd",
       systemHash,
-      artifactScope: [
-        "system.mmd",
-        "system.design.json",
-        ".ogs/runtime.json",
-        ".ogs/execution-bindings.json",
-        ".ogs/model-catalog.json",
-        ".ogs/laws.json",
-        ".ogs/user-profile.json",
-        ".ogs/release-baselines.json",
-        ".ogs/project.json",
-        ".ogs/semantics.*",
-        ".ogs/models.*",
-        ".ogs/systems/**",
-        ".ogs/subsystems/**",
-        ".ogs/contracts/**",
-        "og-roles/roles/**"
-      ],
       requiredEnv: [],
       excludes: [".ogs/runs", "logs", "timeline", "checkpoints", "reviews"],
       executableAssets: executableFiles.map((file) => file.path)
@@ -834,7 +817,7 @@ export async function exportTeamPackage(workdir: string): Promise<Record<string,
       modelCatalog: await readOptionalJson(ogsPaths.modelCatalogPath),
       laws: await readOptionalJson(ogsPaths.lawsPath),
       userProfile: await readOptionalJson(ogsPaths.userProfilePath),
-      releaseBaselineScenarios: await readOptionalJson(resolve(workdir, ".ogs", "release-baselines.json")),
+      trainingBaselineScenarios: await readOptionalJson(resolve(workdir, ".ogs", "training-baselines.json")),
       digestVersion: 3,
       project: projectMeta,
       executableFiles
@@ -850,6 +833,10 @@ export async function loadTeamPackage(args: {
   const team = asRecord(record?.team);
   if (record?.mode !== "team-v2" || record?.ogsContractVersion !== 2 || !team) {
     throw new Error("PROJECT_PACKAGE_VERSION_UNSUPPORTED: expected team-v2 with ogsContractVersion=2.");
+  }
+  if (Object.prototype.hasOwnProperty.call(record, "releaseManifest")
+    || Object.prototype.hasOwnProperty.call(team, "releaseBaselineScenarios")) {
+    throw new Error("V2_LEGACY_TEAM_PACKAGE_FIELDS: use packageManifest and trainingBaselineScenarios.");
   }
   const systemSource = asString(team.systemSource);
   if (!systemSource) {
@@ -869,7 +856,7 @@ export async function loadTeamPackage(args: {
     [ogsPaths.modelCatalogPath, team.modelCatalog ?? null, true],
     [ogsPaths.lawsPath, team.laws ?? null, true],
     [ogsPaths.userProfilePath, team.userProfile ?? null, true],
-    [resolve(projectRoot, ".ogs", "release-baselines.json"), team.releaseBaselineScenarios ?? null, true]
+    [resolve(projectRoot, ".ogs", "training-baselines.json"), team.trainingBaselineScenarios ?? null, true]
   ];
   if (team.profiles !== undefined || team.tools !== undefined || team.modelSelection !== undefined) {
     throw new Error("V2_LEGACY_EXECUTION_CONFIG: Team Package cannot contain model-selection, profiles, or tools assets.");
@@ -902,7 +889,7 @@ export async function loadTeamPackage(args: {
   }
   const existingSystem = await lstatIfPresent(resolve(projectRoot, "system.mmd"));
   const existingBundle = existingSystem ? asRecord(await exportTeamPackage(projectRoot)) : undefined;
-  const existingManifest = asRecord(existingBundle?.releaseManifest);
+  const existingManifest = asRecord(existingBundle?.packageManifest);
   const incomingAssetPaths = new Set(executableFiles.map((file) => assertPortablePackagePath(file.path)));
   const staleAssetPaths = Array.isArray(existingManifest?.executableAssets)
     ? existingManifest.executableAssets

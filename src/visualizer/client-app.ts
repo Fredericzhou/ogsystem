@@ -4338,7 +4338,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             const optional = row.querySelector("[data-context-map-optional]");
             if (!target || !selector || !path || !optional) continue;
             target.value = field;
-            const split = selectorValue.match(/^(source\([^)]+\)\.(?:content|event|data|artifact)|direct\.(?:content|event|data|artifact)|global\.[A-Za-z0-9_.-]+?)(?:\.(.+))?$/);
+            const split = selectorValue.match(/^(source\([^)]+\)\.(?:content|event|data|workspaceRefs)|direct\.(?:content|event|data|workspaceRefs)|global\.[A-Za-z0-9_.-]+?)(?:\.(.+))?$/);
             const base = split?.[1] || selectorValue;
             const nestedPath = split?.[2] || "";
             if (!Array.from(selector.options || []).some((option) => option.value === base)) {
@@ -8070,42 +8070,38 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         if (!state.flash || state.flash.kind !== "warning") {
           setFlash("success", t("projectWizard.createSuccess", undefined, "Project created. Continue in Build."));
         }
-        const initialWorkbenchWarmup = loadWorkbench().catch(() => null);
-        void (async () => {
-          try {
-            setProjectCreateStage("project");
-            await loadProject();
-            setProjectCreateStage("workbench");
-            await initialWorkbenchWarmup;
-            await loadRuns();
-            renderConsoleTabs();
+        try {
+          setProjectCreateStage("project");
+          await loadProject();
+          setProjectCreateStage("workbench");
+          await loadRuns();
+          renderConsoleTabs();
+          renderWorkbench();
+          setProjectCreateStage("bridge");
+          await ensureStudioBridgeReady({
+            workdir: state.workspace?.workdir || "",
+            requireGraph: true,
+            attempts: 5
+          });
+          if (initialTeamPrompt) {
+            state.studioChatDialogOpen = true;
+            state.studioChatCollapsed = false;
             renderWorkbench();
-            setProjectCreateStage("bridge");
-            await ensureStudioBridgeReady({
-              workdir: state.workspace?.workdir || "",
-              requireGraph: true,
-              attempts: 5
-            });
-            if (initialTeamPrompt) {
-              state.studioChatDialogOpen = true;
-              state.studioChatCollapsed = false;
-              renderWorkbench();
-              await submitStudioChatMessage(initialTeamPrompt);
-            }
-          } catch (error) {
-            state.studioBridgeStale = true;
-            try {
-              setProjectCreateStage("workbench");
-              await loadWorkbench();
-            } catch {
-              // keep the created project usable even if the bridge refresh is temporarily unavailable
-            }
-            renderWorkbench();
-            setFlash("warning", t("projectWizard.studioBridgeRefreshWarning", undefined, "Project was created, but the graph workspace needs a refresh. Use Build refresh if the graph is not visible."));
-          } finally {
-            setProjectCreateStage("");
+            await submitStudioChatMessage(initialTeamPrompt);
           }
-        })();
+        } catch (error) {
+          state.studioBridgeStale = true;
+          try {
+            setProjectCreateStage("workbench");
+            await loadWorkbench();
+          } catch {
+            // keep the created project usable even if the bridge refresh is temporarily unavailable
+          }
+          renderWorkbench();
+          setFlash("warning", t("projectWizard.studioBridgeRefreshWarning", undefined, "Project was created, but the graph workspace needs a refresh. Use Build refresh if the graph is not visible."));
+        } finally {
+          setProjectCreateStage("");
+        }
       });
     }
 

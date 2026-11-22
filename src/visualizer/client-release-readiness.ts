@@ -56,8 +56,8 @@ export function buildReleaseReadinessDecision(args: {
   );
   if (handoffMode === "strict" && (uncoveredEdges.length || missingContractFlows.length)) {
     blockers.push({
-      code: "RELEASE_ARTIFACT_CONTRACT_INCOMPLETE",
-      message: "Artifact contract coverage is incomplete."
+      code: "RELEASE_WORKSPACE_CONTRACT_INCOMPLETE",
+      message: "Workspace contract coverage is incomplete."
     });
   }
   const bindings = listFromRecord(args.bindings, ["roles", "bindings", "entries"]);

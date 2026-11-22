@@ -90,7 +90,7 @@ export type WorkbenchSaveView = {
 export type ProjectTransferView = {
   mode: "team-v2";
   ogsContractVersion: 2;
-  releaseManifest?: unknown;
+  packageManifest?: unknown;
   team: {
     systemPath: string;
     systemSource: string;
@@ -349,6 +349,27 @@ function asArray(value: unknown): unknown[] | undefined {
   return Array.isArray(value) ? value : undefined;
 }
 
+// Runtime keeps the pre-Workspace delivery fields while old runs are being replayed. They are
+// deliberately removed at the public DTO boundary; Project users read outputs through Task/Run,
+// while Workspace Release records remain Framework-private recovery data.
+const PRIVATE_DELIVERY_KEYS = new Set([
+  "artifactRef",
+  "artifactRefs",
+  "artifactId",
+  "artifacts",
+  "artifactAllowedByBranchId"
+]);
+
+export function mapPublicRuntimeState(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map((entry) => mapPublicRuntimeState(entry));
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([key]) => !PRIVATE_DELIVERY_KEYS.has(key))
+      .map(([key, entry]) => [key, mapPublicRuntimeState(entry)])
+  );
+}
+
 export function mapRunDetailView(args: {
   runId: string;
   runDir: string;
@@ -366,7 +387,7 @@ export function mapRunDetailView(args: {
     runId: args.runId,
     runDir: args.runDir,
     header: args.header,
-    state: args.state ?? null,
+    state: mapPublicRuntimeState(args.state ?? null),
     metrics: args.metrics ?? null,
     resolvedConfig: args.resolvedConfig ?? null,
     stopRequest: args.stopRequest ?? null,
@@ -804,7 +825,7 @@ export function mapProjectTransferView(value: unknown): ProjectTransferView {
   return {
     mode: TEAM_PACKAGE_MODE,
     ogsContractVersion: 2,
-    releaseManifest: record.releaseManifest,
+    packageManifest: record.packageManifest,
     team: {
       systemPath: asString(project.systemPath) ?? "system.mmd",
       systemSource: asString(project.systemSource) ?? "",

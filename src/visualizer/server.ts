@@ -145,6 +145,7 @@ import {
   mapReviewQueueView,
   mapRunDetailView,
   mapRunLifecycleView,
+  mapPublicRuntimeState,
   mapWorkbenchSaveView,
   mapWorkbenchValidationView,
   mapWorkbenchView,
@@ -1446,7 +1447,7 @@ async function handleApiRunDetail(workdir: string, runId: string, response: Serv
 
 async function handleApiRunState(workdir: string, runId: string, response: ServerResponse): Promise<void> {
   const detail = await inspectRun(workdir, runId);
-  jsonResponse(response, 200, detail.state ?? null);
+  jsonResponse(response, 200, mapPublicRuntimeState(detail.state ?? null));
 }
 
 async function handleApiRunPlan(workdir: string, runId: string, response: ServerResponse): Promise<void> {
@@ -1620,7 +1621,7 @@ async function handleApiRunRoleIo(
   if (!detail) {
     throw new HttpError(404, "ROLE_IO_NOT_FOUND", "Role I/O detail not found for the selected execution.");
   }
-  jsonResponse(response, 200, redactUnknown(detail));
+  jsonResponse(response, 200, mapPublicRuntimeState(redactUnknown(detail)));
 }
 
 async function handleApiRunGraph(workdir: string, runId: string, response: ServerResponse): Promise<void> {
@@ -1631,7 +1632,7 @@ async function handleApiRunGraph(workdir: string, runId: string, response: Serve
     await inspectRunGraphVisualization({
       workdir,
       runId,
-      state: detail.state,
+      state: mapPublicRuntimeState(detail.state),
       resolvedConfig: detail.resolvedConfig,
       systemSource: detail.systemSource,
       summary: detail.summary

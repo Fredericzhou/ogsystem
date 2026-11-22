@@ -309,10 +309,10 @@ function readExecutionDirCount(args: {
   if (summaryCount !== undefined) {
     return summaryCount;
   }
-  const artifactSummary = asRecord(args.summary?.artifactIndexSummary);
-  const artifactCount = asNumber(artifactSummary?.executionDirCount);
-  if (artifactCount !== undefined) {
-    return artifactCount;
+  const evidenceSummary = asRecord(args.summary?.evidenceIndexSummary);
+  const evidenceCount = asNumber(evidenceSummary?.executionDirCount);
+  if (evidenceCount !== undefined) {
+    return evidenceCount;
   }
   const metrics = asRecord(args.detail.metrics);
   const metricsCount = asNumber(metrics?.executionDirCount);
