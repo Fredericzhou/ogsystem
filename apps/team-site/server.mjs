@@ -71,9 +71,9 @@ import { createTeamCatalogUseCases } from "./application/team-catalog-use-cases.
 import { createFileTeamCatalog } from "./infrastructure/file-team-catalog.mjs";
 import { createRunResultUseCases } from "./application/run-result-use-cases.mjs";
 import { createFileRunResultStore } from "./infrastructure/file-run-result-store.mjs";
-import { createFileDeliverableStore } from "./infrastructure/file-deliverable-store.mjs";
-import { createDeliverableUseCases } from "./application/deliverable-use-cases.mjs";
-import { handleDeliverableRoutes } from "./api/deliverable-routes.mjs";
+import { createFileProjectReleaseStore } from "./infrastructure/file-project-release-store.mjs";
+import { createTaskRunOutputUseCases } from "./application/task-run-output-use-cases.mjs";
+import { handleTaskRunOutputRoutes } from "./api/task-run-output-routes.mjs";
 import { createRunQueryUseCases } from "./application/run-query-use-cases.mjs";
 import { createFileRunQueryStore } from "./infrastructure/file-run-query-store.mjs";
 import { createRecentRunUseCases } from "./application/recent-run-use-cases.mjs";
@@ -83,7 +83,7 @@ import { createProjectPackageUseCases } from "./application/project-package-use-
 import { createCollaborationProjectUseCases } from "./application/collaboration-project-use-cases.mjs";
 import { createFileCollaborationProjectStore } from "./infrastructure/file-collaboration-project-store.mjs";
 import { normalizeMaterialPath } from "./domain/material-path.mjs";
-import { computeContentDigest, computePackageDigest, computeProjectDefinitionDigest, computeReleaseBaselineDigest, computeTeamPackageCoreDigest } from "./infrastructure/package-integrity.mjs";
+import { computeContentDigest, computePackageDigest, computeProjectDefinitionDigest, computeTrainingBaselineDigest, computeTeamPackageCoreDigest } from "./infrastructure/package-integrity.mjs";
 import { createTeamPackageValidationUseCases } from "./application/team-package-validation-use-cases.mjs";
 import { createVisualizerProjectDesignStore } from "./infrastructure/visualizer-project-design-store.mjs";
 import { createTaskRetryUseCases } from "./application/task-retry-use-cases.mjs";
@@ -115,6 +115,7 @@ import { initializeV2TeamDraftAssets } from "./infrastructure/v2-team-draft-asse
 import { createProjectCreationUseCases } from "./application/project-creation-use-cases.mjs";
 import { createFileRunRecoveryStore } from "./infrastructure/file-run-recovery-store.mjs";
 import { createRuntimeTaskReviewStore } from "./infrastructure/runtime-task-review-store.mjs";
+import { computeProjectAssetDigest } from "../../dist/runtime/project-asset-digest.js";
 import { listHumanReviews, writeHumanReviewDecision } from "../../dist/runtime/project-lifecycle.js";
 import { createLocalControlPlanePrincipal } from "../../dist/runtime/identity.js";
 import { validateRoleOutputSchemaDefinition, validateRolePackageManifest, validateRolePromptTemplate, validateRoleSourceRecord } from "../../dist/runtime/role-repo.js";
@@ -177,6 +178,37 @@ const teamPackagePreviewUseCases = createTeamPackagePreviewUseCases({
   teamCatalog: { listTeamRepository },
   packageStore: filePackageStore
 });
+const runtimeRoleContractValidator = {
+  validateManifest: validateRolePackageManifest,
+  validatePrompt: validateRolePromptTemplate,
+  validateSchema: validateRoleOutputSchemaDefinition,
+  validateSource: validateRoleSourceRecord,
+  isRuntimeOnlyErrorEvent
+};
+async function assertCurrentTeamVersionContracts(team) {
+  const bundle = await exportTeamPackage(team.workdir);
+  const files = bundle?.team?.executableFiles;
+  const manifests = Array.isArray(files)
+    ? files.filter((file) => typeof file?.path === "string" && /(?:^|\/)roles\/[^/]+\/role\.json$/.test(file.path))
+    : [];
+  if (!manifests.length) throw new Error("PROJECT_TEAM_VERSION_CONTRACT_INVALID: trained TeamVersion contains no Role Contracts; create and train a new TeamVersion.");
+  const invalid = [];
+  for (const file of manifests) {
+    try {
+      const role = JSON.parse(file.content);
+      runtimeRoleContractValidator.validateManifest(role, file.path);
+      const roleId = String(role.roleId || file.path.split("/").at(-2) || "unknown");
+      if ((!role.responsibility?.owns?.length && !role.responsibility?.contributes?.length)
+        || !role.inputs?.preconditions?.length
+        || (!role.outputs?.postconditions?.length && !role.outputs?.decisionCriteria?.length)) {
+        invalid.push(`${roleId}:incomplete`);
+      }
+    } catch {
+      invalid.push(`${file.path}:invalid`);
+    }
+  }
+  if (invalid.length) throw new Error(`PROJECT_TEAM_VERSION_CONTRACT_INVALID: ${invalid.join(", ")}; create and train a new TeamVersion.`);
+}
 const projectPackageUseCases = createProjectPackageUseCases({
   validateTeamPackage,
   packageIntegrity: { computeContentDigest, computePackageDigest, computeProjectDefinitionDigest },
@@ -185,6 +217,7 @@ const projectPackageUseCases = createProjectPackageUseCases({
   packageStore: filePackageStore
 });
 const teamLifecycleLocks = createFileTeamLifecycleLocks({ projectsRoot: siteProjectsRoot });
+const taskExecutionReadiness = createRuntimeTaskExecutionReadiness({ assertTeamVersionContracts: assertCurrentTeamVersionContracts });
 const collaborationProjectUseCases = createCollaborationProjectUseCases({
   projectStore: createFileCollaborationProjectStore({
     getProject,
@@ -197,9 +230,10 @@ const collaborationProjectUseCases = createCollaborationProjectUseCases({
     withCollaborationProjectNameLock: teamLifecycleLocks.withCollaborationProjectNameLock
   }),
   teamStore: { getTeamVersion: getProject },
-  computeProjectDefinitionDigest
+  computeProjectDefinitionDigest,
+  computeProjectAssetDigest,
+  requireCurrentTeamVersion: taskExecutionReadiness.requireCurrentConfirmation
 });
-const taskExecutionReadiness = createRuntimeTaskExecutionReadiness();
 const teamDesignProjector = createVisualizerProjectDesignProjector();
 const projectRunUseCases = createProjectRunUseCases({
   projectStore: { getProject },
@@ -324,7 +358,7 @@ async function openWorkspaceDirectory(workspaceDir) {
 const studioSimulationUseCases = createStudioSimulationUseCases({
   teamCatalog,
   teamPackageReader: projectVisualizerStore,
-  packageIntegrity: { computeTeamPackageCoreDigest, computeReleaseBaselineDigest },
+  packageIntegrity: { computeTeamPackageCoreDigest, computeTrainingBaselineDigest },
   simulationStore: studioSimulationStore,
   simulationRunner: createRuntimeTeamSimulation({ getDefaultHarnessBinding: getPlatformDefaultHarnessBinding }),
   identifiers: { simulationId: randomUUID },
@@ -339,9 +373,11 @@ const studioSimulationUseCases = createStudioSimulationUseCases({
 });
 const projectReadinessUseCases = createProjectReadinessUseCases({
   getProject,
-  readinessInspector: createRuntimeProjectReadinessInspector({ getRuntimeModelConfig: getPlatformDefaultHarnessBinding })
+  readinessInspector: createRuntimeProjectReadinessInspector({ getRuntimeModelConfig: getPlatformDefaultHarnessBinding }),
+  confirmation: { assertCurrent: taskExecutionReadiness.requireCurrentConfirmation }
 });
 const projectDesignValidator = createVisualizerProjectDesignValidator({ getRuntimeModelConfig: getPlatformDefaultHarnessBinding });
+const rolePackageValidator = runtimeRoleContractValidator;
 const teamDesignUseCases = createTeamDesignUseCases({
   teamCatalog,
   withTeamVersionLock: teamLifecycleLocks.withTeamVersionLock,
@@ -351,14 +387,8 @@ const teamDesignUseCases = createTeamDesignUseCases({
   designSerializer: { serialize: serializeAuthoringToMermaid },
   designValidator: projectDesignValidator,
   designAssetStore: teamDesignAssetStore,
-  packageIntegrity: { computeReleaseBaselineDigest },
-  rolePackageValidator: {
-    validateManifest: validateRolePackageManifest,
-    validatePrompt: validateRolePromptTemplate,
-    validateSchema: validateRoleOutputSchemaDefinition,
-    validateSource: validateRoleSourceRecord,
-    isRuntimeOnlyErrorEvent
-  }
+  packageIntegrity: { computeTrainingBaselineDigest },
+  rolePackageValidator
 });
 const agencyNonRoleDirectories = new Set([".github", "docs", "examples", "integrations", "scripts"]);
 const agencyCnNonRoleDirectories = new Set([".github", "docs", "examples", "integrations", "scripts"]);
@@ -417,11 +447,9 @@ const runResultUseCases = createRunResultUseCases({
   getRun: runQueryUseCases.getProjectRun,
   runResultStore: createFileRunResultStore({ projectsRoot: siteProjectsRoot })
 });
-const deliverableUseCases = createDeliverableUseCases({
+const taskRunOutputUseCases = createTaskRunOutputUseCases({
   getProject,
-  getRun: runQueryUseCases.getProjectRun,
-  runResultStore: createFileRunResultStore({ projectsRoot: siteProjectsRoot }),
-  deliverableStore: createFileDeliverableStore()
+  outputStore: createFileProjectReleaseStore()
 });
 const recentRunUseCases = createRecentRunUseCases({
   listProjects,
@@ -465,6 +493,8 @@ const teamLifecycleUseCases = createTeamLifecycleUseCases({
   confirmation: createRuntimeTeamConfirmation(),
   releaseEvidence: studioSimulationUseCases,
   caseMaterializer: caseTeamMaterializer,
+  accuracyReviewStore: teamDesignAssetStore,
+  rolePackageValidator,
   initializeV2DraftAssets: initializeV2TeamDraftAssets,
   caseCatalog: { getCase: (caseId) => cases.find((item) => item.id === caseId), listCases: () => cases },
   assertTrustedTeamTopology: (team) => ["classic", "classic-template"].includes(team.source) && Boolean(team.caseId)
@@ -587,6 +617,27 @@ async function serveStatic(pathname, request, response, { immutable = false, hea
 
 let draining = false;
 let activeRequests = 0;
+const metricsStartedAt = Date.now();
+let httpRequestsTotal = 0;
+const httpResponsesByStatus = new Map();
+
+function renderPrometheusMetrics() {
+  const responseLines = [...httpResponsesByStatus.entries()]
+    .sort(([left], [right]) => left - right)
+    .map(([status, count]) => `ogs_team_site_http_responses_total{status="${status}"} ${count}`);
+  return [
+    "# HELP ogs_team_site_http_requests_total Total HTTP requests handled by Team Site.",
+    "# TYPE ogs_team_site_http_requests_total counter",
+    `ogs_team_site_http_requests_total ${httpRequestsTotal}`,
+    "# HELP ogs_team_site_http_responses_total Completed HTTP responses by status code.",
+    "# TYPE ogs_team_site_http_responses_total counter",
+    ...responseLines,
+    "# HELP ogs_team_site_process_uptime_seconds Team Site process uptime in seconds.",
+    "# TYPE ogs_team_site_process_uptime_seconds gauge",
+    `ogs_team_site_process_uptime_seconds ${Math.floor((Date.now() - metricsStartedAt) / 1000)}`,
+    ""
+  ].join("\n");
+}
 
 async function activeStudioExecutions() {
   const teams = await teamCatalog.listTeamRepository({ includeUnreleased: true, includeCollaboration: true });
@@ -607,6 +658,11 @@ async function activeStudioExecutions() {
 }
 
 const server = createServer(async (request, response) => {
+  httpRequestsTotal += 1;
+  response.once("finish", () => {
+    const status = response.statusCode;
+    httpResponsesByStatus.set(status, (httpResponsesByStatus.get(status) || 0) + 1);
+  });
   const url = new URL(request.url || "/", `http://${host}:${port}`);
   if (request.method === "GET" && url.pathname === "/healthz") {
     sendJson(response, 200, { status: "ok" });
@@ -614,6 +670,15 @@ const server = createServer(async (request, response) => {
   }
   if (request.method === "GET" && url.pathname === "/readyz") {
     sendJson(response, ready ? 200 : 503, { status: draining ? "draining" : ready ? "ready" : "starting" });
+    return;
+  }
+  if (request.method === "GET" && url.pathname === "/metrics") {
+    response.writeHead(200, {
+      "content-type": "text/plain; version=0.0.4; charset=utf-8",
+      "cache-control": "no-store",
+      "x-content-type-options": "nosniff"
+    });
+    response.end(renderPrometheusMetrics());
     return;
   }
   if (request.method === "POST" && url.pathname === "/_service/drain") {
@@ -687,6 +752,7 @@ const server = createServer(async (request, response) => {
       ...teamCatalogUseCases,
       ...teamLifecycleUseCases,
       ...teamDesignUseCases,
+      ...studioSimulationUseCases,
       ...teamVersionSaveUseCases,
       chatTeamAssistant: teamStudioUseCases.chat,
       getTeamVersion: teamVersionSaveUseCases.getTeamVersionForSave,
@@ -713,15 +779,16 @@ const server = createServer(async (request, response) => {
   })) return;
   if (await handleRunRoutes({
     request, response, url, readBody, sendJson, errorStatus,
-    useCases: { ...runQueryUseCases, ...runResultUseCases, listRecentProjectRuns: recentRunUseCases.listRecentProjectRuns }
+    useCases: { ...runQueryUseCases, ...runResultUseCases, cleanupProjectRunWorkspace: projectRunUseCases.cleanupProjectRunWorkspace, listRecentProjectRuns: recentRunUseCases.listRecentProjectRuns }
   })) return;
-  if (await handleDeliverableRoutes({
+  if (await handleTaskRunOutputRoutes({
     request, response, url, sendJson, errorStatus,
-    useCases: deliverableUseCases
+    useCases: taskRunOutputUseCases
   })) return;
   if (await handleCollaborationProjectRoutes({
     request, response, url, readBody, sendJson, errorStatus, publicProject,
     useCases: {
+      ...collaborationProjectUseCases,
       ...teamLifecycleUseCases,
       ...projectReadinessUseCases, ...projectMaterialUseCases,
       getProject, ...projectUpdateUseCases,
@@ -747,7 +814,7 @@ const server = createServer(async (request, response) => {
     const isStudioRoute = url.pathname === "/studio"
       || url.pathname === "/studio/new"
       || url.pathname === "/studio/roles"
-      || /^\/studio\/teams\/[a-z0-9-]+\/(?:info|design|run(?:\/[a-z0-9._-]+(?:\/artifacts)?)?|release|simulations)\/?$/.test(url.pathname)
+      || /^\/studio\/teams\/[a-z0-9-]+\/(?:info|design|run(?:\/[a-z0-9._-]+(?:\/evidence)?)?|train|simulations)\/?$/.test(url.pathname)
       || /^\/studio\/teams\/[a-z0-9-]+\/versions\/[a-z0-9-]+\/simulations\/[a-z0-9._-]+(?:\/events)?\/?$/.test(url.pathname);
     const isPlatformRoute = ["/platform", "/platform/models", "/platform/harnesses", "/platform/role-sources"].includes(url.pathname);
     if (url.pathname === "/" || url.pathname === "/teams" || url.pathname === "/projects" || url.pathname === "/projects/new" || /^\/projects\/[a-z0-9-]+(?:\/(?:teams|runs\/[A-Za-z0-9._-]+))?\/?$/.test(url.pathname) || isPlatformRoute || isStudioRoute || url.pathname === "/examples" || url.pathname === "/history" || /^\/cases\/[a-z0-9-]+\/?$/.test(url.pathname)) {

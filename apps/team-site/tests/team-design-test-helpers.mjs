@@ -4,7 +4,7 @@ import { createVisualizerProjectDesignStore } from "../infrastructure/visualizer
 import { createVisualizerProjectDesignProjector } from "../infrastructure/visualizer-project-design-projector.mjs";
 import { createVisualizerProjectDesignValidator } from "../infrastructure/visualizer-project-design-validator.mjs";
 import { createFileTeamLifecycleLocks } from "../infrastructure/file-team-lifecycle-locks.mjs";
-import { computeReleaseBaselineDigest } from "../infrastructure/package-integrity.mjs";
+import { computeTrainingBaselineDigest } from "../infrastructure/package-integrity.mjs";
 
 export function createTeamDesignUseCasesForStore(store, projectsRoot = process.env.OGS_SITE_PROJECTS_DIR) {
   return createTeamDesignUseCases({
@@ -15,6 +15,6 @@ export function createTeamDesignUseCasesForStore(store, projectsRoot = process.e
     designProjector: createVisualizerProjectDesignProjector(),
     designSerializer: { serialize: serializeAuthoringToMermaid },
     designValidator: createVisualizerProjectDesignValidator(),
-    packageIntegrity: { computeReleaseBaselineDigest }
+    packageIntegrity: { computeTrainingBaselineDigest }
   });
 }

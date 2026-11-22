@@ -1,5 +1,5 @@
 export function createTeamVersionLifecycleUseCases({ teamVersions, withTeamVersionLock }) {
-  if (!teamVersions || typeof teamVersions.getTeamVersion !== "function" || typeof teamVersions.archiveReleasedTeamVersion !== "function"
+  if (!teamVersions || typeof teamVersions.getTeamVersion !== "function" || typeof teamVersions.archiveTrainedTeamVersion !== "function"
     || typeof teamVersions.listProjects !== "function" || typeof teamVersions.deleteTeamVersions !== "function"
     || typeof withTeamVersionLock !== "function") {
     throw new TypeError("Team version lifecycle use cases require team version operations.");
@@ -16,8 +16,8 @@ export function createTeamVersionLifecycleUseCases({ teamVersions, withTeamVersi
       return withTeamVersionLock(teamRootId, async () => {
         const team = await teamVersions.getTeamVersion(teamVersionId);
         if (team.teamProjectId || team.projectType === "collaboration") throw new Error("TEAM_VERSION_INVALID: project workspaces cannot be archived as team versions.");
-        if (team.teamVersionStatus !== "released") throw new Error("TEAM_VERSION_NOT_RELEASED: only a released team version can be archived.");
-        return teamVersions.archiveReleasedTeamVersion(teamVersionId);
+        if (team.teamVersionStatus !== "trained") throw new Error("TEAM_VERSION_NOT_TRAINED: only a trained team version can be archived.");
+        return teamVersions.archiveTrainedTeamVersion(teamVersionId);
       });
     },
 
@@ -30,8 +30,8 @@ export function createTeamVersionLifecycleUseCases({ teamVersions, withTeamVersi
         if (team.teamProjectId || team.projectType === "collaboration") throw new Error("TEAM_VERSION_INVALID: project workspaces cannot be deleted as team versions.");
         if (isBuiltIn(team)) throw new Error("BUILT_IN_TEAM_DELETE_BLOCKED: built-in teams cannot be deleted.");
         if (team.teamVersionStatus !== "draft") {
-          const error = new Error("TEAM_RELEASED_DELETE_BLOCKED: only draft team versions can be deleted individually. Delete the entire team instead.");
-          error.code = "TEAM_RELEASED_DELETE_BLOCKED";
+          const error = new Error("TEAM_TRAINED_DELETE_BLOCKED: only draft team versions can be deleted individually. Delete the entire team instead.");
+          error.code = "TEAM_TRAINED_DELETE_BLOCKED";
           throw error;
         }
         const targetId = team.teamVersionId || team.projectId;

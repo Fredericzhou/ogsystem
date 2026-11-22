@@ -1,8 +1,8 @@
 export const TEAM_CORE_DIGEST_VERSION = 3;
 
-export function assertReleasedTeamVersion(team) {
-  if (!team || team.teamProjectId || team.teamVersionStatus !== "released") {
-    throw new Error("TEAM_VERSION_NOT_RELEASED: only a released team version can be mounted.");
+export function assertTrainedTeamVersion(team) {
+  if (!team || team.teamProjectId || team.teamVersionStatus !== "trained") {
+    throw new Error("TEAM_VERSION_NOT_TRAINED: only a trained team version can be mounted.");
   }
   assertCanonicalTeamVersionId(team.teamVersionId || team.projectId);
 }

@@ -1,3 +1,5 @@
+import { normalizeRoleSourcePackageFiles } from "./role-source-package-normalization.mjs";
+
 const TEAM_ROLE_ID = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 
 export function createRoleSourceCatalogUseCases({ store, adapters = {}, copyRoleSourceToDraft, runRoleTrial }) {
@@ -15,7 +17,7 @@ export function createRoleSourceCatalogUseCases({ store, adapters = {}, copyRole
       if (sourceRole.role.status !== "ready" || typeof sourceRole.markdown !== "string") throw new Error("ROLE_SOURCE_ROLE_UNSUPPORTED");
       const adapter = adapters[sourceRole.source.adapterId];
       if (typeof adapter?.convertMarkdownRole !== "function") throw new Error("ROLE_SOURCE_ADAPTER_UNAVAILABLE");
-      return adapter.convertMarkdownRole({
+      const converted = adapter.convertMarkdownRole({
         sourceText: sourceRole.markdown,
         sourceId: sourceRole.source.sourceId,
         gitUrl: sourceRole.source.gitUrl,
@@ -29,6 +31,11 @@ export function createRoleSourceCatalogUseCases({ store, adapters = {}, copyRole
         ...(Array.isArray(payload.allowedTools) ? { allowedTools: payload.allowedTools } : {}),
         ...(payload.identityConfirmed === true ? { identityConfirmed: true } : {})
       });
+      const roleId = typeof payload.roleId === "string" && TEAM_ROLE_ID.test(payload.roleId) ? payload.roleId : converted.roleId;
+      return {
+        ...converted,
+        files: normalizeRoleSourcePackageFiles(converted.files, roleId, Array.isArray(payload.events) ? payload.events : [])
+      };
     },
     async trialRoleSourceRole(payload) {
       if (typeof runRoleTrial !== "function") throw new Error("ROLE_TRIAL_UNAVAILABLE");

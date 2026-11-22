@@ -10,6 +10,7 @@ const EDITABLE_ROLE_FILES = ROLE_FILES.filter((file) => file !== "source.json");
 const CONTRACT_PATH = ".ogs/contracts/handoff.json";
 const EXECUTION_BINDINGS_PATH = ".ogs/execution-bindings.json";
 const LAWS_PATH = ".ogs/laws.json";
+const TEAM_ACCURACY_REVIEW_PATH = ".ogs/team-accuracy-review.json";
 const MAX_FILE_BYTES = 1024 * 1024;
 
 async function assertRealDirectory(path) {
@@ -105,26 +106,54 @@ async function readExecutionBindings(root, read) {
 
 export function createFileTeamDesignAssetStore({ write = writeFile, read = readFile, publish = rename, makeId = randomUUID } = {}) {
   return Object.freeze({
-    async readReleaseBaselineScenarios({ workdir }) {
+    async readTeamAccuracyReview({ workdir }) {
       const root = resolve(workdir);
-      const path = resolve(root, ".ogs", "release-baselines.json");
+      const path = resolve(root, TEAM_ACCURACY_REVIEW_PATH);
       await assertSafePath(root, path);
       try {
         const parsed = JSON.parse(await read(path, "utf8"));
-        if (!Array.isArray(parsed)) throw new Error("TEAM_RELEASE_BASELINES_INVALID");
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("TEAM_ACCURACY_REVIEW_INVALID");
+        return parsed;
+      } catch (error) {
+        if (error?.code === "ENOENT") return null;
+        throw new Error("TEAM_ACCURACY_REVIEW_INVALID: review record is malformed or unsafe.");
+      }
+    },
+    async saveTeamAccuracyReview({ workdir, review }) {
+      const root = resolve(workdir);
+      const path = resolve(root, TEAM_ACCURACY_REVIEW_PATH);
+      await assertSafePath(root, path);
+      await mkdir(dirname(path), { recursive: true });
+      const temporary = join(dirname(path), `.ogs-team-accuracy-review-${makeId()}.tmp`);
+      try {
+        await write(temporary, `${JSON.stringify(review, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
+        await assertSafePath(root, path);
+        await publish(temporary, path);
+      } finally {
+        await rm(temporary, { force: true }).catch(() => undefined);
+      }
+      return this.readTeamAccuracyReview({ workdir: root });
+    },
+    async readTrainingBaselineScenarios({ workdir }) {
+      const root = resolve(workdir);
+      const path = resolve(root, ".ogs", "training-baselines.json");
+      await assertSafePath(root, path);
+      try {
+        const parsed = JSON.parse(await read(path, "utf8"));
+        if (!Array.isArray(parsed)) throw new Error("TEAM_TRAINING_BASELINES_INVALID");
         return parsed;
       } catch (error) {
         if (error?.code === "ENOENT") return [];
-        throw new Error("TEAM_RELEASE_BASELINES_INVALID: release baseline file is malformed or unsafe.");
+        throw new Error("TEAM_TRAINING_BASELINES_INVALID: training baseline file is malformed or unsafe.");
       }
     },
-    async saveReleaseBaselineScenarios({ workdir, scenarios }) {
+    async saveTrainingBaselineScenarios({ workdir, scenarios }) {
       const root = resolve(workdir);
-      const path = resolve(root, ".ogs", "release-baselines.json");
+      const path = resolve(root, ".ogs", "training-baselines.json");
       await assertSafePath(root, path);
       await mkdir(dirname(path), { recursive: true });
       await assertSafePath(root, path);
-      const temporary = join(dirname(path), `.ogs-release-baselines-${makeId()}.tmp`);
+      const temporary = join(dirname(path), `.ogs-training-baselines-${makeId()}.tmp`);
       try {
         await write(temporary, `${JSON.stringify(scenarios, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
         await assertSafePath(root, path);
@@ -132,7 +161,7 @@ export function createFileTeamDesignAssetStore({ write = writeFile, read = readF
       } finally {
         await rm(temporary, { force: true }).catch(() => undefined);
       }
-      return this.readReleaseBaselineScenarios({ workdir: root });
+      return this.readTrainingBaselineScenarios({ workdir: root });
     },
     async readAssets({ workdir, roleIds = [] }) {
       const root = resolve(workdir);

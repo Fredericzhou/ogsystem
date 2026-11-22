@@ -31,7 +31,7 @@ export function createProjectUpdateUseCases({ projectStore, teamCatalog, compute
           next.projectDigest = null;
           if (project.projectType === "team") {
             next.teamVersionStatus = "draft";
-            next.releasedAt = null;
+            next.trainedAt = null;
           } else {
             next.projectStatus = "draft";
             next.confirmedAt = null;
@@ -47,7 +47,7 @@ export function createProjectUpdateUseCases({ projectStore, teamCatalog, compute
         const next = {
           ...project,
           projectDigest: null,
-          ...(project.projectType === "team" ? { teamVersionStatus: "draft", releasedAt: null } : { projectStatus: "draft", confirmedAt: null }),
+          ...(project.projectType === "team" ? { teamVersionStatus: "draft", trainedAt: null } : { projectStatus: "draft", confirmedAt: null }),
           updatedAt: new Date().toISOString(),
           invalidatedReason: reason
         };

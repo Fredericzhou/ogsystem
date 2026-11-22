@@ -16,7 +16,7 @@ export function withTeamLifecycleUseCases(repository) {
       locks: createFileTeamLifecycleLocks(),
       confirmation: createRuntimeTeamConfirmation(),
       releaseEvidence: {
-        async validateReleaseEvidence() {},
+        async validateTrainingEvidence() {},
         async prepareBuiltInTeamVersion() {}
       },
       caseCatalog: { getCase, listCases: () => cases },

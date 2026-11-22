@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import test from "node:test";
 import { chromium } from "@playwright/test";
 import { createStudioTranscriptTools } from "../public/app/components/studio-transcript.js";
@@ -76,7 +77,9 @@ test("message more button follows rendered overflow, including short multi-line 
 test("browser markdown renderer keeps GFM and removes scripts and dangerous links", async (t) => {
   const bundle = await readFile(new URL("../public/app/components/markdown-renderer.bundle.js", import.meta.url));
   const dataUrl = `data:text/javascript;base64,${bundle.toString("base64")}`;
-  const browser = await chromium.launch({ headless: true });
+  const systemChrome = process.env.OGSYSTEM_CHROME_PATH
+    || (process.platform === "darwin" && "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome");
+  const browser = await chromium.launch({ headless: true, ...(systemChrome && existsSync(systemChrome) ? { executablePath: systemChrome } : {}) });
   t.after(() => browser.close());
   const page = await browser.newPage();
   const result = await page.evaluate(async (moduleUrl) => {

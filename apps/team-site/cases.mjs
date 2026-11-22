@@ -21,7 +21,7 @@ export const cases = [
       background: { "zh-CN": "跨底座协作必须验证模型服务、CLI 适配、业务交接和 Evidence 能否在同一条 Flow 中闭合。", en: "Cross-backend collaboration must prove that model service, CLI adapters, business handoff, and Evidence close within one Flow." },
       problem: { "zh-CN": "适合验证跨 Backend 的角色交接、只传递业务数据以及最终业务结论。", en: "Use this team to verify cross-backend role handoff, business-only downstream inputs, and a final decision." },
       collaboration: { "zh-CN": "Codex 规划员输出审核清单，OpenCode 复核员基于交接内容确认是否继续。", en: "The Codex planner produces a review checklist, and the OpenCode reviewer decides whether to proceed from the handoff." },
-      deliverable: { "zh-CN": "带 handoff=true 的审核结论和完整运行证据。", en: "A review decision with handoff=true and complete run evidence." },
+      deliverable: { "zh-CN": "经复核的审核结论和完整运行证据。", en: "A reviewed decision with complete run evidence." },
       roles: {
         planner: { "zh-CN": "形成跨底座交接所需的业务判断。", en: "Forms the business decision required for the cross-backend handoff." },
         implementer: { "zh-CN": "复核交接内容并给出最终业务结论。", en: "Reviews the handoff and returns the final business decision." }
@@ -31,11 +31,15 @@ export const cases = [
     layout: { planner: [120, 150], implementer: [620, 150] },
     semantics: ["business_handoff", "cross_backend", "evidence"],
     joins: [],
-    projections: [["implementer", "task", "global.task"]],
+    projections: [
+      ["implementer", "handoff", "direct.content"],
+      ["implementer", "workspaceRefs", "direct.workspaceRefs"],
+      ["implementer", "task", "global.task"]
+    ],
     outputSchema: {
       type: "object",
-      required: ["handoff"],
-      properties: { handoff: { type: "boolean" }, decision: { type: "string" } },
+      required: ["content"],
+      properties: { content: { type: "string", minLength: 1 } },
       additionalProperties: true
     },
     roles: [
@@ -43,17 +47,19 @@ export const cases = [
         id: "planner",
         label: { "zh-CN": "Codex 规划员", en: "Codex planner" },
         backend: "codex",
+        writesFiles: true,
         purpose: "Prepare a concise business handoff for the downstream reviewer.",
         events: ["READY"],
-        prompt: "Summarize the requested cross-backend business handoff. State the verified decision, acceptance checks, and whether the downstream reviewer should proceed. Create cross-backend-review.md in the execution workspace with that business handoff, and declare the real file in artifacts with kind business_document, mediaType text/markdown, and a safe relative path. Do not claim the file exists unless it was actually written. Return JSON with event READY and content only; do not expose Harness, tool, permission, or private role configuration."
+        prompt: "Summarize the requested cross-backend business handoff. State the verified decision, acceptance checks, and whether the downstream reviewer should proceed. Create cross-backend-review.md in the execution workspace with that business handoff when write-capable staging is available. Do not claim the file exists unless it was actually written. Return JSON with event READY and content only; do not expose Harness, tool, permission, or private role configuration."
       },
       {
         id: "implementer",
         label: { "zh-CN": "OpenCode 复核员", en: "OpenCode reviewer" },
         backend: "opencode",
-        purpose: "Review the planner's business handoff and close the workflow.",
+        readsWorkspaceRefs: true,
+        purpose: "Review the planner's business handoff and verify its referenced Workspace content.",
         events: ["READY"],
-        prompt: "Review the business handoff you received. Confirm the decision and return JSON with event READY, content containing CROSS_BACKEND_HANDOFF_OK, and data.handoff=true. Do not request or disclose upstream Harness, tool, permission, or private role configuration."
+        prompt: "Review the planner's business conclusion and its projected WorkspaceRefs. When the selected backend exposes the read-only workspace.read tool, use it for each authorized reference you need to verify; check the referenced file content against its recorded digest. If the tool is unavailable, state that content verification is blocked and do not claim it succeeded. Return JSON with event READY and state the reviewed conclusion, reference path, digest result, and any limitations. Do not request or disclose upstream Harness, tool, permission, or private role configuration."
       }
     ],
     flows: [
@@ -181,8 +187,9 @@ export const cases = [
       },
       {
         id: "document-publisher", label: { "zh-CN": "文件发布员", en: "Document publisher" },
+        writesFiles: true,
         purpose: "Publish the reviewed executive brief as document and structured business files.", events: ["READY"],
-        prompt: "Based on the reviewed executive brief, produce the final business document delivery. Include the executive summary, recommendations, implementation plan, risks, assumptions, and open questions. When the Harness exposes write-capable staging, create a Markdown document named executive-brief.md in the execution workspace using an available native tool, then declare it in artifacts with kind business_document, mediaType text/markdown, and a safe relative path. Return valid JSON with event READY, the structured business result, and the artifact declaration. If the Harness cannot write files, return the document content and metadata without claiming a file was created."
+        prompt: "Based on the reviewed executive brief, produce the final business document delivery. Include the executive summary, recommendations, implementation plan, risks, assumptions, and open questions. When the Harness exposes write-capable staging, create a Markdown document named executive-brief.md in the execution workspace using an available native tool. Return valid JSON with event READY and the structured business result. If the Harness cannot write files, return the document content without claiming a file was created."
       }
     ],
     flows: [
@@ -212,77 +219,81 @@ export const cases = [
     duration: { "zh-CN": "5 个角色", en: "5 roles" },
     catalog: {
       tier: { "zh-CN": "核心模板", en: "Core template" },
-      fit: { "zh-CN": "适合多专业拆解产品需求并形成研发方案。", en: "For shaping product requests into a cross-discipline delivery plan." },
-      delivery: { "zh-CN": "研发交付方案", en: "Engineering delivery plan" },
+      fit: { "zh-CN": "适合多角色并行实现、测试并交付小型软件功能。", en: "For implementing, testing, and delivering a small software feature across parallel roles." },
+      delivery: { "zh-CN": "可运行的软件与测试", en: "Runnable software and tests" },
       api: { "zh-CN": "可通过 API 运行", en: "API runnable" }
     },
     icon: "code",
     detail: {
-      scenario: { "zh-CN": "为自由职业者记账工具规划首版：覆盖账目记录、月度汇总，并列出上线前的验收项。", en: "Plan the first release of a bookkeeping tool for independent professionals, including expense entry, monthly summaries, and launch checks." },
-      relationship: { "zh-CN": "产品负责人先明确目标；工程、体验和质量三方分别拆解；交付负责人收齐三份方案后统一排期与验收。", en: "The product lead frames the goal. Engineering, experience, and quality plan in parallel; the delivery lead combines all three into one sequence and acceptance plan." },
+      scenario: { "zh-CN": "实现自由职业者记账工具的首个可运行版本：支持收入/支出记录、按月汇总、基础校验和发布前测试。", en: "Implement a runnable first release of a bookkeeping tool for independent professionals: record income and expenses, summarize by month, validate entries, and test before release." },
+      relationship: { "zh-CN": "产品负责人明确目标；后端、体验和质量角色在独立文件中并行实现；交付负责人集成工作、运行测试并说明交付范围。", en: "The product lead frames the goal. Backend, experience, and quality roles implement separate files in parallel; the delivery lead integrates the work, runs tests, and documents the delivered scope." },
       background: { "zh-CN": "一项产品需求通常同时牵涉工程实现、用户体验和质量保障。由单一角色从头包办，容易遗漏接口依赖或验收条件。", en: "A product request often spans engineering, user experience, and quality. A single owner can miss interface dependencies or acceptance criteria." },
-      problem: { "zh-CN": "适合把目标明确、但需要多专业共同拆解的产品功能，整理成可评审的首版交付方案。", en: "Use this team when a clear product goal needs several disciplines to shape a reviewable first delivery plan." },
-      collaboration: { "zh-CN": "产品负责人先统一目标和限制；后端、体验、质量成员分别准备方案；交付负责人收齐三方结果，明确依赖、顺序和完成标准。", en: "The product lead aligns on goals and constraints. Engineering, experience, and quality prepare separate plans; a delivery lead combines them with dependencies, sequencing, and a definition of done." },
-      deliverable: { "zh-CN": "一份包含实现拆分、关键体验、验收检查、风险和待确认问题的研发建议。", en: "A delivery proposal covering implementation slices, key experience, acceptance checks, risks, and open questions." },
+      problem: { "zh-CN": "适合需要工程、体验和质量角色共同完成并验证的小型产品功能。", en: "Use this team for a small product feature that needs implementation and verification across engineering, experience, and quality roles." },
+      collaboration: { "zh-CN": "后端角色实现可测试的数据逻辑，体验角色实现可访问的浏览器界面，质量角色编写可执行测试；交付负责人运行测试并发布源代码、测试和使用说明。", en: "The backend role implements testable data logic, the experience role builds an accessible browser interface, and the quality role writes executable tests; the delivery lead runs the tests and publishes source, tests, and usage notes." },
+      deliverable: { "zh-CN": "可运行的记账工具源代码、自动化测试和运行说明；未实现或未验证的能力必须明确标记。", en: "Runnable bookkeeping tool source, automated tests, and run instructions; unimplemented or unverified behavior must be stated explicitly." },
       roles: {
         "delivery-coordinator": { "zh-CN": "归纳用户目标、约束与验收重点。", en: "Aligns the user outcome, constraints, and acceptance priorities." },
-        "backend-planner": { "zh-CN": "规划服务端职责、接口和数据处理。", en: "Plans backend responsibilities, interfaces, and data handling." },
-        "experience-planner": { "zh-CN": "梳理主要操作路径、界面状态与无障碍要求。", en: "Maps the main user flow, interface states, and accessibility needs." },
-        "quality-planner": { "zh-CN": "提出高价值验收检查、边界情况与发布风险。", en: "Defines useful acceptance checks, edge cases, and release risks." },
-        "delivery-lead": { "zh-CN": "整合专业方案，标出依赖、顺序和完成条件。", en: "Combines the plans and identifies dependencies, order, and completion criteria." }
+        "backend-engineer": { "zh-CN": "实现可测试的数据模型、账目校验和月度汇总逻辑。", en: "Implements testable ledger validation and monthly summary logic." },
+        "experience-engineer": { "zh-CN": "实现主要浏览器操作流程、界面状态与无障碍体验。", en: "Implements the browser workflow, interface states, and accessibility." },
+        "quality-engineer": { "zh-CN": "编写覆盖数据逻辑和边界情况的可执行测试。", en: "Writes executable tests for the data logic and edge cases." },
+        "delivery-lead": { "zh-CN": "集成并行实现、运行验证并记录真实交付范围。", en: "Integrates parallel implementation, runs verification, and records the delivered scope." }
       }
     },
     accent: "mint",
     layout: {
       "delivery-coordinator": [80, 145],
-      "backend-planner": [360, 48],
-      "experience-planner": [360, 145],
-      "quality-planner": [360, 242],
+      "backend-engineer": [360, 48],
+      "experience-engineer": [360, 145],
+      "quality-engineer": [360, 242],
       "delivery-lead": [690, 145]
     },
     semantics: ["parallel_split", "all_of", "context.map"],
-    joins: [{ roleId: "delivery-lead", mode: "all_of", sources: ["backend-planner", "experience-planner", "quality-planner"] }],
+    joins: [{ roleId: "delivery-lead", mode: "all_of", sources: ["backend-engineer", "experience-engineer", "quality-engineer"] }],
     projections: [
-      ["delivery-lead", "backend_plan", "source(backend-planner).content"],
-      ["delivery-lead", "experience_plan", "source(experience-planner).content"],
-      ["delivery-lead", "quality_plan", "source(quality-planner).content"],
+      ["delivery-lead", "backend_result", "source(backend-engineer).content"],
+      ["delivery-lead", "experience_result", "source(experience-engineer).content"],
+      ["delivery-lead", "quality_result", "source(quality-engineer).content"],
       ["delivery-lead", "task", "global.task"]
     ],
     roles: [
       {
         id: "delivery-coordinator", label: { "zh-CN": "产品负责人", en: "Product lead" },
         purpose: "Turn the user's software request into a shared engineering brief.", events: ["READY"], mode: "parallel_split",
-        prompt: "Read the product request. Prepare one concise shared brief for a backend planner, an experience planner, and a quality planner. Name the core user outcome, constraints, and acceptance criteria. Return valid JSON with content and one allowed event."
+        prompt: "Read the product request. Prepare one concise shared implementation brief for the backend engineer, experience engineer, and quality engineer. Specify the core user outcome, fixed module interface, file ownership (src/ledger.mjs; index.html, styles.css, src/app.js; tests/ledger.test.mjs), constraints, and acceptance criteria. Return valid JSON with content and one allowed event."
       },
       {
-        id: "backend-planner", label: { "zh-CN": "后端工程师", en: "Backend engineer" },
-        purpose: "Plan the backend responsibilities and interfaces for a software feature.", events: ["READY"],
-        prompt: "Act as the backend engineer. Propose a practical implementation plan, key interfaces, data handling, and risks for the requested software feature. Return valid JSON with event READY and a useful content summary."
+        id: "backend-engineer", label: { "zh-CN": "后端工程师", en: "Backend engineer" },
+        writesFiles: true,
+        purpose: "Implement the bookkeeping data model and calculations in the shared Workspace.", events: ["READY"],
+        prompt: "Implement the data layer for the requested bookkeeping tool in src/ledger.mjs. Export createLedger({ entries = [] }) with addEntry({ id, date, description, kind, amountCents }), listEntries(), and monthlyTotals(year, month). Accept kind income or expense; require a valid ISO calendar date, non-empty description, unique non-empty id, and positive safe-integer amountCents. monthlyTotals returns { incomeCents, expenseCents, balanceCents } for the selected calendar month. Keep this module dependency-free and suitable for Node tests and browser imports. Use an available native file-writing tool to create the implementation in the Workspace, then return the changed path and the exact exported interface in JSON with event READY. Do not claim files were written unless they exist."
       },
       {
-        id: "experience-planner", label: { "zh-CN": "体验设计师", en: "Experience designer" },
-        purpose: "Plan a clear and accessible user experience for a software feature.", events: ["READY"],
-        prompt: "Act as the experience designer. Describe the primary user flow, important states, accessibility considerations, and the smallest useful interface for this request. Return valid JSON with event READY and a useful content summary."
+        id: "experience-engineer", label: { "zh-CN": "体验工程师", en: "Experience engineer" },
+        writesFiles: true,
+        purpose: "Implement the accessible browser interface for the bookkeeping tool.", events: ["READY"],
+        prompt: "Implement the browser UI for the requested bookkeeping tool in index.html, styles.css, and src/app.js. In src/app.js import createLedger from ./ledger.mjs. Provide income/expense entry, date and description fields, a monthly selector, totals, empty/error/success states, and a responsive accessible form with associated labels and keyboard-operable controls. Use no external dependencies or network assets. Use an available native file-writing tool to create the files in the Workspace. Return the changed paths and any integration assumptions in JSON with event READY; do not claim files were written unless they exist."
       },
       {
-        id: "quality-planner", label: { "zh-CN": "质量工程师", en: "Quality engineer" },
-        purpose: "Define verifiable acceptance and testing coverage for a software feature.", events: ["READY"],
-        prompt: "Act as the quality engineer. Define the highest-value acceptance checks, edge cases, and release risks for this request. Return valid JSON with event READY and a useful content summary."
+        id: "quality-engineer", label: { "zh-CN": "质量工程师", en: "Quality engineer" },
+        writesFiles: true,
+        purpose: "Implement executable tests for the ledger behavior and required edge cases.", events: ["READY"],
+        prompt: "Create tests/ledger.test.mjs using node:test and node:assert/strict for the interface src/ledger.mjs. Cover income/expense monthly totals, balance calculation, month boundaries, invalid dates, duplicate IDs, empty descriptions, unsupported kinds, and invalid amounts. Use only Node built-ins. Use an available native file-writing tool to create the tests in the Workspace. Return the test path and cases covered in JSON with event READY; do not claim files were written unless they exist."
       },
       {
         id: "delivery-lead", label: { "zh-CN": "交付负责人", en: "Delivery lead" },
-        purpose: "Integrate engineering, experience, and quality plans into one delivery proposal.", events: ["READY"],
-        prompt: "Integrate the three supplied workstream plans into a concise delivery proposal. Identify dependencies, sequencing, open questions, and a definition of done. Do not invent implementation results. Set content to a JSON object with keys summary, implementationSlices, dependencies, acceptanceChecks, risks, and openQuestions. When write-capable staging is available, create software-delivery-plan.md in the execution workspace containing that proposal and declare it in artifacts with kind business_document, mediaType text/markdown, and a safe relative path. Never claim the file exists unless it was actually written. Return valid JSON with event READY and the content object serialized as a string. Do not wrap the content in Markdown."
+        writesFiles: true,
+        purpose: "Integrate and verify the parallel software implementation before delivery.", events: ["READY"],
+        prompt: "Integrate the three Workspace contributions. Inspect index.html, styles.css, src/app.js, src/ledger.mjs, and tests/ledger.test.mjs. Run `node --test tests/ledger.test.mjs` with the available process tool, fix integration or test failures, and rerun the tests. Use the available native file-writing tool to create README.md with startup instructions, implemented behavior, verification command/result, and any real limitations. Return a concise JSON business result with event READY listing the delivered source/test files, test result, and limitations. Never report a pass unless the command passed, and never claim a file exists unless it does."
       }
     ],
     flows: [
       ["__system_start__", "delivery-coordinator", "START"],
-      ["delivery-coordinator", "backend-planner", "READY"],
-      ["delivery-coordinator", "experience-planner", "READY"],
-      ["delivery-coordinator", "quality-planner", "READY"],
-      ["backend-planner", "delivery-lead", "READY"],
-      ["experience-planner", "delivery-lead", "READY"],
-      ["quality-planner", "delivery-lead", "READY"],
+      ["delivery-coordinator", "backend-engineer", "READY"],
+      ["delivery-coordinator", "experience-engineer", "READY"],
+      ["delivery-coordinator", "quality-engineer", "READY"],
+      ["backend-engineer", "delivery-lead", "READY"],
+      ["experience-engineer", "delivery-lead", "READY"],
+      ["quality-engineer", "delivery-lead", "READY"],
       ["delivery-lead", "__system_end__", "READY"]
     ]
   },
@@ -356,8 +367,9 @@ export const cases = [
       },
       {
         id: "document-publisher", label: { "zh-CN": "文档发布员", en: "Document publisher" },
+        writesFiles: true,
         purpose: "Publish the judge's completed review as a final business document.", events: ["READY"],
-        prompt: "Based on the judge's completed review, produce the final debate brief for delivery. Include the decision, strongest point for each side, judge reasoning, uncertainty, and follow-up questions. When the Harness exposes write-capable staging, always create a Markdown document named debate-brief.md in the execution workspace using an available native tool, then declare it in artifacts with kind business_document, mediaType text/markdown, and a safe relative path. Return valid JSON with event READY, content containing the structured business result, and the artifact declaration. If the Harness cannot write files, return the document content and metadata without claiming a file was created."
+        prompt: "Based on the judge's completed review, produce the final debate brief for delivery. Include the decision, strongest point for each side, judge reasoning, uncertainty, and follow-up questions. When the Harness exposes write-capable staging, always create a Markdown document named debate-brief.md in the execution workspace using an available native tool. Return valid JSON with event READY and content containing the structured business result. If the Harness cannot write files, return the document content without claiming a file was created."
       }
     ],
     flows: [

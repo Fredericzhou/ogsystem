@@ -11,7 +11,7 @@ export function createTeamCatalogUseCases({ teamCatalog }) {
       const normalizedCategory = String(category || "").trim().toLocaleLowerCase();
       const normalizedStatus = String(status || "").trim().toLocaleLowerCase();
       const filtered = allTeams.filter((team) => {
-        const teamStatus = String(team.teamVersionStatus || "released").toLocaleLowerCase();
+        const teamStatus = String(team.teamVersionStatus || "trained").toLocaleLowerCase();
         const teamCategory = typeof team.category === "object" ? (team.category["zh-CN"] || team.category.en || "") : (team.category || "");
         const haystack = [team.teamName, team.name, team.overview, teamCategory].join(" ").toLocaleLowerCase();
         return (!normalizedQuery || haystack.includes(normalizedQuery))
@@ -29,7 +29,7 @@ export function createTeamCatalogUseCases({ teamCatalog }) {
       const categoryName = (team) => typeof team.category === "object" ? (team.category["zh-CN"] || team.category.en || "未分类") : (team.category || "未分类");
       const stats = {
         total: allTeams.length,
-        released: allTeams.filter((team) => team.teamVersionStatus === "released").length,
+        trained: allTeams.filter((team) => team.teamVersionStatus === "trained").length,
         builtIn: allTeams.filter((team) => team.builtIn).length,
         custom: allTeams.filter((team) => !team.builtIn).length,
         categories: Object.fromEntries([...new Set(allTeams.map(categoryName))].sort().map((item) => [item, allTeams.filter((team) => categoryName(team) === item).length]))

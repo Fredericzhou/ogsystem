@@ -1,4 +1,5 @@
 import { calculateSafeTransitionBudget } from "../public/app/safe-transition-budget.js";
+import { normalizeRoleSourcePackageFiles } from "./role-source-package-normalization.mjs";
 
 export function createTeamDesignUseCases({
   teamCatalog,
@@ -26,7 +27,7 @@ export function createTeamDesignUseCases({
     throw new TypeError("Team design asset store requires read and save operations.");
   }
 
-  if (typeof packageIntegrity?.computeReleaseBaselineDigest !== "function") {
+  if (typeof packageIntegrity?.computeTrainingBaselineDigest !== "function") {
     throw new TypeError("Team design requires canonical baseline digest support.");
   }
 
@@ -39,49 +40,35 @@ export function createTeamDesignUseCases({
     return normalized.sort();
   }
 
-  function createOutputSchema(content, events) {
-    let schema;
-    try { schema = JSON.parse(String(content || "")); }
-    catch { throw new Error("TEAM_SOURCE_OUTPUT_SCHEMA_INVALID"); }
-    if (!schema || typeof schema !== "object" || Array.isArray(schema)) throw new Error("TEAM_SOURCE_OUTPUT_SCHEMA_INVALID");
-    const properties = schema.properties;
-    if (!properties || typeof properties !== "object" || Array.isArray(properties)) throw new Error("TEAM_SOURCE_OUTPUT_SCHEMA_INVALID");
-    const event = properties.event;
-    if (!event || typeof event !== "object" || Array.isArray(event)) throw new Error("TEAM_SOURCE_OUTPUT_SCHEMA_INVALID");
-    if (events.length) event.enum = events;
-    else delete event.enum;
-    return schema;
-  }
-
-  function validateReleaseBaselines(input, roleIds, current = []) {
-    if (!Array.isArray(input) || input.length > 20) throw new Error("TEAM_RELEASE_BASELINES_INVALID: provide at most 20 baseline scenarios.");
+  function validateTrainingBaselines(input, roleIds, current = []) {
+    if (!Array.isArray(input) || input.length > 20) throw new Error("TEAM_TRAINING_BASELINES_INVALID: provide at most 20 baseline scenarios.");
     const seen = new Set();
     const previous = new Map(current.map((item) => [item.scenarioId, item]));
     return input.map((item) => {
       const scenarioId = String(item?.scenarioId || "").trim();
       const name = String(item?.name || "").trim();
       const prompt = String(item?.prompt || "").trim();
-      if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(scenarioId) || seen.has(scenarioId)) throw new Error("TEAM_RELEASE_BASELINE_ID_INVALID");
+      if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(scenarioId) || seen.has(scenarioId)) throw new Error("TEAM_TRAINING_BASELINE_ID_INVALID");
       seen.add(scenarioId);
-      if (!name || name.length > 120 || !prompt || prompt.length > 4000) throw new Error("TEAM_RELEASE_BASELINE_INPUT_INVALID");
+      if (!name || name.length > 120 || !prompt || prompt.length > 4000) throw new Error("TEAM_TRAINING_BASELINE_INPUT_INVALID");
       const expectedRoleIds = [...new Set(Array.isArray(item.expectedRoleIds) ? item.expectedRoleIds.map(String) : [])];
-      if (!expectedRoleIds.length || expectedRoleIds.some((roleId) => !roleIds.includes(roleId))) throw new Error("TEAM_RELEASE_BASELINE_ROLE_INVALID: expected roles must belong to this TeamVersion.");
+      if (!expectedRoleIds.length || expectedRoleIds.some((roleId) => !roleIds.includes(roleId))) throw new Error("TEAM_TRAINING_BASELINE_ROLE_INVALID: expected roles must belong to this TeamVersion.");
       const materials = Array.isArray(item.materials) ? item.materials : [];
       if (materials.length > 20 || materials.some((material) => !material || typeof material.name !== "string" || !material.name.trim() || material.name.length > 160 || typeof material.content !== "string" || Buffer.byteLength(material.content, "utf8") > 256 * 1024)) {
-        throw new Error("TEAM_RELEASE_BASELINE_MATERIALS_INVALID: provide at most 20 text materials, each no larger than 256 KiB.");
+        throw new Error("TEAM_TRAINING_BASELINE_MATERIALS_INVALID: provide at most 20 text materials, each no larger than 256 KiB.");
       }
       let outputSchema = item.outputSchema;
-      if (!outputSchema || typeof outputSchema !== "object" || Array.isArray(outputSchema)) throw new Error("TEAM_RELEASE_BASELINE_SCHEMA_REQUIRED");
+      if (!outputSchema || typeof outputSchema !== "object" || Array.isArray(outputSchema)) throw new Error("TEAM_TRAINING_BASELINE_SCHEMA_REQUIRED");
       try { outputSchema = JSON.parse(JSON.stringify(outputSchema)); }
-      catch { throw new Error("TEAM_RELEASE_BASELINE_SCHEMA_INVALID"); }
+      catch { throw new Error("TEAM_TRAINING_BASELINE_SCHEMA_INVALID"); }
       const prior = previous.get(scenarioId);
       const revision = prior ? prior.revision + 1 : 1;
-      const requiredForRelease = item?.requiredForRelease !== false;
-      const scenario = { scenarioId, name, revision, prompt, materials, expectedRoleIds, outputSchema, requiredForRelease };
+      const requiredForTraining = item?.requiredForTraining !== false;
+      const scenario = { scenarioId, name, revision, prompt, materials, expectedRoleIds, outputSchema, requiredForTraining };
       return {
         ...scenario,
-        scenarioDigest: packageIntegrity?.computeReleaseBaselineDigest
-          ? packageIntegrity.computeReleaseBaselineDigest(scenario)
+        scenarioDigest: packageIntegrity?.computeTrainingBaselineDigest
+          ? packageIntegrity.computeTrainingBaselineDigest(scenario)
           : undefined,
         updatedAt: new Date().toISOString()
       };
@@ -106,7 +93,7 @@ export function createTeamDesignUseCases({
     return {
       ...await designProjector.project(team, locale),
       teamVersionStatus: team.teamVersionStatus,
-      releasedAt: team.releasedAt,
+      trainedAt: team.trainedAt,
       teamVersionId: team.teamVersionId || team.projectId,
       teamVersionDigest: team.projectDigest
     };
@@ -173,7 +160,7 @@ export function createTeamDesignUseCases({
           overview,
           projectDigest: null,
           teamVersionStatus: "draft",
-          releasedAt: null,
+          trainedAt: null,
           updatedAt: new Date().toISOString()
         };
         return teamMetadataStore.saveTeamMetadata(teamVersionId, next);
@@ -189,22 +176,22 @@ export function createTeamDesignUseCases({
       const design = await projectDesign(team);
       return designAssetStore.readAssets({ workdir: team.workdir, roleIds: Object.keys(design.authoring?.roles || {}) });
     },
-    async getReleaseBaselineScenarios(teamVersionId) {
-      if (typeof designAssetStore?.readReleaseBaselineScenarios !== "function") throw new Error("TEAM_RELEASE_BASELINES_UNAVAILABLE");
+    async getTrainingBaselineScenarios(teamVersionId) {
+      if (typeof designAssetStore?.readTrainingBaselineScenarios !== "function") throw new Error("TEAM_TRAINING_BASELINES_UNAVAILABLE");
       const team = await readTeamVersion(teamVersionId);
-      return { teamVersionId, scenarios: await designAssetStore.readReleaseBaselineScenarios({ workdir: team.workdir }) };
+      return { teamVersionId, scenarios: await designAssetStore.readTrainingBaselineScenarios({ workdir: team.workdir }) };
     },
-    async saveReleaseBaselineScenarios(teamVersionId, body = {}) {
-      if (typeof designAssetStore?.readReleaseBaselineScenarios !== "function" || typeof designAssetStore?.saveReleaseBaselineScenarios !== "function") throw new Error("TEAM_RELEASE_BASELINES_UNAVAILABLE");
+    async saveTrainingBaselineScenarios(teamVersionId, body = {}) {
+      if (typeof designAssetStore?.readTrainingBaselineScenarios !== "function" || typeof designAssetStore?.saveTrainingBaselineScenarios !== "function") throw new Error("TEAM_TRAINING_BASELINES_UNAVAILABLE");
       const initialTeam = await readTeamVersion(teamVersionId);
       return withTeamVersionLock(initialTeam.teamRootId || initialTeam.teamId || teamVersionId, async () => {
         const team = await readTeamVersion(teamVersionId);
         assertDesignStage(team);
         const design = await projectDesign(team);
         const roleIds = Object.keys(design.authoring?.roles || {});
-        const existing = await designAssetStore.readReleaseBaselineScenarios({ workdir: team.workdir });
-        const scenarios = validateReleaseBaselines(body.scenarios, roleIds, existing);
-        const saved = await designAssetStore.saveReleaseBaselineScenarios({ workdir: team.workdir, scenarios });
+        const existing = await designAssetStore.readTrainingBaselineScenarios({ workdir: team.workdir });
+        const scenarios = validateTrainingBaselines(body.scenarios, roleIds, existing);
+        const saved = await designAssetStore.saveTrainingBaselineScenarios({ workdir: team.workdir, scenarios });
         return { teamVersionId, scenarios: saved };
       });
     },
@@ -268,7 +255,6 @@ export function createTeamDesignUseCases({
           if (!converted?.verification || typeof converted.verification !== "object") throw new Error("TEAM_SOURCE_VERIFICATION_REQUIRED");
         }
 
-        const role = JSON.parse(String(converted.files["role.json"] || ""));
         const source = JSON.parse(String(converted.files["source.json"] || ""));
         const selectedSource = converted.source || source;
         if (!converted.source || !converted.source.sourceId) throw new Error("TEAM_SOURCE_PROVENANCE_REQUIRED");
@@ -278,8 +264,6 @@ export function createTeamDesignUseCases({
           && sourceVersion.adapterId === selectedSource.adapterId && sourceVersion.adapterVersion === selectedSource.adapterVersion
           && sourceVersion.language === selectedSource.language && sourceVersion.sourceDigest === selectedSource.sourceContentDigest;
         if (!sourceVersionMatches) throw new Error("TEAM_SOURCE_PROVENANCE_MISMATCH");
-        role.roleId = roleId;
-        role.outputs = { ...role.outputs, events: selectedEvents || [] };
         const verification = selectedEvents && selectedTools && identityConfirmed === true
           ? { status: "verified", identityConfirmed: true, eventsConfirmed: true, toolsConfirmed: true, confirmedEvents: selectedEvents, confirmedTools: selectedTools }
           : { status: "unverified", identityConfirmed: identityConfirmed === true, eventsConfirmed: selectedEvents !== undefined, toolsConfirmed: selectedTools !== undefined, missingConfirmations: [
@@ -289,11 +273,10 @@ export function createTeamDesignUseCases({
           ] };
         source.verification = verification;
         const packageFiles = {
-          ...converted.files,
-          "role.json": `${JSON.stringify(role, null, 2)}\n`,
-          "output.schema.json": `${JSON.stringify(createOutputSchema(converted.files["output.schema.json"], selectedEvents || []), null, 2)}\n`,
+          ...normalizeRoleSourcePackageFiles(converted.files, roleId, selectedEvents || []),
           "source.json": `${JSON.stringify(source, null, 2)}\n`
         };
+        const role = JSON.parse(packageFiles["role.json"]);
         if (verification.status === "verified") {
           if (!rolePackageValidator || typeof rolePackageValidator.validateManifest !== "function"
             || typeof rolePackageValidator.validatePrompt !== "function" || typeof rolePackageValidator.validateSchema !== "function"

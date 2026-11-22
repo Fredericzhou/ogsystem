@@ -21,25 +21,25 @@ function canonicalTeamValue(value, key = "") {
   }));
 }
 
-const RELEASE_BASELINE_FIELDS = [
+const TRAINING_BASELINE_FIELDS = [
   "scenarioId", "name", "revision", "prompt", "materials", "expectedRoleIds",
-  "outputSchema", "requiredForRelease"
+  "outputSchema", "requiredForTraining"
 ];
 
-export function releaseBaselinePayload(scenario) {
-  return Object.fromEntries(RELEASE_BASELINE_FIELDS
+export function trainingBaselinePayload(scenario) {
+  return Object.fromEntries(TRAINING_BASELINE_FIELDS
     .filter((key) => scenario?.[key] !== undefined)
     .map((key) => [key, canonicalTeamValue(scenario[key])]));
 }
 
-export function computeReleaseBaselineDigest(scenario) {
-  return computeContentDigest(JSON.stringify(releaseBaselinePayload(scenario)));
+export function computeTrainingBaselineDigest(scenario) {
+  return computeContentDigest(JSON.stringify(trainingBaselinePayload(scenario)));
 }
 
-function canonicalReleaseBaselines(scenarios) {
+function canonicalTrainingBaselines(scenarios) {
   return (Array.isArray(scenarios) ? scenarios : []).map((scenario) => ({
-    ...releaseBaselinePayload(scenario),
-    scenarioDigest: computeReleaseBaselineDigest(scenario)
+    ...trainingBaselinePayload(scenario),
+    scenarioDigest: computeTrainingBaselineDigest(scenario)
   }));
 }
 
@@ -72,7 +72,7 @@ export function teamCorePayload(bundle) {
     runtime: canonicalTeamValue(runtimeExecution),
     executionBindings: canonicalTeamValue(bundle?.team?.executionBindings || null),
     teamDefaults: canonicalTeamValue(bundle?.team?.userProfile || null),
-    releaseBaselineScenarios: canonicalReleaseBaselines(bundle?.team?.releaseBaselineScenarios || []),
+    trainingBaselineScenarios: canonicalTrainingBaselines(bundle?.team?.trainingBaselineScenarios || []),
     executableFiles: canonicalExecutableFiles(bundle?.team?.executableFiles)
   };
 }

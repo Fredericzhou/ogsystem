@@ -8,7 +8,7 @@ export function assertCollaborationProject(project) {
 
 export function assertProjectHasTeams(teamVersionIds) {
   const selected = Array.isArray(teamVersionIds) ? [...new Set(teamVersionIds.map((value) => String(value || "").trim()).filter(Boolean))] : [];
-  if (!selected.length) throw new Error("PROJECT_TEAM_REQUIRED: a collaboration project must use at least one released TeamVersion.");
+  if (!selected.length) throw new Error("PROJECT_TEAM_REQUIRED: a collaboration project must use at least one trained TeamVersion.");
 }
 
 export function assertProjectTeamMutationAllowed(project) {

@@ -51,13 +51,15 @@ for (const item of cases) {
       throw new Error(`Run status ${result.status}; missing successful roles: ${missing.join(", ") || "none"}; backend/model mismatches: ${wrongBindings.length}; actual=${actual || "no successful audit entries"}${runError ? `; run-error=${runError}` : ""}${failures ? `; role-errors=${failures}` : ""}`);
     }
     if (item.roles.some((role) => role.id === "document-publisher")) {
-      const evidence = result.artifactEvidence;
-      const manifest = evidence?.manifest;
-      const seal = evidence?.seal;
-      const verification = evidence?.verification;
+      const evidence = result.releaseEvidence;
+      const release = evidence?.release;
+      const materialization = evidence?.materialization;
+      const manifest = materialization?.manifest;
+      const seal = materialization?.seal;
+      const verification = materialization?.verification;
       const declaredFiles = Array.isArray(manifest?.files) ? manifest.files : [];
-      const deliveredFiles = Array.isArray(evidence?.files) ? evidence.files : [];
-      const fileDetails = Array.isArray(evidence?.fileDetails) ? evidence.fileDetails : [];
+      const deliveredFiles = Array.isArray(materialization?.files) ? materialization.files : [];
+      const fileDetails = Array.isArray(materialization?.fileDetails) ? materialization.fileDetails : [];
       const nonEmptyFiles = fileDetails.filter((entry) => Number(entry?.sizeBytes) > 0);
       const sourceFiles = declaredFiles.filter((entry) => String(entry?.mediaType || "").startsWith("text/") || /\.(?:md|json|csv|txt|ts|js)$/i.test(String(entry?.path || "")));
       const mediaFiles = declaredFiles.filter((entry) => /^(?:image|audio|video)\//i.test(String(entry?.mediaType || "")));
@@ -69,29 +71,31 @@ for (const item of cases) {
       if (
         manifest?.status !== "verified" ||
         manifest.producerRoleId !== "document-publisher" ||
-        typeof manifest.manifestSha256 !== "string" ||
+        typeof manifest.digest !== "string" ||
         declaredFiles.length === 0 ||
         seal?.status !== "sealed" ||
-        seal.manifestSha256 !== manifest.manifestSha256 ||
+        seal.digest !== manifest.digest ||
         verification?.status !== "verified" ||
         verification?.passed !== true ||
         !declaredFiles.every((entry) => typeof entry?.path === "string" && deliveredFiles.includes(entry.path)) ||
         nonEmptyFiles.length !== declaredFiles.length ||
         sourceFiles.length === 0 ||
         !requiredPaths.every((requiredPath) => declaredFiles.some((entry) => entry?.path === requiredPath) && deliveredFiles.includes(requiredPath)) ||
-        !evidence?.artifactRef?.artifactId
+        release?.status !== "published" ||
+        typeof release.materializationManifestDigest !== "string" ||
+        typeof release.downloadReference !== "string"
       ) {
-        throw new Error("Artifact delivery evidence is incomplete: expected non-empty source files, declarations, verified manifest, sealed manifest, and a deliverable artifact reference.");
+        throw new Error("Release materialization evidence is incomplete: expected non-empty source files, declarations, verified manifest, sealed manifest, and a published download reference.");
       }
-      process.stdout.write(`[artifacts] passed; files=${declaredFiles.length}; source=${sourceFiles.length}; media=${mediaFiles.length}; manifest=${manifest.manifestSha256}\n`);
+      process.stdout.write(`[release] passed; files=${declaredFiles.length}; source=${sourceFiles.length}; media=${mediaFiles.length}; manifest=${manifest.digest}\n`);
     }
     const bindings = [...new Set(successfulEntries.map((entry) => entry.profileId
       ? `profile:${entry.profileId}`
       : `${entry.backend}/${entry.modelId}`))].join(", ");
-    const artifactSummary = result.artifactEvidence?.manifest
-      ? `; artifacts=${Array.isArray(result.artifactEvidence.manifest.files) ? result.artifactEvidence.manifest.files.length : 0}; manifest=${result.artifactEvidence.manifest.manifestSha256 || "unknown"}`
+    const releaseSummary = result.releaseEvidence?.release
+      ? `; release=${result.releaseEvidence.release.status}; manifest=${result.releaseEvidence.release.materializationManifestDigest || "unknown"}`
       : "";
-    process.stdout.write(`[model-run] passed; run=${result.runId || "unknown"}; duration=${result.durationMs} ms; roles=${completedRoles.size}; transitions=${result.summary.totalTransitions}; audit=${bindings}${artifactSummary}\n`);
+    process.stdout.write(`[model-run] passed; run=${result.runId || "unknown"}; duration=${result.durationMs} ms; roles=${completedRoles.size}; transitions=${result.summary.totalTransitions}; audit=${bindings}${releaseSummary}\n`);
   } catch (error) {
     failures.push({ caseId: item.id, message: error instanceof Error ? error.message : String(error) });
     process.stderr.write(`[failed] ${item.id}: ${failures.at(-1).message}\n`);

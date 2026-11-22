@@ -53,17 +53,17 @@ export function createTaskExecutionUseCases({
       if (task.currentRunId && task.currentRunId !== retrySourceRunId) return { task, idempotentReplay: true };
       const team = await teamStore.getTeamVersion(task.teamVersionId);
       if (!team || (team.teamVersionId && team.teamVersionId !== task.teamVersionId)
-        || !["released", "archived"].includes(team.teamVersionStatus)) {
+        || !["trained", "archived"].includes(team.teamVersionStatus)) {
         throw new Error("TASK_EXECUTION_UNAVAILABLE: the Task's selected TeamVersion is unavailable for execution.");
       }
       if (task.teamCoreDigest && (task.teamCoreDigest !== (team.teamCoreDigest || team.projectDigest)
         || (Number.isInteger(task.teamDigestVersion) && task.teamDigestVersion !== team.teamDigestVersion))) {
         throw new Error("TASK_TEAM_VERSION_DIGEST_MISMATCH: the bound TeamVersion contents changed after Task creation.");
       }
+      await readiness.requireCurrentConfirmation(team);
       if (mode === "sandbox") {
         const status = await readiness.inspect(team.workdir);
         if (!status.canDryRun) throw new Error(`PROJECT_NOT_READY: resolve ${status.blockers.length} static readiness blocker(s) before Sandbox Run. Inspect project readiness for details.`);
-        await readiness.requireCurrentConfirmation(team);
       }
 
       const materials = retryInputs || (project.materials?.materials || []).map((item) => ({

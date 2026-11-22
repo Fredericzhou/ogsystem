@@ -4,7 +4,7 @@ import { computeTeamPackageCoreDigest } from "../infrastructure/package-integrit
 
 const base = {
   mode: "team-v2",
-  releaseManifest: { generatedAt: "2026-01-01T00:00:00.000Z" },
+  packageManifest: { generatedAt: "2026-01-01T00:00:00.000Z" },
   team: {
     systemSource: "flowchart TD\r\nA --> B\r\n",
     design: { schemaVersion: 1, bindings: { z: 1, a: 2 } },
@@ -12,7 +12,7 @@ const base = {
     executionBindings: { ogsContractVersion: 2, defaults: { harnessTemplate: "default" }, harnessTemplates: { default: { backend: "opencode", model: "model-a", allowedTools: ["exec_command"] } } },
     modelCatalog: { generatedAt: "now", models: [{ modelId: "model-a" }] },
     userProfile: { userProfileId: "team.default", language: "zh-CN", style: "concise" },
-    releaseBaselineScenarios: [{ scenarioId: "baseline", revision: 1, prompt: "run" }],
+    trainingBaselineScenarios: [{ scenarioId: "baseline", revision: 1, prompt: "run" }],
     executableFiles: [
       { path: "og-roles/roles/writer/prompt.md", content: "write\r\n" },
       { path: ".ogs/contracts/schemas/output.json", content: "{\"type\":\"object\"}" }
@@ -24,9 +24,9 @@ test("TeamVersion digest covers execution assets and excludes mutable catalog an
   const digest = computeTeamPackageCoreDigest(base);
   assert.notEqual(computeTeamPackageCoreDigest({ ...base, team: { ...base.team, runtime: { ...base.team.runtime, executor: "other" } } }), digest);
   assert.notEqual(computeTeamPackageCoreDigest({ ...base, team: { ...base.team, executionBindings: { ...base.team.executionBindings, harnessTemplates: { default: { ...base.team.executionBindings.harnessTemplates.default, model: "model-b" } } } } }), digest);
-  assert.notEqual(computeTeamPackageCoreDigest({ ...base, team: { ...base.team, releaseBaselineScenarios: [{ scenarioId: "baseline", revision: 2, prompt: "changed" }] } }), digest);
+  assert.notEqual(computeTeamPackageCoreDigest({ ...base, team: { ...base.team, trainingBaselineScenarios: [{ scenarioId: "baseline", revision: 2, prompt: "changed" }] } }), digest);
   assert.notEqual(computeTeamPackageCoreDigest({ ...base, team: { ...base.team, executableFiles: [{ ...base.team.executableFiles[0], content: "changed" }] } }), digest);
-  assert.equal(computeTeamPackageCoreDigest({ ...base, releaseManifest: { generatedAt: "later" }, team: { ...base.team, modelCatalog: { generatedAt: "later", models: [] }, runtime: { ...base.team.runtime, runsDir: "/another/location", sharedDir: "/another/shared" } } }), digest);
+  assert.equal(computeTeamPackageCoreDigest({ ...base, packageManifest: { generatedAt: "later" }, team: { ...base.team, modelCatalog: { generatedAt: "later", models: [] }, runtime: { ...base.team.runtime, runsDir: "/another/location", sharedDir: "/another/shared" } } }), digest);
 });
 
 test("TeamVersion digest canonicalizes JSON key order and text line endings while retaining team defaults", () => {
@@ -51,11 +51,11 @@ test("TeamVersion digest recomputes baseline identity from current content and e
     scenarioDigest: "stale-digest",
     updatedAt: "2026-01-01T00:00:00.000Z"
   };
-  const digest = computeTeamPackageCoreDigest({ team: { ...base.team, releaseBaselineScenarios: [scenario] } });
+  const digest = computeTeamPackageCoreDigest({ team: { ...base.team, trainingBaselineScenarios: [scenario] } });
   assert.notEqual(computeTeamPackageCoreDigest({
-    team: { ...base.team, releaseBaselineScenarios: [{ ...scenario, prompt: "changed" }] }
+    team: { ...base.team, trainingBaselineScenarios: [{ ...scenario, prompt: "changed" }] }
   }), digest);
   assert.equal(computeTeamPackageCoreDigest({
-    team: { ...base.team, releaseBaselineScenarios: [{ ...scenario, updatedAt: "2026-10-22T00:00:00.000Z" }] }
+    team: { ...base.team, trainingBaselineScenarios: [{ ...scenario, updatedAt: "2026-10-22T00:00:00.000Z" }] }
   }), digest);
 });

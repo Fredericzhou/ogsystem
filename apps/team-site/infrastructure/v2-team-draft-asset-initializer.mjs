@@ -74,5 +74,29 @@ export async function initializeV2TeamDraftAssets(project, locale = "zh-CN") {
   await writeFile(join(roleRoot, "agent.md"), `${roleTitle}: keep the business objective explicit and return a concise decision.\n`, "utf8");
   await writeFile(join(roleRoot, "prompt.md"), "{{agent}}\n\nAllowed events:\n{{allowed_events}}\n\nTask:\n{{task}}\n\nInput:\n{{input}}\n", "utf8");
   await writeFile(join(roleRoot, "output.schema.json"), `${JSON.stringify({ type: "object", required: ["event", "content"], properties: { event: { type: "string", enum: ["READY"] }, content: { type: "string", minLength: 1 } }, additionalProperties: false }, null, 2)}\n`, "utf8");
-  await writeFile(join(workdir, "system.design.json"), `${JSON.stringify({ schemaVersion: 2, seats: { [roleId]: { roleId, title: roleTitle } } }, null, 2)}\n`, "utf8");
+  const binding = { kind: "harness", harnessTemplate: templateId };
+  await writeFile(join(workdir, "system.design.json"), `${JSON.stringify({
+    schemaVersion: 2,
+    revision: 0,
+    intent: { objective: "", inputs: [], outputs: [], constraints: [], acceptanceCriteria: [] },
+    system: {
+      systemId: "team.factory",
+      systemVersion: "2.0.0",
+      startDispatch: { mode: "all" },
+      endJoin: { mode: "all_of" },
+      lawGlobalRef: "law.team.factory"
+    },
+    seats: {
+      [roleId]: { seatId: roleId, title: roleTitle, rolePackageRef: roleId, binding }
+    },
+    transitions: [
+      { transitionId: "1:__system_start__:START:owner", fromSeatId: "__system_start__", toSeatId: roleId, eventType: "START" },
+      { transitionId: "2:owner:READY:__system_end__", fromSeatId: roleId, toSeatId: "__system_end__", eventType: "READY" }
+    ],
+    state: { schemaVersion: 1 },
+    contracts: [],
+    policies: {},
+    bindings: { [roleId]: binding },
+    presentation: { nodes: {} }
+  }, null, 2)}\n`, "utf8");
 }

@@ -9,12 +9,7 @@ export const caseTeamMaterializer = Object.freeze({
     const caseSpec = getCase(caseId);
     if (!caseSpec) return false;
     const expected = buildCaseSystem(caseSpec);
-    const artifactPublisherRoleId = {
-      "cross-backend-review-loop": "planner",
-      "management-consulting": "document-publisher",
-      "software-team": "delivery-lead",
-      "structured-debate": "document-publisher"
-    }[caseSpec.id];
+    const fileWriterRoleIds = new Set(caseSpec.roles.filter((role) => role.writesFiles).map((role) => role.id));
     try {
       if ((await readFile(join(workdir, "system.mmd"), "utf8")) !== expected) return false;
       const bindings = JSON.parse(await readFile(join(workdir, ".ogs", "execution-bindings.json"), "utf8"));
@@ -39,7 +34,13 @@ export const caseTeamMaterializer = Object.freeze({
         && !Object.hasOwn(runtime, "runtime")
         && roleEntries.filter((entry) => entry.isDirectory()).every((entry) => expectedRoleIds.has(entry.name))
         && roleEntries.filter((entry) => entry.isDirectory()).length === expectedRoleIds.size
-        && roleFiles.every((manifest) => manifest?.ogsContractVersion === 2 && manifest?.schemaVersion === 2 && !manifest?.contractVersion && !manifest?.outputs?.events)
+        && roleFiles.every((manifest) => manifest?.ogsContractVersion === 2
+          && manifest?.schemaVersion === 2
+          && !manifest?.contractVersion
+          && !manifest?.outputs?.events
+          && (manifest?.responsibility?.owns?.length || manifest?.responsibility?.contributes?.length)
+          && manifest?.inputs?.preconditions?.length > 0
+          && manifest?.outputs?.postconditions?.length > 0)
         && !legacyAssets.some(Boolean)
         && bindings?.ogsContractVersion === 2
         && bindings?.schemaVersion === 1
@@ -55,12 +56,13 @@ export const caseTeamMaterializer = Object.freeze({
         && await Promise.all(caseSpec.roles.map(async (role) => {
           try {
             const schema = JSON.parse(await readFile(join(workdir, "team-roles", "roles", role.id, "output.schema.json"), "utf8"));
+            const agent = await readFile(join(workdir, "team-roles", "roles", role.id, "agent.md"), "utf8");
             const prompt = await readFile(join(workdir, "team-roles", "roles", role.id, "prompt.md"), "utf8");
-            const schemaReady = role.id !== artifactPublisherRoleId || Object.hasOwn(schema?.properties || {}, "artifacts");
-            const promptReady = role.id === artifactPublisherRoleId
+            const schemaReady = !Object.hasOwn(schema?.properties || {}, "artifacts");
+            const promptReady = fileWriterRoleIds.has(role.id)
               ? prompt.includes("available native file-writing tool")
-              : prompt.includes("does not publish files");
-            return schemaReady && promptReady;
+              : !prompt.includes("artifacts");
+            return schemaReady && promptReady && agent === role.prompt;
           } catch {
             return false;
           }

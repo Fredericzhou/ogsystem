@@ -10,13 +10,14 @@ import {
 } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 import { redactStudioSimulationText, redactStudioSimulationValue } from "../domain/studio-simulation-redaction.mjs";
+import { assertEvidenceManifest, assertMaterializationManifest, assertRelease, digestRecord } from "../../../dist/runtime/workspace-contracts.js";
 import { assertSafeEvidencePath, readSafeEvidenceFile, resolveSafeEvidencePath } from "./safe-evidence-path.mjs";
 import { hashVerifiedFile, openVerifiedFile } from "./verified-file-stream.mjs";
 
 const TEAM_ID = /^[a-z0-9][a-z0-9-]{0,80}$/;
 const SIMULATION_ID = /^[a-z0-9][a-z0-9-]{0,80}$/;
 const ARTIFACT_ROOTS = new Set([
-  "system.mmd", "request.md", "state.json", "summary.json", "events.ndjson", "timeline.jsonl",
+  "system.mmd", "request.md", "state.json", "summary.json", "events.ndjson", "evidence-manifest.json", "timeline.jsonl",
   "audit", "logs", "roles", "checkpoints"
 ]);
 const ARTIFACT_DIRECTORY_ROOTS = new Set(["audit", "logs", "roles", "checkpoints"]);
@@ -70,24 +71,24 @@ export function createFileStudioSimulationStore({ projectsRoot, now = () => new 
 
   function artifactSegments(pathValue) {
     const value = String(pathValue || "").replaceAll("\\", "/");
-    if (!value || value.startsWith("/") || value.includes("//")) throw new Error("STUDIO_SIMULATION_ARTIFACT_PATH_INVALID");
+    if (!value || value.startsWith("/") || value.includes("//")) throw new Error("STUDIO_SIMULATION_EVIDENCE_PATH_INVALID");
     const segments = value.split("/");
     if (segments.some((segment) => !segment || segment === "." || segment === ".." || segment.includes("\\") || segment.startsWith("."))) {
-      throw new Error("STUDIO_SIMULATION_ARTIFACT_PATH_INVALID");
+      throw new Error("STUDIO_SIMULATION_EVIDENCE_PATH_INVALID");
     }
     if (segments.some((segment) => /^(control|shared|credentials?|secrets?|server\.pid|endpoint\.json)$/i.test(segment))) {
-      throw new Error("STUDIO_SIMULATION_ARTIFACT_NOT_ALLOWED");
+      throw new Error("STUDIO_SIMULATION_EVIDENCE_NOT_ALLOWED");
     }
     if (segments[0] === "roles" && segments[2] === "private") {
-      throw new Error("STUDIO_SIMULATION_ARTIFACT_NOT_ALLOWED");
+      throw new Error("STUDIO_SIMULATION_EVIDENCE_NOT_ALLOWED");
     }
-    if (!ARTIFACT_ROOTS.has(segments[0])) throw new Error("STUDIO_SIMULATION_ARTIFACT_NOT_ALLOWED");
+    if (!ARTIFACT_ROOTS.has(segments[0])) throw new Error("STUDIO_SIMULATION_EVIDENCE_NOT_ALLOWED");
     return segments;
   }
 
   function assertArtifactSegments(segments) {
     if (segments.length > 1 && !ARTIFACT_DIRECTORY_ROOTS.has(segments[0])) {
-      throw new Error("STUDIO_SIMULATION_ARTIFACT_NOT_ALLOWED");
+      throw new Error("STUDIO_SIMULATION_EVIDENCE_NOT_ALLOWED");
     }
   }
 
@@ -95,12 +96,199 @@ export function createFileStudioSimulationStore({ projectsRoot, now = () => new 
     await assertSafeEvidencePath(runDirectory, [], { kind: "directory", label: "Simulation run evidence" });
   }
 
+  async function verifyEvidenceManifest(runDirectory, manifest, simulationId) {
+    try { assertEvidenceManifest(manifest); }
+    catch { throw new Error("STUDIO_SIMULATION_EVIDENCE_MANIFEST_INVALID"); }
+    const runId = `simulation-${simulationId}`;
+    if (manifest.runId !== runId || manifest.manifestId !== `${runId}:evidence`) throw new Error("STUDIO_SIMULATION_EVIDENCE_MANIFEST_INVALID");
+    const references = [
+      ...manifest.eventRefs.map((ref) => ({ ref, category: "event" })),
+      ...manifest.checkpointRefs.map((ref) => ({ ref, category: "checkpoint" })),
+      ...manifest.provenanceRefs.map((ref) => ({ ref, category: "provenance" })),
+      ...manifest.reviewRefs.map((ref) => ({ ref, category: "review" }))
+    ];
+    const eventIds = new Set();
+    if (manifest.eventRefs.length) {
+      const segments = ["events.ndjson"];
+      await assertSafeEvidencePath(runDirectory, segments, { kind: "file", label: "Simulation event reference" });
+      const lines = (await readSafeEvidenceFile(runDirectory, segments, "utf8", "Simulation event reference")).split(/\r?\n/);
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        try {
+          const event = JSON.parse(line);
+          if (event?.runId === runId && typeof event?.eventId === "string") eventIds.add(event.eventId);
+        } catch { /* Malformed event lines cannot satisfy a manifest reference. */ }
+      }
+    }
+    for (const { ref, category } of references) {
+      if (typeof ref !== "string" || !ref || ref.includes("\\") || ref.startsWith("/") || ref.split("/").some((part) => !part || part === "." || part === "..")) throw new Error("STUDIO_SIMULATION_EVIDENCE_MANIFEST_INVALID");
+      if (category === "event") {
+        const [path, eventId, extra] = ref.split("#");
+        if (path !== "events.ndjson" || !eventId || extra !== undefined) throw new Error("STUDIO_SIMULATION_EVIDENCE_MANIFEST_INVALID");
+        let decodedEventId;
+        try { decodedEventId = decodeURIComponent(eventId); }
+        catch { throw new Error("STUDIO_SIMULATION_EVIDENCE_MANIFEST_INVALID"); }
+        if (!eventIds.has(decodedEventId)) throw new Error("STUDIO_SIMULATION_EVIDENCE_MANIFEST_REFERENCE_NOT_FOUND");
+      } else {
+        const requiredPrefix = category === "checkpoint" ? ["checkpoints/", "workspace/checkpoints/"]
+          : category === "provenance" ? ["provenance/"] : ["control/reviews/"];
+        if (!requiredPrefix.some((prefix) => ref.startsWith(prefix))) throw new Error("STUDIO_SIMULATION_EVIDENCE_MANIFEST_INVALID");
+        await assertSafeEvidencePath(runDirectory, ref.split("/"), { kind: "file", label: "Simulation evidence reference" });
+      }
+    }
+  }
+
+  async function readWorkspaceMaterialization(runDirectory, simulationId) {
+    const runId = `simulation-${simulationId}`;
+    const releaseRoot = join(runDirectory, "release-store");
+    let releaseEntries;
+    try {
+      releaseEntries = await readdir(join(releaseRoot, "releases"), { withFileTypes: true });
+    } catch (error) {
+      if (isNotFound(error)) return null;
+      throw error;
+    }
+    const releases = [];
+    for (const entry of releaseEntries) {
+      if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
+      const releaseId = entry.name.slice(0, -5);
+      const releaseSegments = ["release-store", "releases", entry.name];
+      let release;
+      try {
+        release = JSON.parse(await readSafeEvidenceFile(runDirectory, releaseSegments, "utf8", "Simulation Workspace Release"));
+        assertRelease(release);
+      } catch {
+        throw new Error("STUDIO_SIMULATION_MATERIALIZATION_INVALID");
+      }
+      if (release.releaseId === releaseId && release.runId === runId
+        && ["materialized", "ref_updated", "published"].includes(release.status)) releases.push(release);
+    }
+    const release = releases.sort((left, right) => String(right.updatedAt).localeCompare(String(left.updatedAt)))[0];
+    if (!release) return null;
+    const manifestRef = String(release.materializationManifestRef || "");
+    const manifestSegments = manifestRef.split("/");
+    if (manifestRef.startsWith("/") || manifestSegments.some((part) => !part || part === "." || part === "..")
+      || manifestRef !== `materializations/${release.releaseId}/manifest.json`) {
+      throw new Error("STUDIO_SIMULATION_MATERIALIZATION_INVALID");
+    }
+    let manifest;
+    try {
+      manifest = JSON.parse(await readSafeEvidenceFile(runDirectory, ["release-store", ...manifestSegments], "utf8", "Simulation Workspace Materialization Manifest"));
+      assertMaterializationManifest(manifest);
+    } catch {
+      throw new Error("STUDIO_SIMULATION_MATERIALIZATION_INVALID");
+    }
+    if (manifest.manifestId !== `${release.releaseId}:materialization`
+      || manifest.releaseId !== release.releaseId
+      || manifest.releaseCommit !== release.releaseCommit
+      || manifest.digest !== release.materializationManifestDigest
+      || digestRecord(manifest.files) !== release.outputDigest) {
+      throw new Error("STUDIO_SIMULATION_MATERIALIZATION_INVALID");
+    }
+
+    const evidencePath = ["evidence-manifest.json"];
+    const evidence = JSON.parse(await readSafeEvidenceFile(runDirectory, evidencePath, "utf8", "Simulation Evidence Manifest"));
+    await verifyEvidenceManifest(runDirectory, evidence, simulationId);
+    const committedPaths = new Set();
+    for (const reference of evidence.provenanceRefs) {
+      const provenance = JSON.parse(await readSafeEvidenceFile(runDirectory, reference.split("/"), "utf8", "Simulation provenance"));
+      if (provenance?.runId !== runId || provenance?.kind !== "role-commit" || !Array.isArray(provenance.changedPaths)) continue;
+      for (const path of provenance.changedPaths) {
+        if (typeof path === "string" && path && !path.startsWith("/") && !path.includes("\\")
+          && !path.split("/").some((part) => !part || part === "." || part === "..")
+          && path !== ".gitattributes" && path !== "system.mmd" && path !== "system.design.json"
+          && !path.startsWith(".ogs/") && !path.startsWith("og-roles/")) committedPaths.add(path);
+      }
+    }
+    const filesByPath = new Map(manifest.files.map((file) => [file.path, file]));
+    const files = [];
+    for (const path of committedPaths) {
+      const file = filesByPath.get(path);
+      if (!file) throw new Error("STUDIO_SIMULATION_MATERIALIZATION_INVALID");
+      const fileSegments = ["release-store", "materializations", release.releaseId, "output", ...path.split("/")];
+      const target = await assertSafeEvidencePath(runDirectory, fileSegments, { kind: "file", label: "Workspace materialized output" });
+      let verified;
+      try {
+        verified = await hashVerifiedFile(target, file.digest.slice("sha256:".length), "Workspace materialized output");
+      } catch (error) {
+        if (error?.code === "FILE_DIGEST_MISMATCH") throw new Error("STUDIO_SIMULATION_SEALED_FILE_DIGEST_MISMATCH");
+        throw error;
+      }
+      if (verified.size !== file.sizeBytes) throw new Error("STUDIO_SIMULATION_SEALED_FILE_DIGEST_MISMATCH");
+      files.push({ ...file, path: `output/${path}` });
+    }
+    return { release, manifest, files };
+  }
+
+  function materializationFileSegments(pathValue, materialization) {
+    const requested = String(pathValue || "").replaceAll("\\", "/");
+    if (!requested.startsWith("output/")) throw new Error("STUDIO_SIMULATION_SEALED_FILE_NOT_FOUND");
+    const relativePath = requested.slice("output/".length);
+    const segments = relativePath.split("/");
+    if (!relativePath || segments.some((part) => !part || part === "." || part === "..")
+      || !materialization.files.some((entry) => entry.path === requested)) {
+      throw new Error("STUDIO_SIMULATION_SEALED_FILE_NOT_FOUND");
+    }
+    return segments;
+  }
+
+  async function readWorkspaceMaterializedFile(runDirectory, simulationId, pathValue, { maxBytes = 2 * 1024 * 1024, encoding = "utf8" } = {}) {
+    const materialization = await readWorkspaceMaterialization(runDirectory, simulationId);
+    if (!materialization) throw new Error("STUDIO_SIMULATION_SEAL_MANIFEST_NOT_FOUND");
+    const entry = materialization.files.find((item) => item.path === String(pathValue || "").replaceAll("\\", "/"));
+    if (!entry) throw new Error("STUDIO_SIMULATION_SEALED_FILE_NOT_FOUND");
+    const relativeSegments = materializationFileSegments(pathValue, materialization);
+    const segments = ["release-store", "materializations", materialization.release.releaseId, "output", ...relativeSegments];
+    const target = await assertSafeEvidencePath(runDirectory, segments, { kind: "file", label: "Workspace materialized output" });
+    const expectedSha256 = entry.digest.slice("sha256:".length);
+    let verified;
+    try {
+      verified = await hashVerifiedFile(target, expectedSha256, "Workspace materialized output");
+    } catch (error) {
+      if (error?.code === "FILE_DIGEST_MISMATCH") throw new Error("STUDIO_SIMULATION_SEALED_FILE_DIGEST_MISMATCH");
+      throw error;
+    }
+    if (verified.size !== entry.sizeBytes) throw new Error("STUDIO_SIMULATION_SEALED_FILE_DIGEST_MISMATCH");
+    if (verified.size > maxBytes) return { path: entry.path, size: verified.size, sha256: verified.sha256, tooLarge: true, manifest: materialization.manifest };
+    const content = await readSafeEvidenceFile(runDirectory, segments, encoding, "Workspace materialized output");
+    const bytes = Buffer.isBuffer(content) ? content : Buffer.from(content, encoding || "utf8");
+    if (bytes.length !== entry.sizeBytes || createHash("sha256").update(bytes).digest("hex") !== expectedSha256) {
+      throw new Error("STUDIO_SIMULATION_SEALED_FILE_DIGEST_MISMATCH");
+    }
+    return { path: entry.path, size: verified.size, sha256: verified.sha256, content, manifest: materialization.manifest };
+  }
+
+  async function openWorkspaceMaterializedFile(runDirectory, simulationId, pathValue, options = {}) {
+    const materialization = await readWorkspaceMaterialization(runDirectory, simulationId);
+    if (!materialization) throw new Error("STUDIO_SIMULATION_SEAL_MANIFEST_NOT_FOUND");
+    const entry = materialization.files.find((item) => item.path === String(pathValue || "").replaceAll("\\", "/"));
+    if (!entry) throw new Error("STUDIO_SIMULATION_SEALED_FILE_NOT_FOUND");
+    const relativeSegments = materializationFileSegments(pathValue, materialization);
+    const segments = ["release-store", "materializations", materialization.release.releaseId, "output", ...relativeSegments];
+    const target = await assertSafeEvidencePath(runDirectory, segments, { kind: "file", label: "Workspace materialized output" });
+    let result;
+    try {
+      result = await openVerifiedFile(target, {
+        expectedSha256: entry.digest.slice("sha256:".length),
+        range: options.range,
+        maxBytes: options.maxBytes ?? 256 * 1024 * 1024,
+        maxRangeBytes: options.maxRangeBytes ?? 32 * 1024 * 1024,
+        label: "Workspace materialized output"
+      });
+    } catch (error) {
+      if (error?.code === "FILE_DIGEST_MISMATCH") throw new Error("STUDIO_SIMULATION_SEALED_FILE_DIGEST_MISMATCH");
+      throw error;
+    }
+    if (result.size !== entry.sizeBytes) throw new Error("STUDIO_SIMULATION_SEALED_FILE_DIGEST_MISMATCH");
+    return { ...result, path: entry.path, sha256: entry.digest.slice("sha256:".length), manifest: materialization.manifest };
+  }
+
   async function listArtifacts(runDirectory) {
     const entries = [];
     async function visit(relativeSegments) {
       const absolute = resolveSafeEvidencePath(runDirectory, relativeSegments);
       const stats = await lstat(absolute);
-      if (stats.isSymbolicLink()) throw new Error("STUDIO_SIMULATION_LINK_NOT_ALLOWED: artifact links are not allowed.");
+      if (stats.isSymbolicLink()) throw new Error("STUDIO_SIMULATION_LINK_NOT_ALLOWED: evidence links are not allowed.");
       const relativePath = relativeSegments.join("/");
       if (stats.isDirectory()) {
         if (relativePath) entries.push({ path: relativePath, kind: "directory", size: 0, updatedAt: new Date(stats.mtimeMs).toISOString() });
@@ -588,6 +776,15 @@ export function createFileStudioSimulationStore({ projectsRoot, now = () => new 
         return { path: segments.join("/"), size: stats.size, updatedAt: new Date(stats.mtimeMs).toISOString(), tooLarge: true };
       }
       const content = await readSafeEvidenceFile(runDirectory, segments, "utf8", "Simulation artifact");
+      if (segments.length === 1 && segments[0] === "evidence-manifest.json") {
+        let manifest;
+        try {
+          manifest = JSON.parse(content);
+        } catch {
+          throw new Error("STUDIO_SIMULATION_EVIDENCE_MANIFEST_INVALID");
+        }
+        await verifyEvidenceManifest(runDirectory, manifest, simulationId);
+      }
       return { path: segments.join("/"), size: stats.size, updatedAt: new Date(stats.mtimeMs).toISOString(), content };
     },
 
@@ -620,6 +817,9 @@ export function createFileStudioSimulationStore({ projectsRoot, now = () => new 
       if (!await assertManagedDirectories(directories)) throw new Error("STUDIO_SIMULATION_NOT_FOUND");
       await assertDirectory(directories.versionDirectory, "TeamVersion simulation namespace");
       await readMetadata(directories.simulationDirectory, teamVersionId, simulationId);
+      if (String(pathValue || "").replaceAll("\\", "/").startsWith("output/")) {
+        return readWorkspaceMaterializedFile(resolveSimulationRunDirectory(teamVersionId, simulationId), simulationId, pathValue, options);
+      }
       return readSealedFile(resolveSimulationRunDirectory(teamVersionId, simulationId), pathValue, options);
     },
 
@@ -628,7 +828,19 @@ export function createFileStudioSimulationStore({ projectsRoot, now = () => new 
       if (!await assertManagedDirectories(directories)) throw new Error("STUDIO_SIMULATION_NOT_FOUND");
       await assertDirectory(directories.versionDirectory, "TeamVersion simulation namespace");
       await readMetadata(directories.simulationDirectory, teamVersionId, simulationId);
+      if (String(pathValue || "").replaceAll("\\", "/").startsWith("output/")) {
+        return openWorkspaceMaterializedFile(resolveSimulationRunDirectory(teamVersionId, simulationId), simulationId, pathValue, options);
+      }
       return openSealedFile(resolveSimulationRunDirectory(teamVersionId, simulationId), pathValue, options);
+    },
+
+    async listSimulationMaterializationFiles(teamVersionId, simulationId) {
+      const directories = resolveSimulationDirectory(teamVersionId, simulationId);
+      if (!await assertManagedDirectories(directories)) throw new Error("STUDIO_SIMULATION_NOT_FOUND");
+      await assertDirectory(directories.versionDirectory, "TeamVersion simulation namespace");
+      await readMetadata(directories.simulationDirectory, teamVersionId, simulationId);
+      const materialization = await readWorkspaceMaterialization(resolveSimulationRunDirectory(teamVersionId, simulationId), simulationId);
+      return materialization?.files || [];
     },
 
     async listVersionSimulations(teamVersionId) {

@@ -18,7 +18,7 @@ function publicRunDto(collaborationProjectId, teamVersionId, run) {
 export function createProjectRunUseCases({ projectStore, teamStore, runStore, readiness, identifiers, evaluateResult, now = () => new Date().toISOString() }) {
   for (const [name, port, operations] of [
     ["Project", projectStore, ["getProject"]],
-    ["Run", runStore, ["validateResume", "readLedger", "writeLedger", "acquireProjectWriteLock", "acquireRunLock", "writeResumeControl", "materialInputs", "execute", "rebuildIndex", "readSnapshot", "recordTask"]],
+    ["Run", runStore, ["validateResume", "readLedger", "writeLedger", "acquireProjectWriteLock", "acquireRunLock", "writeResumeControl", "materialInputs", "execute", "rebuildIndex", "readSnapshot", "recordTask", "cleanupWorkspace"]],
     ["Readiness", readiness, ["requireCurrentConfirmation", "inspect"]],
     ["Identifiers", identifiers, ["createRunId", "fingerprint"]],
     ["Result evaluator", { evaluate: evaluateResult }, ["evaluate"]]
@@ -73,6 +73,7 @@ export function createProjectRunUseCases({ projectStore, teamStore, runStore, re
       }
       const assetProject = await teamStore.getTeamVersion(teamVersionId);
       if (!assetProject) throw new Error("TEAM_VERSION_NOT_FOUND: the selected TeamVersion does not exist.");
+      await readiness.requireCurrentConfirmation(assetProject);
       const taskOwnedRun = true;
       const teamCoreDigest = assetProject.teamCoreDigest || assetProject.projectDigest;
       const makeExecutionProject = (currentProject) => taskOwnedRun
@@ -85,7 +86,13 @@ export function createProjectRunUseCases({ projectStore, teamStore, runStore, re
             trustedClassicTopology: Boolean(assetProject.trustedClassicTopologyDigest)
               || assetProject.source === "classic"
               || assetProject.source === "classic-template",
-            projectDigest: assetProject.projectDigest || teamCoreDigest,
+            // The Runtime workdir is the Collaboration Project and therefore
+            // validates its attached .site/project.json digest. Keep the
+            // mounted TeamVersion digest in the owner and teamCoreDigest
+            // fields instead of crossing that persistence boundary.
+            projectDigest: taskOwnedRun
+              ? currentProject.projectDigest
+              : (assetProject.projectDigest || teamCoreDigest),
             teamVersionId,
             teamCoreDigest,
             teamDigestVersion: assetProject.teamDigestVersion
@@ -269,6 +276,40 @@ export function createProjectRunUseCases({ projectStore, teamStore, runStore, re
       } finally {
         if (writeLock && !writeLockReleased) await writeLock.release();
         await runLock?.release();
+      }
+    },
+
+    async cleanupProjectRunWorkspace(projectId, taskId, runId, { workspaceId, expectedCanonicalHead } = {}) {
+      if (typeof expectedCanonicalHead !== "string" || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(expectedCanonicalHead)) {
+        throw new Error("WORKSPACE_LOCK_INVALID: cleanup requires the full expected canonical HEAD.");
+      }
+      const initialProject = await projectStore.getProject(projectId);
+      const projectLock = await runStore.acquireProjectWriteLock(initialProject, "workspace-cleanup");
+      try {
+        const project = await projectStore.getProject(projectId);
+        if (project.projectType !== "collaboration") throw new Error("RUN_NOT_FOUND: Run cleanup requires a Collaboration Project.");
+        if (project.workspaceBackend !== "git-lfs" || project.workspaceId !== workspaceId) {
+          throw new Error("WORKSPACE_CLEANUP_WORKSPACE_MISMATCH: cleanup Workspace does not match its Project.");
+        }
+        const task = (project.taskRecords || []).find((item) => item.taskId === taskId && !item.deletedAt);
+        if (!task || !Array.isArray(task.runIds) || !task.runIds.includes(runId)) {
+          throw new Error("RUN_NOT_FOUND: Run does not belong to this Project Task.");
+        }
+        const snapshot = await runStore.readSnapshot(project, runId);
+        const runStatus = snapshot.state?.status;
+        const terminalStatus = ({ completed: "done", failed: "failed", cancelled: "terminated" })[runStatus];
+        if (!terminalStatus) {
+          throw new Error("WORKSPACE_CLEANUP_RUN_NOT_TERMINAL: cleanup requires a terminal Run.");
+        }
+        const result = await runStore.cleanupWorkspace(project, {
+          runId,
+          terminalStatus,
+          workspaceId,
+          expectedCanonicalHead
+        });
+        return { projectId, taskId, runId, workspaceId, ...result };
+      } finally {
+        await projectLock.release();
       }
     }
   });

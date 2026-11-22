@@ -15,7 +15,7 @@ const appRoot = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = resolve(process.env.OGSYSTEM_ROOT || appRoot, process.env.OGSYSTEM_ROOT ? "." : "../..");
 const cliPath = join(repositoryRoot, "bin", "ogs.mjs");
 // Codex is the default real-run backend because its app-server exposes a
-// verifiable staging boundary for artifact-producing teams. OpenCode remains
+// verifiable staging boundary for file-producing teams. OpenCode remains
 // available for explicit cross-backend and text-only scenarios.
 export const DEFAULT_DEMO_BACKEND = "codex";
 export const DEFAULT_DEMO_MODEL = "gpt-6-luna";
@@ -28,7 +28,7 @@ const DEFAULT_DEMO_RUN_TIMEOUT_MS = 600000;
 // Deterministic local publisher used by the classic teams. It writes only to
 // the Runtime execution workspace and emits one JSON Role result on stdout.
 // Tool diagnostics stay on stderr so the Runtime parser always sees JSON.
-const PUBLISH_ARTIFACTS_SCRIPT = String.raw`import { execFileSync } from "node:child_process";
+const PUBLISH_FILES_SCRIPT = String.raw`import { execFileSync } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -36,10 +36,10 @@ const format = process.argv[2];
 const root = process.cwd();
 const request = await readFile(join(process.env.OGSYSTEM_TARGET_DIR || root, "request.md"), "utf8").catch(() => "sample task");
 const task = request.trim().slice(0, 500) || "sample task";
-const files = [];
+const writtenFiles = [];
 const add = async (path, kind, mediaType, content, encoding = "utf-8") => {
   await writeFile(join(root, path), content);
-  files.push({ artifactId: path.replace(/[^A-Za-z0-9._:-]/g, "-"), kind, path, mediaType, encoding });
+  writtenFiles.push(path);
 };
 const xml = (value) => String(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
 const makeXlsx = async (path) => {
@@ -78,28 +78,28 @@ try {
     await add("executive-brief.json", "business_data", "application/json", JSON.stringify(brief, null, 2) + "\n");
     await add("executive-brief.csv", "business_data", "text/csv", "field,value\nexecutiveSummary,\"" + brief.executiveSummary + "\"\nrecommendation,\"" + brief.recommendations[0] + "\"\n");
     if (await tryMakeXlsx("executive-brief.xlsx")) {
-      files.push({ artifactId: "executive-brief-xlsx", kind: "business_data", path: "executive-brief.xlsx", mediaType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", encoding: "binary" });
+      writtenFiles.push("executive-brief.xlsx");
     }
     if (tryRun("pandoc", ["executive-brief.md", "-o", "executive-brief.docx"])) {
-      files.push({ artifactId: "executive-brief-docx", kind: "business_document", path: "executive-brief.docx", mediaType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", encoding: "binary" });
+      writtenFiles.push("executive-brief.docx");
     }
     if (tryRun("pandoc", ["executive-brief.md", "-o", "executive-brief.pdf", "--pdf-engine=xelatex"])) {
-      files.push({ artifactId: "executive-brief-pdf", kind: "business_document", path: "executive-brief.pdf", mediaType: "application/pdf", encoding: "binary" });
+      writtenFiles.push("executive-brief.pdf");
     }
   } else if (format === "debate") {
     await add("debate-brief.md", "business_document", "text/markdown", "# Debate brief\n\nTopic: " + task + "\n\nThe structured debate result and follow-up questions are recorded in the accompanying summary.\n");
     await add("debate-summary.json", "business_data", "application/json", JSON.stringify({ topic: task, status: "reviewed", uncertainty: ["Evidence is bounded by the supplied brief."] }, null, 2) + "\n");
     if (tryRun("ffmpeg", ["-y", "-f", "lavfi", "-i", "color=c=royalblue:s=960x540", "-frames:v", "1", "debate.png"])) {
-      files.push({ artifactId: "debate-png", kind: "technical_artifact", path: "debate.png", mediaType: "image/png", encoding: "binary" });
+      writtenFiles.push("debate.png");
     }
     if (tryRun("ffmpeg", ["-y", "-f", "lavfi", "-i", "color=c=royalblue:s=960x540", "-t", "1", "-pix_fmt", "yuv420p", "debate.mp4"])) {
-      files.push({ artifactId: "debate-mp4", kind: "technical_artifact", path: "debate.mp4", mediaType: "video/mp4", encoding: "binary" });
+      writtenFiles.push("debate.mp4");
     }
     if (tryRun("ffmpeg", ["-y", "-f", "lavfi", "-i", "sine=frequency=880:duration=1", "-q:a", "4", "debate.mp3"])) {
-      files.push({ artifactId: "debate-mp3", kind: "technical_artifact", path: "debate.mp3", mediaType: "audio/mpeg", encoding: "binary" });
+      writtenFiles.push("debate.mp3");
     }
   } else throw new Error("unknown publisher format: " + format);
-  process.stdout.write(JSON.stringify({ event: "READY", content: "Published " + files.length + " verified files.", artifacts: files }));
+  process.stdout.write(JSON.stringify({ event: "READY", content: "Published " + writtenFiles.length + " verified files." }));
 } catch (error) {
   process.stderr.write(String(error && error.stack || error) + "\n");
   process.exit(1);
@@ -213,9 +213,12 @@ function roleManifest(role) {
     ogsContractVersion: 2,
     schemaVersion: 2,
     purpose: role.purpose,
-    responsibility: { kind: "atomic", owns: [], contributes: [], doesNotOwn: [] },
-    inputs: { preconditions: [] },
-    outputs: { postconditions: [], decisionCriteria: [] },
+    responsibility: { kind: "atomic", owns: [], contributes: ["content"], doesNotOwn: [] },
+    inputs: { preconditions: [{ op: "exists", args: [{ kind: "path", root: "role", path: ["input"] }] }] },
+    outputs: {
+      postconditions: [{ op: "exists", args: [{ kind: "path", root: "role", path: ["output"] }] }],
+      decisionCriteria: []
+    },
     authority: { controlActions: [] },
     constraints: { writableStateFields: [] },
     failure: { retryableErrorCodes: [], terminalErrorCodes: [] },
@@ -232,15 +235,9 @@ export async function materializeCaseTeam(caseId, workdir, locale = "zh-CN") {
 
 async function writeCaseProject(caseSpec, workdir, prompt, mode, locale = "zh-CN") {
   const rolesRoot = join(workdir, "team-roles", "roles");
-  const artifactPublisherRoleId = {
-    "cross-backend-review-loop": "planner",
-    "management-consulting": "document-publisher",
-    "software-team": "delivery-lead",
-    "structured-debate": "document-publisher"
-  }[caseSpec.id];
+  const fileWriterRoleIds = new Set(caseSpec.roles.filter((role) => role.writesFiles).map((role) => role.id));
   // Team Site templates are V2 model roles. Legacy profile/tool assets are
-  // intentionally not materialized; business artifacts belong to the Role
-  // output contract and Evidence, not an executable V1 profile.
+  // intentionally not materialized; Workspace files belong to Framework commits.
   await mkdir(rolesRoot, { recursive: true });
   const expectedRoleIds = new Set(caseSpec.roles.map((role) => role.id));
   for (const entry of await readdir(rolesRoot, { withFileTypes: true }).catch(() => [])) {
@@ -253,37 +250,17 @@ async function writeCaseProject(caseSpec, workdir, prompt, mode, locale = "zh-CN
     await mkdir(roleDir, { recursive: true });
     await writeFile(join(roleDir, "role.json"), `${JSON.stringify(roleManifest(role), null, 2)}\n`);
     await writeFile(join(roleDir, "agent.md"), role.prompt);
-    const publishesArtifact = role.id === artifactPublisherRoleId;
-    const artifactProperties = publishesArtifact ? {
-      artifacts: {
-        type: "array",
-        items: {
-          type: "object",
-          required: ["artifactId", "kind", "path", "mediaType", "encoding", "entrypoint", "publishTarget"],
-          properties: {
-            artifactId: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
-            kind: { enum: ["text", "source", "business_document", "business_data", "technical_artifact"] },
-            path: { type: "string", pattern: "^(?![./])(?!.*(?:^|/)[.][.]?(?:/|$))(?!.*(?:^|/)[.][^/]*)(?!.*\\\\).+$" },
-            mediaType: { type: "string", minLength: 1 },
-            encoding: { enum: ["utf-8", "binary"] },
-            entrypoint: { type: ["string", "null"] },
-            publishTarget: { type: ["string", "null"], minLength: 1, maxLength: 256 }
-          },
-          additionalProperties: false
-        }
-      }
-    } : {};
-    const artifactInstruction = publishesArtifact
-      ? "- Create the requested final document in the execution workspace with the available native file-writing tool. Its contents must reflect your completed business result. Declare the real file in artifacts with kind business_document, mediaType text/markdown, and a safe relative path. Do not claim a file was created unless it exists."
-      : "- This Role does not publish files. Do not create files or declare artifacts, even when the user task mentions document delivery; return only this Role's business result in content.";
-    await writeFile(join(roleDir, "prompt.md"), `{{agent}}\n\nAllowed events:\n{{allowed_events}}\n\nUser preferences:\n{{user_preferences}}\n\nTask:\n{{task}}\n\nInput:\n{{input}}\n\nOutput requirements:\n- Return exactly one schema-compliant JSON object and no Markdown.\n- event must be one of allowed_events.\n- Put the useful role result in content.\n${artifactInstruction}\n`);
+    const writesFiles = fileWriterRoleIds.has(role.id);
+    const fileInstruction = writesFiles
+      ? "- Use the available native file-writing tool to create only the source, test, or delivery files assigned to this Role in the execution Workspace. Report only paths that exist."
+      : "- This Role does not publish files. Return only this Role's business result in content.";
+    await writeFile(join(roleDir, "prompt.md"), `{{agent}}\n\nAllowed events:\n{{allowed_events}}\n\nUser preferences:\n{{user_preferences}}\n\nTask:\n{{task}}\n\nInput:\n{{input}}\n\nOutput requirements:\n- Return exactly one schema-compliant JSON object and no Markdown.\n- event must be one of allowed_events.\n- Put the useful role result in content.\n${fileInstruction}\n`);
     await writeFile(join(roleDir, "output.schema.json"), `${JSON.stringify({
       type: "object",
-      required: publishesArtifact ? ["event", "content", "artifacts"] : ["event", "content"],
+      required: ["event", "content"],
       properties: {
         event: { type: "string", enum: role.events },
         content: { type: "string", minLength: 1 },
-        ...artifactProperties
       },
       additionalProperties: false
     }, null, 2)}\n`);
@@ -349,8 +326,11 @@ async function writeCaseProject(caseSpec, workdir, prompt, mode, locale = "zh-CN
   for (const role of caseSpec.roles) {
     const resolved = resolveCaseRoleModel(caseSpec, role, process.env);
     const adapterResources = defaultBackendRegistry.getAdapter(resolved.backend)?.getResourceCapabilities?.() || {};
-    const canUseWorkspaceTools = adapterResources.filesystem === true && adapterResources.process === true;
-    const roleNeedsWorkspaceTools = role.id === artifactPublisherRoleId;
+    const canReadWorkspace = adapterResources.filesystem === true;
+    const canWriteWorkspace = canReadWorkspace && adapterResources.process === true;
+    const roleNeedsWorkspaceTools = role.writesFiles === true || role.readsWorkspaceRefs === true;
+    const roleNeedsWriteTools = role.writesFiles === true;
+    const workspaceToolsAvailable = roleNeedsWriteTools ? canWriteWorkspace : canReadWorkspace;
     const templateId = `harness.site.${caseSpec.id}.${role.id}`;
     harnessTemplates[templateId] = {
       ogsContractVersion: 2,
@@ -361,10 +341,14 @@ async function writeCaseProject(caseSpec, workdir, prompt, mode, locale = "zh-CN
       model: resolved.modelId,
       // Cross-backend evidence validates business handoff and adapter identity;
       // it does not claim filesystem/process capabilities for OpenCode.
-      allowedTools: textOnlySimulation || !canUseWorkspaceTools || !roleNeedsWorkspaceTools ? [] : ["apply_patch", "exec_command"],
+      allowedTools: textOnlySimulation || !workspaceToolsAvailable || !roleNeedsWorkspaceTools
+        ? []
+        : roleNeedsWriteTools ? ["apply_patch", "exec_command"] : ["workspace.read"],
       environment: {
-        filesystem: textOnlySimulation || !canUseWorkspaceTools || !roleNeedsWorkspaceTools ? "none" : { read: true, write: true },
-        process: textOnlySimulation || !canUseWorkspaceTools || !roleNeedsWorkspaceTools ? "deny" : "allow",
+        filesystem: textOnlySimulation || !workspaceToolsAvailable || !roleNeedsWorkspaceTools
+          ? "none"
+          : roleNeedsWriteTools ? { read: true, write: true } : { read: true, write: false },
+        process: textOnlySimulation || !workspaceToolsAvailable || !roleNeedsWorkspaceTools || !roleNeedsWriteTools ? "deny" : "allow",
         network: "deny",
         limits: { timeoutMs: role.execution?.timeoutMs ?? modelTimeoutMs, maxOutputBytes: role.execution?.maxOutputBytes ?? 65536 }
       },
@@ -419,37 +403,54 @@ async function listRelativeFiles(root, prefix = "") {
   return files;
 }
 
-async function collectArtifactEvidence(workdir, runId, result) {
+async function collectReleaseEvidence(workdir, runId) {
   if (!runId) return undefined;
   const sharedDir = join(workdir, ".ogs", "runs", runId, "shared");
-  const manifest = await readJsonIf(join(sharedDir, "artifact-manifest.json"));
-  const seal = await readJsonIf(join(sharedDir, "seal-manifest.json"));
-  const verification = await readJsonIf(join(sharedDir, "verification.json"));
+  const rawManifest = await readJsonIf(join(sharedDir, "artifact-manifest.json"));
+  const rawSeal = await readJsonIf(join(sharedDir, "seal-manifest.json"));
+  const rawVerification = await readJsonIf(join(sharedDir, "verification.json"));
   const files = await listRelativeFiles(join(sharedDir, "artifacts"));
   const fileDetails = await Promise.all(files.map(async (path) => ({ path, sizeBytes: (await stat(join(sharedDir, "artifacts", path))).size })));
-  const finalOutputs = result?.finalOutputsByRoleId;
-  const publisherOutput = finalOutputs && typeof finalOutputs === "object"
-    ? finalOutputs["document-publisher"]
-    : undefined;
-  // finalOutputsByRoleId is intentionally a business-only projection. The
-  // canonical manifest is the durable source for the opaque artifact identity
-  // used by downstream delivery checks.
-  const manifestArtifactRef = manifest && typeof manifest.artifactId === "string" && typeof manifest.runId === "string"
+  // The verifier and browser demo consume a Run evidence projection. Keep
+  // internal verifier records private so legacy artifact identity fields do
+  // not become part of the active Team Site result contract.
+  const manifest = rawManifest && typeof rawManifest === "object"
     ? {
-        artifactId: manifest.artifactId,
-        runId: manifest.runId,
-        ...(Array.isArray(manifest.files) && typeof manifest.files[0]?.mediaType === "string"
-          ? { mediaType: manifest.files[0].mediaType }
-          : {})
+        status: rawManifest.status,
+        runId: rawManifest.runId,
+        producerRoleId: rawManifest.producerRoleId,
+        files: rawManifest.files,
+        digest: typeof rawManifest.manifestSha256 === "string" ? `sha256:${rawManifest.manifestSha256}` : undefined
       }
     : undefined;
+  const seal = rawSeal && typeof rawSeal === "object"
+    ? {
+        status: rawSeal.status,
+        files: rawSeal.files,
+        digest: typeof rawSeal.manifestSha256 === "string" ? `sha256:${rawSeal.manifestSha256}` : undefined
+      }
+    : undefined;
+  const verification = rawVerification && typeof rawVerification === "object"
+    ? {
+        status: rawVerification.status,
+        passed: rawVerification.passed,
+        files: rawVerification.files,
+        digest: typeof rawVerification.manifestSha256 === "string" ? `sha256:${rawVerification.manifestSha256}` : undefined
+      }
+    : undefined;
+  const verified = manifest?.status === "verified" && seal?.status === "sealed" && verification?.status === "verified" && verification?.passed === true;
   return {
-    artifactRef: publisherOutput?.artifactRef ?? manifestArtifactRef,
-    manifest,
-    seal,
-    verification,
-    files,
-    fileDetails
+    release: {
+      kind: "run-evidence-projection",
+      releaseId: `run:${runId}`,
+      runId,
+      status: verified ? "published" : "failed",
+      materializationManifestRef: `run://${runId}/evidence/materialization-manifest`,
+      materializationManifestDigest: manifest?.digest,
+      outputDigest: seal?.digest,
+      downloadReference: verified ? `run://${runId}/outputs` : undefined
+    },
+    materialization: { manifest, seal, verification, files, fileDetails }
   };
 }
 
@@ -517,7 +518,7 @@ export async function runCase({ caseId, prompt, mode = "simulation", locale = "z
     const result = parseJsonTail(execution.stdout);
     const runEntries = await readdir(join(workdir, ".ogs", "runs"), { withFileTypes: true }).catch(() => []);
     const runId = runEntries.find((entry) => entry.isDirectory())?.name;
-    const artifactEvidence = await collectArtifactEvidence(workdir, runId, result);
+    const releaseEvidence = await collectReleaseEvidence(workdir, runId);
     return {
       caseId,
       mode,
@@ -541,7 +542,7 @@ export async function runCase({ caseId, prompt, mode = "simulation", locale = "z
         failure: item.error
       })) : [],
       summary: result.runSummary ?? {},
-      artifactEvidence,
+      releaseEvidence,
       durationMs: Date.now() - start
     };
   } finally {

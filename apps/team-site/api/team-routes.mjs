@@ -1,64 +1,81 @@
 export async function handleTeamRoutes({ request, response, url, readBody, sendJson, errorStatus, publicProject, useCases }) {
-  const batchCancelMatch = url.pathname.match(/^\/api\/v2\/team-versions\/([a-z0-9-]+)\/release-baselines\/batches\/([a-z0-9-]+)\/cancel$/);
+  const batchCancelMatch = url.pathname.match(/^\/api\/v2\/team-versions\/([a-z0-9-]+)\/training-baselines\/batches\/([a-z0-9-]+)\/cancel$/);
   if (batchCancelMatch && request.method === "POST") {
     try {
-      sendJson(response, 200, { batch: await useCases.cancelReleaseBaselineBatch(batchCancelMatch[1], batchCancelMatch[2]) });
+      sendJson(response, 200, { batch: await useCases.cancelTrainingBaselineBatch(batchCancelMatch[1], batchCancelMatch[2]) });
     } catch (error) {
-      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to cancel release baseline batch." });
+      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to cancel training baseline batch." });
     }
     return true;
   }
-  const batchStatusMatch = url.pathname.match(/^\/api\/v2\/team-versions\/([a-z0-9-]+)\/release-baselines\/batches\/latest$/);
+  const batchStatusMatch = url.pathname.match(/^\/api\/v2\/team-versions\/([a-z0-9-]+)\/training-baselines\/batches\/latest$/);
   if (batchStatusMatch && request.method === "GET") {
     try {
-      sendJson(response, 200, await useCases.getReleaseBaselineBatchStatus(batchStatusMatch[1]));
+      sendJson(response, 200, await useCases.getTrainingBaselineBatchStatus(batchStatusMatch[1]));
     } catch (error) {
-      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to read release baseline batch." });
+      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to read training baseline batch." });
     }
     return true;
   }
-  const batchStartMatch = url.pathname.match(/^\/api\/v2\/team-versions\/([a-z0-9-]+)\/release-baselines\/batches$/);
+  const batchStartMatch = url.pathname.match(/^\/api\/v2\/team-versions\/([a-z0-9-]+)\/training-baselines\/batches$/);
   if (batchStartMatch && request.method === "POST") {
     try {
       const body = await readBody(request, 1024 * 1024);
-      sendJson(response, 202, { batch: await useCases.startReleaseBaselineBatch(batchStartMatch[1], body) });
+      sendJson(response, 202, { batch: await useCases.startTrainingBaselineBatch(batchStartMatch[1], body) });
     } catch (error) {
-      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to start release baseline batch." });
+      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to start training baseline batch." });
     }
     return true;
   }
-  const comparisonMatch = url.pathname.match(/^\/api\/v2\/team-versions\/([a-z0-9-]+)\/release-baselines\/comparison$/);
+  const comparisonMatch = url.pathname.match(/^\/api\/v2\/team-versions\/([a-z0-9-]+)\/training-baselines\/comparison$/);
   if (comparisonMatch && request.method === "GET") {
     try {
-      sendJson(response, 200, await useCases.compareReleaseBaselines(comparisonMatch[1], url.searchParams.get("target") || "parent_version"));
+      sendJson(response, 200, await useCases.compareTrainingBaselines(comparisonMatch[1], url.searchParams.get("target") || "parent_version"));
     } catch (error) {
-      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to compare release baselines." });
+      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to compare training baselines." });
     }
     return true;
   }
-  const releaseReadinessMatch = url.pathname.match(/^\/api\/v2\/team-versions\/([a-z0-9-]+)\/release-readiness$/);
+  const releaseReadinessMatch = url.pathname.match(/^\/api\/v2\/team-versions\/([a-z0-9-]+)\/training-readiness$/);
   if (releaseReadinessMatch && request.method === "GET") {
     try {
-      sendJson(response, 200, await useCases.getTeamReleaseReadiness(releaseReadinessMatch[1]));
+      sendJson(response, 200, await useCases.getTeamTrainingReadiness(releaseReadinessMatch[1]));
     } catch (error) {
-      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to verify TeamVersion release readiness." });
+      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to verify TeamVersion training readiness." });
     }
     return true;
   }
-  const releaseBaselinesMatch = url.pathname.match(/^\/api\/v2\/team-versions\/([a-z0-9-]+)\/release-baselines$/);
-  if (releaseBaselinesMatch && request.method === "GET") {
+  const accuracyReviewMatch = url.pathname.match(/^\/api\/v2\/team-versions\/([a-z0-9-]+)\/training-review$/);
+  if (accuracyReviewMatch && request.method === "GET") {
     try {
-      sendJson(response, 200, await useCases.getReleaseBaselineScenarios(releaseBaselinesMatch[1]));
+      sendJson(response, 200, await useCases.getTeamAccuracyReview(accuracyReviewMatch[1]));
     } catch (error) {
-      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to read release baselines." });
+      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to read TeamVersion accuracy review." });
     }
     return true;
   }
-  if (releaseBaselinesMatch && request.method === "PUT") {
+  if (accuracyReviewMatch && request.method === "PUT") {
     try {
-      sendJson(response, 200, await useCases.saveReleaseBaselineScenarios(releaseBaselinesMatch[1], await readBody(request, 2 * 1024 * 1024)));
+      sendJson(response, 200, await useCases.saveTeamAccuracyReview(accuracyReviewMatch[1], await readBody(request, 1024 * 1024)));
     } catch (error) {
-      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to save release baselines." });
+      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to save TeamVersion accuracy review." });
+    }
+    return true;
+  }
+  const trainingBaselinesMatch = url.pathname.match(/^\/api\/v2\/team-versions\/([a-z0-9-]+)\/training-baselines$/);
+  if (trainingBaselinesMatch && request.method === "GET") {
+    try {
+      sendJson(response, 200, await useCases.getTrainingBaselineScenarios(trainingBaselinesMatch[1]));
+    } catch (error) {
+      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to read training baselines." });
+    }
+    return true;
+  }
+  if (trainingBaselinesMatch && request.method === "PUT") {
+    try {
+      sendJson(response, 200, await useCases.saveTrainingBaselineScenarios(trainingBaselinesMatch[1], await readBody(request, 2 * 1024 * 1024)));
+    } catch (error) {
+      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to save training baselines." });
     }
     return true;
   }
@@ -81,7 +98,7 @@ export async function handleTeamRoutes({ request, response, url, readBody, sendJ
     }
     return true;
   }
-  const teamVersionMatch = url.pathname.match(/^\/api\/v2\/team-versions\/([a-z0-9-]+)(?:\/(design(?:\/validate)?|release|archive|edit))?$/);
+  const teamVersionMatch = url.pathname.match(/^\/api\/v2\/team-versions\/([a-z0-9-]+)(?:\/(design(?:\/validate)?|train|archive|edit))?$/);
   if (teamVersionMatch && request.method === "GET" && !teamVersionMatch[2]) {
     try {
       sendJson(response, 200, publicProject(await useCases.getTeamVersion(teamVersionMatch[1])));
@@ -221,12 +238,12 @@ export async function handleTeamRoutes({ request, response, url, readBody, sendJ
     return true;
   }
 
-  const releaseMatch = url.pathname.match(/^\/api\/v2\/team-versions\/([a-z0-9-]+)\/release$/);
-  if (releaseMatch && request.method === "POST") {
+  const trainMatch = url.pathname.match(/^\/api\/v2\/team-versions\/([a-z0-9-]+)\/train$/);
+  if (trainMatch && request.method === "POST") {
     try {
-      sendJson(response, 200, publicProject(await useCases.releaseTeamVersion(releaseMatch[1])));
+      sendJson(response, 200, publicProject(await useCases.trainTeamVersion(trainMatch[1])));
     } catch (error) {
-      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to release team version." });
+      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to train team version." });
     }
     return true;
   }

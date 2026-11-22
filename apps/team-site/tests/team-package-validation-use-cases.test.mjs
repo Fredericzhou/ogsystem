@@ -22,7 +22,9 @@ test("Team package validation returns canonical digests and metadata", async () 
 
 test("Team package validation rejects unsupported schema, unsafe paths, digest mismatch, and credentials", async () => {
   await assert.rejects(useCases.validateTeamPackage({ ...bundle(), mode: "team-v3" }), /PROJECT_PACKAGE_VERSION_UNSUPPORTED/);
-  await assert.rejects(useCases.validateTeamPackage(bundle({ releaseManifest: { artifactScope: ["../secret"] } })), /unsafe artifact path/);
+  await assert.rejects(useCases.validateTeamPackage(bundle({ packageManifest: { executableAssets: ["../secret"] } })), /unsafe executable asset path/);
+  await assert.rejects(useCases.validateTeamPackage(bundle({ releaseManifest: { executableAssets: [] } })), /V2_LEGACY_TEAM_PACKAGE_FIELDS/);
+  await assert.rejects(useCases.validateTeamPackage(bundle({ team: { systemSource: "flowchart TD", releaseBaselineScenarios: [] } })), /V2_LEGACY_TEAM_PACKAGE_FIELDS/);
   await assert.rejects(useCases.validateTeamPackage(bundle({ packageDigest: "wrong" })), /packageDigest does not match/);
   await assert.rejects(useCases.validateTeamPackage(bundle({ team: { systemSource: "flowchart TD", config: { api_key: "secret" } } })), /credential field is not accepted: team.config.api_key/);
 });

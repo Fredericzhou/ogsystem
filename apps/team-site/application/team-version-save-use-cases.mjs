@@ -19,9 +19,9 @@ export function createTeamVersionSaveUseCases({ teamCatalog, designUseCases, lif
   async function readSnapshot(team) {
     let baselineResult;
     try {
-      baselineResult = await designUseCases.getReleaseBaselineScenarios(team.teamVersionId || team.projectId);
+      baselineResult = await designUseCases.getTrainingBaselineScenarios(team.teamVersionId || team.projectId);
     } catch (error) {
-      if (String(error?.message || error).includes("TEAM_RELEASE_BASELINES_UNAVAILABLE")) {
+      if (String(error?.message || error).includes("TEAM_TRAINING_BASELINES_UNAVAILABLE")) {
         baselineResult = { scenarios: [] };
       } else {
         throw error;
@@ -43,10 +43,18 @@ export function createTeamVersionSaveUseCases({ teamCatalog, designUseCases, lif
   const serialize = (value) => JSON.stringify(normalize(value));
   const digest = (value) => digestSnapshot(serialize(value));
   const metadataDigest = (snapshot) => digest({ name: snapshot.name || snapshot.teamName || "", overview: snapshot.overview || "" });
-  const saveDigest = (team, snapshot) => team.teamVersionStatus === "released" ? team.projectDigest : digest(snapshot);
+  const saveDigest = (team, snapshot) => team.teamVersionStatus === "trained" ? team.projectDigest : digest(snapshot);
   const assetsForPersistence = (assets) => {
     const persisted = { ...assets };
     if (persisted.contracts === "") delete persisted.contracts;
+    if (persisted.roles && typeof persisted.roles === "object" && !Array.isArray(persisted.roles)) {
+      persisted.roles = Object.fromEntries(Object.entries(persisted.roles).map(([roleId, files]) => {
+        if (!files || typeof files !== "object" || Array.isArray(files)) return [roleId, files];
+        const editableFiles = { ...files };
+        delete editableFiles["source.json"];
+        return [roleId, editableFiles];
+      }));
+    }
     return persisted;
   };
 
@@ -81,7 +89,7 @@ export function createTeamVersionSaveUseCases({ teamCatalog, designUseCases, lif
         if (source.teamVersionStatus === "archived") {
           throw new Error("TEAM_VERSION_IMMUTABLE: archived TeamVersions are read-only.");
         }
-        if (source.teamVersionStatus === "released" && body.expectedTeamVersionDigest && body.expectedTeamVersionDigest !== source.projectDigest) {
+        if (source.teamVersionStatus === "trained" && body.expectedTeamVersionDigest && body.expectedTeamVersionDigest !== source.projectDigest) {
           throw new Error("TEAM_VERSION_DIGEST_CONFLICT: the TeamVersion changed in another editor.");
         }
 
@@ -97,12 +105,12 @@ export function createTeamVersionSaveUseCases({ teamCatalog, designUseCases, lif
             throw new Error("TEAM_VERSION_DIGEST_CONFLICT: the TeamVersion metadata changed in another editor.");
           }
           const changed = serialize({ name: candidateName, overview: candidateOverview }) !== serialize({ name: currentName, overview: currentOverview });
-          if (source.teamVersionStatus === "released" && !changed) {
+          if (source.teamVersionStatus === "trained" && !changed) {
             return { teamVersionId, createdDraft: false, unchanged: true, name: currentName, overview: currentOverview, expectedMetadataDigest: metadataDigest({ name: currentName, overview: currentOverview }) };
           }
           let target = source;
           let createdDraft = false;
-          if (source.teamVersionStatus === "released") {
+          if (source.teamVersionStatus === "trained") {
             target = await lifecycleUseCases.forkTeamVersion(teamVersionId);
             createdDraft = true;
           } else if ((source.teamVersionStatus || "draft") !== "draft") {
@@ -145,13 +153,13 @@ export function createTeamVersionSaveUseCases({ teamCatalog, designUseCases, lif
         const designChanged = serialize(candidate.authoring) !== serialize(current.authoring);
         const assetsChanged = serialize(candidate.assets) !== serialize(current.assets);
         const scenariosChanged = serialize(candidate.scenarios) !== serialize(current.scenarios);
-        if (source.teamVersionStatus === "released" && !changed) {
+        if (source.teamVersionStatus === "trained" && !changed) {
           return { ...(await designUseCases.getTeamDesign(teamVersionId)), teamVersionId, createdDraft: false, unchanged: true };
         }
 
         let target = source;
         let createdDraft = false;
-        if (source.teamVersionStatus === "released") {
+        if (source.teamVersionStatus === "trained") {
           target = await lifecycleUseCases.forkTeamVersion(teamVersionId);
           createdDraft = true;
         } else if ((source.teamVersionStatus || "draft") !== "draft") {
@@ -181,7 +189,7 @@ export function createTeamVersionSaveUseCases({ teamCatalog, designUseCases, lif
           }
           if (scenariosChanged) {
             scenariosWritten = true;
-            await designUseCases.saveReleaseBaselineScenarios(targetId, { scenarios: candidate.scenarios });
+            await designUseCases.saveTrainingBaselineScenarios(targetId, { scenarios: candidate.scenarios });
           }
           const metadata = { name: candidate.name, overview: candidate.overview };
           if (candidate.name !== (target.name || target.teamName) || candidate.overview !== (target.overview || "")) {
@@ -206,7 +214,7 @@ export function createTeamVersionSaveUseCases({ teamCatalog, designUseCases, lif
             if (metadataWritten) await designUseCases.updateTeamMetadata(targetId, { name: current.name, overview: current.overview }).catch(() => undefined);
             if (designWritten) await designUseCases.saveTeamDesign(targetId, { authoring: current.authoring }).catch(() => undefined);
             if (assetsWritten) await designUseCases.saveTeamDesignAssets(targetId, { authoring: current.authoring, assets: assetsForPersistence(current.assets) }).catch(() => undefined);
-            if (scenariosWritten) await designUseCases.saveReleaseBaselineScenarios(targetId, { scenarios: current.scenarios }).catch(() => undefined);
+            if (scenariosWritten) await designUseCases.saveTrainingBaselineScenarios(targetId, { scenarios: current.scenarios }).catch(() => undefined);
           }
           throw error;
         }

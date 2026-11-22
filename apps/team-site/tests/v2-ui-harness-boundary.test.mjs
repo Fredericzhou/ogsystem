@@ -34,6 +34,28 @@ test("Studio debug detail identifies a run by its unique simulation ID", async (
   assert.doesNotMatch(source, /\$\{esc\(simulation\.teamId \|\| teamId\)\} · \$\{esc\(simulation\.teamVersionId \|\| teamVersionId\)\}/);
 });
 
+test("publishing a project team mounts the loaded TeamVersion identity", async () => {
+  const source = await readFile(appSourcePath, "utf8");
+  const mount = source.slice(source.indexOf("const mountReleasedVersion = async"), source.indexOf("const mountStatus = document.createElement"));
+
+  assert.match(mount, /const sourceTeamId = project\.teamId \|\| project\.teamRootId \|\| teamVersionId/);
+  assert.doesNotMatch(mount, /\bteam\.(?:teamId|teamRootId)\b/);
+  assert.match(mount, /body: JSON\.stringify\(\{ teamVersionIds: nextTeamVersionIds \}\)/);
+});
+
+test("collaboration output availability is shown beside the immutable Run summary", async () => {
+  const source = await readFile(appSourcePath, "utf8");
+  const releases = source.slice(source.indexOf("for (const item of outputs.filter((output) => output.availability === \"available\"))"), source.indexOf("list.querySelectorAll(\"[data-open-output]\")"));
+
+  assert.match(releases, /data-task-output-summary-status/);
+  assert.match(releases, /该 Run 已形成协作产物/);
+  assert.ok(releases.includes('href="#project-releases-panel"'));
+  assert.match(releases, /下方为 Role 输出摘要/);
+  assert.match(releases, /summary\.insertAdjacentHTML\("afterend"/);
+  assert.match(releases, /const scrollContainer = root\.closest\("\.page-content"\) \|\| document\.scrollingElement/);
+  assert.match(releases, /scrollContainer\.scrollTo\(/);
+});
+
 test("Harness capability discovery ignores responses that no longer match the selection", async () => {
   const source = await readFile(appSourcePath, "utf8");
   const discovery = source.slice(source.indexOf("const showDiscovery = async () => {"), source.indexOf("form.elements.filesystem.value = env.filesystem"));

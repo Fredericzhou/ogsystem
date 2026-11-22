@@ -62,8 +62,8 @@ export function createProjectPackageUseCases({
         throw new Error("PROJECT_IMPORT_DIGEST_MISMATCH: teamCoreDigest does not match nested team contents.");
       }
       const teamMeta = checkedTeam.bundle.team?.project || {};
-      if (teamMeta.teamVersionStatus && teamMeta.teamVersionStatus !== "released") {
-        throw new Error("TEAM_VERSION_NOT_RELEASED: only released team versions can be mounted.");
+      if (teamMeta.teamVersionStatus && teamMeta.teamVersionStatus !== "trained") {
+        throw new Error("TEAM_VERSION_NOT_TRAINED: only trained team versions can be mounted.");
       }
       mountedTeams.push({
         ...mountedTeam,

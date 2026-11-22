@@ -13,8 +13,8 @@ export function createTeamAdjustmentUseCases({ projectStore, getTeamVersion }) {
         throw new Error("TEAM_VERSION_NOT_MOUNTED: the selected version is not mounted in this project.");
       }
       const teamVersion = await getTeamVersion(teamVersionId);
-      if (teamVersion.teamVersionStatus !== "released") {
-        throw new Error("TEAM_VERSION_NOT_RELEASED: only a released TeamVersion can be edited from a Project.");
+      if (teamVersion.teamVersionStatus !== "trained") {
+        throw new Error("TEAM_VERSION_NOT_TRAINED: only a trained TeamVersion can be edited from a Project.");
       }
       return { teamVersion, collaborationProjectId: projectId, sourceTeamVersionId: teamVersionId };
     }

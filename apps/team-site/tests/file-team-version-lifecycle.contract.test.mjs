@@ -12,8 +12,8 @@ test("archive persists TeamVersion state and keeps metadata reference files cons
   await mkdir(join(workdir, ".site"), { recursive: true });
   await writeFile(join(workdir, ".site", "project.json"), JSON.stringify({
     name: "Team", teamId: "team", teamRootId: "team", teamVersionId: "team-v1", teamVersionNumber: 1,
-    teamVersionStatus: "released", projectStatus: "confirmed", teamCoreDigest: "digest", createdAt: "2026-01-01",
-    releasedAt: "2026-01-02", updatedAt: "2026-01-02"
+    teamVersionStatus: "trained", projectStatus: "confirmed", teamCoreDigest: "digest", createdAt: "2026-01-01",
+    trainedAt: "2026-01-02", updatedAt: "2026-01-02"
   }));
   try {
     const getTeamVersion = async (id) => {

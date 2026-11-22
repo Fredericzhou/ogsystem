@@ -55,6 +55,16 @@ export async function handleCollaborationProjectRoutes({
     return true;
   }
 
+  const projectConfirmMatch = url.pathname.match(/^\/api\/v2\/projects\/([a-z0-9-]+)\/confirm$/);
+  if (projectConfirmMatch && request.method === "POST") {
+    try {
+      sendJson(response, 200, publicProject(await useCases.confirmCollaborationProject(projectConfirmMatch[1])));
+    } catch (error) {
+      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to confirm Collaboration Project." });
+    }
+    return true;
+  }
+
   const materialsMatch = url.pathname.match(/^\/api\/v2\/projects\/([a-z0-9-]+)\/materials$/);
   if (materialsMatch && request.method === "POST") {
     try {

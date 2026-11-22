@@ -32,19 +32,19 @@ export async function handleStudioSimulationRoutes({ request, response, url, rea
     response.end();
     return true;
   };
-  const pipeArtifact = (artifact, contentType, filename, isDownload) => {
-    const ranged = Boolean(artifact.range);
+  const pipeEvidence = (evidence, contentType, filename, isDownload) => {
+    const ranged = Boolean(evidence.range);
     response.writeHead(ranged ? 206 : 200, {
       "content-type": contentType,
-      "content-length": String(artifact.contentLength ?? artifact.size),
+      "content-length": String(evidence.contentLength ?? evidence.size),
       "accept-ranges": "bytes",
-      ...(ranged ? { "content-range": `bytes ${artifact.range.start}-${artifact.range.end}/${artifact.size}` } : {}),
+      ...(ranged ? { "content-range": `bytes ${evidence.range.start}-${evidence.range.end}/${evidence.size}` } : {}),
       "cache-control": "no-store",
       "content-disposition": `${isDownload ? "attachment" : "inline"}; filename="${filename.replaceAll('"', "")}"`,
       "x-content-type-options": "nosniff",
       ...(isDownload || (!contentType.startsWith("text/html") && !contentType.startsWith("image/svg+xml")) ? {} : { "content-security-policy": previewCsp })
     });
-    artifact.stream.pipe(response);
+    evidence.stream.pipe(response);
   };
   const workspaceOpen = url.pathname.match(/^\/api\/v2\/teams\/([a-z0-9-]+)\/versions\/([a-z0-9-]+)\/workspace\/open-directory$/);
   if (workspaceOpen && request.method === "POST") {
@@ -88,101 +88,97 @@ export async function handleStudioSimulationRoutes({ request, response, url, rea
     return true;
   }
 
-  const artifactPathMatch = url.pathname.match(/^\/api\/v2\/teams\/([a-z0-9-]+)\/versions\/([a-z0-9-]+)\/simulations\/([a-z0-9-]+)\/artifacts(?:\/(.*))?$/);
-  if (artifactPathMatch && request.method === "GET") {
+  const evidencePathMatch = url.pathname.match(/^\/api\/v2\/teams\/([a-z0-9-]+)\/versions\/([a-z0-9-]+)\/simulations\/([a-z0-9-]+)\/evidence(?:\/(.*))?$/);
+  if (evidencePathMatch && request.method === "GET") {
     try {
-      const teamId = artifactPathMatch[1];
-      const teamVersionId = artifactPathMatch[2];
-      const simulationId = artifactPathMatch[3];
-      const artifactPath = artifactPathMatch[4] ? decodeURIComponent(artifactPathMatch[4]) : "";
-      if (artifactPath === "seal-manifest") {
-        sendJson(response, 200, await useCases.readTeamVersionSimulationSealManifest(teamId, teamVersionId, simulationId));
-        return true;
-      }
-      if (artifactPath === "verification") {
+      const teamId = evidencePathMatch[1];
+      const teamVersionId = evidencePathMatch[2];
+      const simulationId = evidencePathMatch[3];
+      const evidencePath = evidencePathMatch[4] ? decodeURIComponent(evidencePathMatch[4]) : "";
+      if (evidencePath === "verification") {
         sendJson(response, 200, await useCases.readTeamVersionSimulationVerificationReport(teamId, teamVersionId, simulationId));
         return true;
       }
-      if (artifactPath.startsWith("sealed/")) {
-        const sealedPath = artifactPath.slice("sealed/".length);
+      if (evidencePath.startsWith("materialization/")) {
+        const materializationPath = evidencePath.slice("materialization/".length);
         const isDownload = url.searchParams.get("download") === "1";
-        const requestedType = contentTypeForPath(sealedPath);
+        const requestedType = contentTypeForPath(materializationPath);
         const textPreviewCandidate = requestedType.startsWith("text/") || requestedType.startsWith("application/json") || requestedType.startsWith("image/svg+xml");
-        let sealed;
+        let materialized;
         const openOptions = {
           range: request.headers?.range,
           maxBytes: isDownload || !textPreviewCandidate ? 256 * 1024 * 1024 : 2 * 1024 * 1024,
           maxRangeBytes: 32 * 1024 * 1024
         };
-        if ((isDownload || isRange || !textPreviewCandidate) && typeof useCases.openTeamVersionSimulationSealedFile === "function") {
-          sealed = await useCases.openTeamVersionSimulationSealedFile(teamId, teamVersionId, simulationId, sealedPath, openOptions);
+        if ((isDownload || isRange || !textPreviewCandidate) && typeof useCases.openTeamVersionSimulationMaterializationFile === "function") {
+          materialized = await useCases.openTeamVersionSimulationMaterializationFile(teamId, teamVersionId, simulationId, materializationPath, openOptions);
         } else {
-          sealed = await useCases.readTeamVersionSimulationSealedFile(teamId, teamVersionId, simulationId, sealedPath, { maxBytes: openOptions.maxBytes, encoding: null });
-          if (sealed.tooLarge && typeof useCases.openTeamVersionSimulationSealedFile === "function") {
-            sealed = await useCases.openTeamVersionSimulationSealedFile(teamId, teamVersionId, simulationId, sealedPath, openOptions);
+          materialized = await useCases.readTeamVersionSimulationMaterializationFile(teamId, teamVersionId, simulationId, materializationPath, { maxBytes: openOptions.maxBytes, encoding: null });
+          if (materialized.tooLarge && typeof useCases.openTeamVersionSimulationMaterializationFile === "function") {
+            materialized = await useCases.openTeamVersionSimulationMaterializationFile(teamId, teamVersionId, simulationId, materializationPath, openOptions);
           }
         }
-        if (sealed.tooLarge) {
-          sendJson(response, 413, { error: "STUDIO_SIMULATION_ARTIFACT_TOO_LARGE", path: sealed.path, size: sealed.size });
+        if (materialized.tooLarge) {
+          sendJson(response, 413, { error: "STUDIO_SIMULATION_EVIDENCE_TOO_LARGE", path: materialized.path, size: materialized.size });
           return true;
         }
-        const contentType = contentTypeForPath(sealed.path, sealed.mediaType);
+        const contentType = contentTypeForPath(materialized.path, materialized.mediaType);
         const preview = !isDownload && (contentType.startsWith("text/html") || contentType.startsWith("image/svg+xml"));
         const allowInlineScript = preview && contentType.startsWith("text/html") && url.searchParams.get("interactive") === "1";
-        if (sealed.stream && preview) {
-          sealed.stream.destroy();
-          sealed = await useCases.readTeamVersionSimulationSealedFile(teamId, teamVersionId, simulationId, sealedPath, { maxBytes: 2 * 1024 * 1024, encoding: null });
-          if (sealed.tooLarge) {
-            sendJson(response, 413, { error: "STUDIO_SIMULATION_ARTIFACT_TOO_LARGE", path: sealed.path, size: sealed.size });
+        if (materialized.stream && preview) {
+          materialized.stream.destroy();
+          materialized = await useCases.readTeamVersionSimulationMaterializationFile(teamId, teamVersionId, simulationId, materializationPath, { maxBytes: 2 * 1024 * 1024, encoding: null });
+          if (materialized.tooLarge) {
+            sendJson(response, 413, { error: "STUDIO_SIMULATION_EVIDENCE_TOO_LARGE", path: materialized.path, size: materialized.size });
             return true;
           }
         }
-        if (sealed.stream) {
-          pipeArtifact(sealed, contentType, sealed.path.split("/").at(-1) || "artifact", isDownload);
+        if (materialized.stream) {
+          pipeEvidence(materialized, contentType, materialized.path.split("/").at(-1) || "evidence", isDownload);
           return true;
         }
-        const body = Buffer.isBuffer(sealed.content) ? (preview ? Buffer.from(sanitizePreview(sealed.content.toString("utf8"), contentType, allowInlineScript), "utf8") : sealed.content) : sealed.content;
+        const body = Buffer.isBuffer(materialized.content) ? (preview ? Buffer.from(sanitizePreview(materialized.content.toString("utf8"), contentType, allowInlineScript), "utf8") : materialized.content) : materialized.content;
         response.writeHead(200, {
           "content-type": contentType,
           "cache-control": "no-store",
-          "content-disposition": `${isDownload ? "attachment" : "inline"}; filename="${sealed.path.split("/").at(-1)?.replaceAll('"', "") || "artifact"}"`,
+          "content-disposition": `${isDownload ? "attachment" : "inline"}; filename="${materialized.path.split("/").at(-1)?.replaceAll('"', "") || "evidence"}"`,
           "x-content-type-options": "nosniff",
           ...(preview ? { "content-security-policy": previewCsp } : {})
         });
         response.end(body || "");
         return true;
       }
-      if (!artifactPath) {
-        sendJson(response, 200, await useCases.listTeamVersionSimulationArtifacts(teamId, teamVersionId, simulationId));
+      if (!evidencePath) {
+        sendJson(response, 200, await useCases.listTeamVersionSimulationEvidence(teamId, teamVersionId, simulationId));
         return true;
       }
       const isDownload = url.searchParams.get("download") === "1";
-      const artifact = await useCases.readTeamVersionSimulationArtifact(teamId, teamVersionId, simulationId, artifactPath, { maxBytes: isDownload ? 32 * 1024 * 1024 : 1024 * 1024 });
-      if (artifact.tooLarge) {
+      const evidence = await useCases.readTeamVersionSimulationEvidence(teamId, teamVersionId, simulationId, evidencePath, { maxBytes: isDownload ? 32 * 1024 * 1024 : 1024 * 1024 });
+      if (evidence.tooLarge) {
         sendJson(response, 413, {
-          error: "STUDIO_SIMULATION_ARTIFACT_TOO_LARGE",
-          path: artifact.path,
-          size: artifact.size,
+          error: "STUDIO_SIMULATION_EVIDENCE_TOO_LARGE",
+          path: evidence.path,
+          size: evidence.size,
           ...(isDownload ? {} : { downloadUrl: `${url.pathname}?download=1` })
         });
         return true;
       }
-      const contentType = artifactPath.endsWith(".json") || artifactPath.endsWith(".ndjson") || artifactPath.endsWith(".jsonl")
+      const contentType = evidencePath.endsWith(".json") || evidencePath.endsWith(".ndjson") || evidencePath.endsWith(".jsonl")
         ? "application/json; charset=utf-8"
-        : artifactPath.endsWith(".mmd") || artifactPath.endsWith(".md") || artifactPath.endsWith(".log")
+        : evidencePath.endsWith(".mmd") || evidencePath.endsWith(".md") || evidencePath.endsWith(".log")
           ? "text/plain; charset=utf-8"
           : "application/octet-stream";
-      const filename = artifactPath.split("/").at(-1) || "artifact";
+      const filename = evidencePath.split("/").at(-1) || "evidence";
       response.writeHead(200, {
         "content-type": contentType,
         "cache-control": "no-store",
         "content-disposition": `${isDownload ? "attachment" : "inline"}; filename="${filename.replaceAll('"', "")}"`,
         "x-content-type-options": "nosniff"
       });
-      response.end(artifact.content || "");
+      response.end(evidence.content || "");
     } catch (error) {
       if (sendRangeError(error)) return true;
-      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to read Simulation artifacts." });
+      sendJson(response, errorStatus(error), { error: error instanceof Error ? error.message : "Unable to read Simulation evidence." });
     }
     return true;
   }

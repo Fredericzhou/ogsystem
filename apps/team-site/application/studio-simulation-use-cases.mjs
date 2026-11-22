@@ -16,19 +16,30 @@ function teamVersionIdentity(team) {
   return { teamId, teamVersionId };
 }
 
-function artifactsUrl(teamId, teamVersionId, simulationId) {
-  return `/api/v2/teams/${encodeURIComponent(teamId)}/versions/${encodeURIComponent(teamVersionId)}/simulations/${encodeURIComponent(simulationId)}/artifacts`;
+function evidenceUrl(teamId, teamVersionId, simulationId) {
+  return `/api/v2/teams/${encodeURIComponent(teamId)}/versions/${encodeURIComponent(teamVersionId)}/simulations/${encodeURIComponent(simulationId)}/evidence`;
 }
 
 function publicSimulation(evidence) {
   const value = redactStudioSimulationValue(evidence);
   if (value?.simulation?.teamId && value.simulation.teamVersionId && value.simulation.simulationId) {
-    value.simulation.artifactsUrl = artifactsUrl(value.simulation.teamId, value.simulation.teamVersionId, value.simulation.simulationId);
+    if (Object.hasOwn(value.simulation, "artifactsUrl")) throw new Error("STUDIO_SIMULATION_CONTRACT_INVALID: unsupported legacy delivery field");
+    const simulation = value.simulation;
+    value.simulation = {
+      ...simulation,
+      evidenceUrl: evidenceUrl(simulation.teamId, simulation.teamVersionId, simulation.simulationId)
+    };
   }
   if (Array.isArray(value?.simulations)) {
-    value.simulations = value.simulations.map((simulation) => simulation?.teamId && simulation?.teamVersionId && simulation?.simulationId
-      ? { ...simulation, artifactsUrl: artifactsUrl(simulation.teamId, simulation.teamVersionId, simulation.simulationId) }
-      : simulation);
+    value.simulations = value.simulations.map((simulation) => {
+      if (!simulation?.teamId || !simulation?.teamVersionId || !simulation?.simulationId) return simulation;
+      if (Object.hasOwn(simulation, "artifactsUrl")) throw new Error("STUDIO_SIMULATION_CONTRACT_INVALID: unsupported legacy delivery field");
+      const current = simulation;
+      return {
+        ...current,
+        evidenceUrl: evidenceUrl(current.teamId, current.teamVersionId, current.simulationId)
+      };
+    });
   }
   return value;
 }
@@ -44,7 +55,7 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
     || !packageIntegrity || typeof packageIntegrity.computeTeamPackageCoreDigest !== "function") {
     throw new TypeError("Studio simulation use cases require Team Package export and digest operations.");
   }
-  if (typeof packageIntegrity.computeReleaseBaselineDigest !== "function") {
+  if (typeof packageIntegrity.computeTrainingBaselineDigest !== "function") {
     throw new TypeError("Studio simulation use cases require canonical baseline digest support.");
   }
   if (!simulationRunner || typeof simulationRunner.simulate !== "function") {
@@ -60,7 +71,9 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
     const team = await teamCatalog.getTeamVersion(teamVersionId);
     if (!team) throw new Error("STUDIO_SIMULATION_NOT_FOUND");
     const identity = teamVersionIdentity(team);
-    if (team.teamProjectId || identity.teamId !== teamId || identity.teamVersionId !== teamVersionId) {
+    // Collaboration Projects have their own Project/Task/Run namespace. They may carry
+    // teamVersionId fields for mounted versions, but they are never Studio Simulation owners.
+    if (team.teamProjectId || team.projectType === "collaboration" || identity.teamId !== teamId || identity.teamVersionId !== teamVersionId) {
       throw new Error("STUDIO_SIMULATION_NOT_FOUND");
     }
     const bundle = await teamPackageReader.exportTeamPackage(team.workdir);
@@ -104,7 +117,7 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
   }
 
   async function hasValidScenarioEvidence(teamVersionId, teamCoreDigest, scenario) {
-    const scenarioDigest = packageIntegrity.computeReleaseBaselineDigest(scenario);
+    const scenarioDigest = packageIntegrity.computeTrainingBaselineDigest(scenario);
     for (const run of await simulationStore.listVersionSimulations(teamVersionId)) {
       if (run.status !== "completed" || run.mode !== "sandbox" || run.runKind !== "studio_simulation"
         || run.teamVersionId !== teamVersionId || run.teamCoreDigest !== teamCoreDigest
@@ -132,7 +145,7 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
 
   const activeBatchRuns = new Set();
 
-  async function runReleaseBaselineBatch(useCases, teamId, teamVersionId, batchId, locale) {
+  async function runTrainingBaselineBatch(useCases, teamId, teamVersionId, batchId, locale) {
     const initial = await simulationStore.readLatestBatch(teamVersionId);
     for (const item of initial?.items || []) {
       if (item.status !== "queued") continue;
@@ -195,8 +208,8 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
           const batch = await simulationStore.readLatestBatch(teamVersionId);
           if (!batch || batch.batchId !== batchId || batch.status !== "running") return batch?.status === "invalidated";
           const snapshot = await loadTeamVersion(teamId, teamVersionId).catch(() => null);
-          const currentScenario = snapshot ? snapshot.bundle?.team?.releaseBaselineScenarios?.find((entry) => entry.scenarioId === item.scenarioId) : null;
-          const currentScenarioDigest = currentScenario ? packageIntegrity.computeReleaseBaselineDigest(currentScenario) : null;
+        const currentScenario = snapshot ? snapshot.bundle?.team?.trainingBaselineScenarios?.find((entry) => entry.scenarioId === item.scenarioId) : null;
+        const currentScenarioDigest = currentScenario ? packageIntegrity.computeTrainingBaselineDigest(currentScenario) : null;
           const digestChanged = !snapshot || snapshot.teamCoreDigest !== batch.teamCoreDigest || currentScenarioDigest !== item.expectedScenarioDigest;
           const items = batch.items.map((entry) => entry.scenarioId === item.scenarioId
             ? { ...entry, status: digestChanged ? "interrupted" : "failed", completedAt: now(), ...(digestChanged ? {} : { failureSummary: message }) }
@@ -221,7 +234,7 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
         return;
       }
       const snapshot = await loadTeamVersion(batch.teamId || batch.teamVersionId, teamVersionId);
-      const currentScenarioDigests = new Map((snapshot.bundle?.team?.releaseBaselineScenarios || []).map((scenario) => [scenario.scenarioId, packageIntegrity.computeReleaseBaselineDigest(scenario)]));
+      const currentScenarioDigests = new Map((snapshot.bundle?.team?.trainingBaselineScenarios || []).map((scenario) => [scenario.scenarioId, packageIntegrity.computeTrainingBaselineDigest(scenario)]));
       if (snapshot.teamCoreDigest !== batch.teamCoreDigest || batch.items.some((item) => currentScenarioDigests.get(item.scenarioId) !== item.expectedScenarioDigest)) {
         await simulationStore.writeLatestBatch(teamVersionId, { ...batch, status: "invalidated", invalidationReason: "TEAM_OR_SCENARIO_DIGEST_CHANGED", completedAt: now() });
         return;
@@ -240,11 +253,11 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
   }
 
   function findBaseline(bundle, scenarioId) {
-    const scenarios = bundle?.team?.releaseBaselineScenarios;
-    if (!Array.isArray(scenarios)) throw new Error("TEAM_RELEASE_BASELINE_REQUIRED: define a release baseline scenario first.");
+    const scenarios = bundle?.team?.trainingBaselineScenarios;
+    if (!Array.isArray(scenarios)) throw new Error("TEAM_TRAINING_BASELINE_REQUIRED: define a training baseline scenario first.");
     const scenario = scenarios.find((item) => item?.scenarioId === scenarioId);
-    if (!scenario) throw new Error("TEAM_RELEASE_BASELINE_NOT_FOUND");
-    return { ...scenario, scenarioDigest: packageIntegrity.computeReleaseBaselineDigest(scenario) };
+    if (!scenario) throw new Error("TEAM_TRAINING_BASELINE_NOT_FOUND");
+    return { ...scenario, scenarioDigest: packageIntegrity.computeTrainingBaselineDigest(scenario) };
   }
 
   function assertBaselineResult(result, scenario) {
@@ -262,7 +275,7 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
         : "No role completed the Sandbox run";
       const details = [result?.error || result?.failureSummary, failedRoles, failureCodes && `failure codes: ${failureCodes}`, progress].filter(Boolean).join("; ");
       const detail = String(details || "Runtime did not complete the Sandbox run.").slice(0, 400);
-      throw new Error(`TEAM_RELEASE_BASELINE_RUN_FAILED: Sandbox status ${String(result?.status || "unknown")}; ${detail}`);
+      throw new Error(`TEAM_TRAINING_BASELINE_RUN_FAILED: Sandbox status ${String(result?.status || "unknown")}; ${detail}`);
     }
     const outputMap = result?.finalOutputsByRoleId;
     const outputs = outputMap && typeof outputMap === "object" ? Object.values(outputMap).flat() : [];
@@ -278,14 +291,14 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
     const baselineOutput = parsed || (outputs.length === 1 && typeof outputs[0]?.content === "string"
       ? { content: outputs[0].content }
       : undefined);
-    if (!baselineOutput) throw new Error("TEAM_RELEASE_BASELINE_OUTPUT_EMPTY: Sandbox returned no structured output.");
+    if (!baselineOutput) throw new Error("TEAM_TRAINING_BASELINE_OUTPUT_EMPTY: Sandbox returned no structured output.");
     const badRole = audit.find((item) => item?.status !== "completed" || item?.noop === true || item?.failure || item?.error);
-    if (badRole) throw new Error(`TEAM_RELEASE_BASELINE_ROLE_FAILED: ${badRole.roleId || "unknown"} did not complete.`);
+    if (badRole) throw new Error(`TEAM_TRAINING_BASELINE_ROLE_FAILED: ${badRole.roleId || "unknown"} did not complete.`);
     const completed = new Set(audit.filter((item) => item?.status === "completed").map((item) => String(item.roleId || "")));
     const missing = scenario.expectedRoleIds.filter((roleId) => !completed.has(roleId));
-    if (missing.length) throw new Error(`TEAM_RELEASE_BASELINE_ROLE_MISSING: ${missing.join(", ")}`);
+    if (missing.length) throw new Error(`TEAM_TRAINING_BASELINE_ROLE_MISSING: ${missing.join(", ")}`);
     const ajv = new Ajv({ allErrors: true, strict: false });
-    if (!ajv.validate(scenario.outputSchema, baselineOutput)) throw new Error(`TEAM_RELEASE_BASELINE_SCHEMA_FAILED: ${ajv.errorsText(ajv.errors, { separator: "; " })}`);
+    if (!ajv.validate(scenario.outputSchema, baselineOutput)) throw new Error(`TEAM_TRAINING_BASELINE_SCHEMA_FAILED: ${ajv.errorsText(ajv.errors, { separator: "; " })}`);
     return baselineOutput;
   }
 
@@ -297,8 +310,8 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
       const baseline = await withLockedTeamVersion(teamVersionId, async () => {
         const snapshot = await loadTeamVersion(teamId, teamVersionId);
         const roleIds = Object.keys(snapshot.bundle?.team?.design?.seats || snapshot.bundle?.team?.design?.roles || {}).sort();
-        if (roleIds.length === 0) throw new Error("TEAM_RELEASE_BASELINE_ROLE_INVALID: built-in TeamVersion has no executable roles.");
-        const current = await baselineStore.readReleaseBaselineScenarios({ workdir: snapshot.team.workdir });
+        if (roleIds.length === 0) throw new Error("TEAM_TRAINING_BASELINE_ROLE_INVALID: built-in TeamVersion has no executable roles.");
+        const current = await baselineStore.readTrainingBaselineScenarios({ workdir: snapshot.team.workdir });
         const previous = current.find((item) => item.scenarioId === scenarioId);
         const candidate = {
           scenarioId,
@@ -308,15 +321,15 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
           materials: [],
           expectedRoleIds: roleIds,
           outputSchema: { type: "object" },
-          requiredForRelease: true
+          requiredForTraining: true
         };
-        candidate.scenarioDigest = packageIntegrity.computeReleaseBaselineDigest(candidate);
+        candidate.scenarioDigest = packageIntegrity.computeTrainingBaselineDigest(candidate);
         if (previous?.scenarioDigest === candidate.scenarioDigest) return previous;
         if (previous) {
           candidate.revision = previous.revision + 1;
-          candidate.scenarioDigest = packageIntegrity.computeReleaseBaselineDigest(candidate);
+          candidate.scenarioDigest = packageIntegrity.computeTrainingBaselineDigest(candidate);
         }
-        await baselineStore.saveReleaseBaselineScenarios({
+        await baselineStore.saveTrainingBaselineScenarios({
           workdir: snapshot.team.workdir,
           scenarios: [...current.filter((item) => item.scenarioId !== scenarioId), { ...candidate, updatedAt: now() }]
         });
@@ -324,7 +337,7 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
       });
       const simulation = await this.createSimulation(teamId, teamVersionId, { prompt: baseline.prompt, baselineScenarioId: baseline.scenarioId });
       if (simulation.simulation.status !== "completed") {
-        throw new Error(`TEAM_RELEASE_BASELINE_EVIDENCE_REQUIRED: built-in TeamVersion Sandbox baseline failed (${scenarioId}).`);
+        throw new Error(`TEAM_TRAINING_BASELINE_EVIDENCE_REQUIRED: built-in TeamVersion Sandbox baseline failed (${scenarioId}).`);
       }
       return simulation;
     },
@@ -340,8 +353,8 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
         const baseline = baselineScenarioId ? findBaseline(snapshot.bundle, String(baselineScenarioId)) : null;
         const executionMode = baseline ? "sandbox" : mode;
         if (!baseline && input.length > 1200) throw new Error("STUDIO_SIMULATION_INPUT_INVALID: non-baseline simulations are limited to 1,200 characters.");
-        if (baseline && input !== baseline.prompt) throw new Error("TEAM_RELEASE_BASELINE_INPUT_MISMATCH: baseline runs use the saved prompt.");
-        if (!["draft", "released"].includes(snapshot.team.teamVersionStatus)) {
+        if (baseline && input !== baseline.prompt) throw new Error("TEAM_TRAINING_BASELINE_INPUT_MISMATCH: baseline runs use the saved prompt.");
+        if (!["draft", "trained"].includes(snapshot.team.teamVersionStatus)) {
           throw new Error("STUDIO_SIMULATION_TEAM_VERSION_UNAVAILABLE");
         }
         const simulationId = identifiers.simulationId();
@@ -613,19 +626,21 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
       return { opened: true };
     },
 
-    async validateReleaseEvidence(teamVersionId, expectedDigest) {
+    async validateTrainingEvidence(teamVersionId, expectedDigest) {
       const team = await teamCatalog.getTeamVersion(teamVersionId);
       if (!team) throw new Error("TEAM_VERSION_NOT_FOUND");
       const { teamId: ownerTeamId } = teamVersionIdentity(team);
       const { bundle, teamCoreDigest } = await loadTeamVersion(team.teamId || team.teamRootId || teamVersionId, teamVersionId);
-      if (teamCoreDigest !== expectedDigest) throw new Error("TEAM_RELEASE_DIGEST_CHANGED: TeamVersion changed during release validation.");
-      const scenarios = bundle?.team?.releaseBaselineScenarios;
-    const requiredScenarios = Array.isArray(scenarios) ? scenarios.filter((scenario) => scenario.requiredForRelease !== false) : [];
-    if (requiredScenarios.length === 0) throw new Error("TEAM_RELEASE_BASELINE_REQUIRED: add at least one required baseline scenario and run it in Sandbox.");
+      if (teamCoreDigest !== expectedDigest) throw new Error("TEAM_TRAINING_DIGEST_CHANGED: TeamVersion changed during training validation.");
+      const scenarios = bundle?.team?.trainingBaselineScenarios;
+      const requiredScenarios = Array.isArray(scenarios) ? scenarios.filter((scenario) => scenario.requiredForTraining !== false) : [];
+      if (requiredScenarios.length === 0) throw new Error("TEAM_TRAINING_BASELINE_REQUIRED: add at least one required baseline scenario and run it in Sandbox.");
       const runs = await simulationStore.listVersionSimulations(teamVersionId);
     const failures = [];
+    const passedScenarioIds = [];
+    const passedScenarioEvidence = {};
     for (const scenario of requiredScenarios) {
-      const scenarioDigest = packageIntegrity.computeReleaseBaselineDigest(scenario);
+      const scenarioDigest = packageIntegrity.computeTrainingBaselineDigest(scenario);
       let passed = false;
       for (const run of runs) {
         if (run.status !== "completed" || run.mode !== "sandbox" || run.runKind !== "studio_simulation"
@@ -638,22 +653,41 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
         const evidence = await simulationStore.getSimulationEvidence(teamVersionId, run.simulationId);
         if (evidence.simulation.teamId !== ownerTeamId || evidence.simulation.baselineScenarioDigest !== scenarioDigest) continue;
         try {
+          if (typeof simulationStore.readSimulationArtifact !== "function") {
+            throw new Error("TEAM_TRAINING_BASELINE_MANIFEST_UNAVAILABLE");
+          }
+          await simulationStore.readSimulationArtifact(teamVersionId, run.simulationId, "evidence-manifest.json");
           assertBaselineResult({
             status: evidence.state?.status,
             finalOutputsByRoleId: evidence.state?.finalOutputsByRoleId,
             auditTrail: evidence.state?.auditTrail
           }, scenario);
           passed = true;
+          passedScenarioEvidence[scenario.scenarioId] = run.simulationId;
           break;
         } catch { /* Revalidate every candidate against current server-owned scenario data. */ }
       }
       if (!passed) failures.push(scenario.scenarioId);
+      else passedScenarioIds.push(scenario.scenarioId);
       }
-    if (failures.length) throw new Error(`TEAM_RELEASE_BASELINE_EVIDENCE_REQUIRED: required Sandbox evidence is missing or invalid for ${failures.join(", ")}.`);
-    return { ok: true, teamVersionId, teamCoreDigest, teamDigestVersion: TEAM_CORE_DIGEST_VERSION, requiredScenarioCount: requiredScenarios.length };
+    if (failures.length) {
+      const error = new Error(`TEAM_TRAINING_BASELINE_EVIDENCE_REQUIRED: required Sandbox evidence is missing or invalid for ${failures.join(", ")}.`);
+      error.passedScenarioIds = passedScenarioIds;
+      error.passedScenarioEvidence = passedScenarioEvidence;
+      throw error;
+    }
+    return {
+      ok: true,
+      teamVersionId,
+      teamCoreDigest,
+      teamDigestVersion: TEAM_CORE_DIGEST_VERSION,
+      requiredScenarioCount: requiredScenarios.length,
+      passedScenarioIds,
+      passedScenarioEvidence
+    };
     },
 
-    async startReleaseBaselineBatch(teamIdOrVersionId, teamVersionIdOrOptions = {}, optionsValue = {}) {
+    async startTrainingBaselineBatch(teamIdOrVersionId, teamVersionIdOrOptions = {}, optionsValue = {}) {
       let teamId;
       let teamVersionId;
       let options;
@@ -676,13 +710,13 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
         const existing = await recoverStaleBatchUnderLock(teamVersionId);
         if (existing?.status === "running") return existing;
         const snapshot = await loadTeamVersion(identity.teamId, teamVersionId);
-        const scenarios = (snapshot.bundle?.team?.releaseBaselineScenarios || []).filter((scenario) => scenario.requiredForRelease !== false);
-        if (!scenarios.length) throw new Error("TEAM_RELEASE_BASELINE_REQUIRED: define at least one required baseline scenario first.");
+        const scenarios = (snapshot.bundle?.team?.trainingBaselineScenarios || []).filter((scenario) => scenario.requiredForTraining !== false);
+        if (!scenarios.length) throw new Error("TEAM_TRAINING_BASELINE_REQUIRED: define at least one required baseline scenario first.");
         const previous = mode === "retry_failed" ? existing : null;
         const previousFailed = new Set((previous?.items || []).filter((item) => ["failed", "interrupted"].includes(item.status)).map((item) => item.scenarioId));
         const items = [];
         for (const scenario of scenarios) {
-          const scenarioDigest = packageIntegrity.computeReleaseBaselineDigest(scenario);
+          const scenarioDigest = packageIntegrity.computeTrainingBaselineDigest(scenario);
           let status = "queued";
           if (mode === "missing_only" && await hasValidScenarioEvidence(teamVersionId, snapshot.teamCoreDigest, scenario)) status = "skipped";
           if (mode === "retry_failed" && !previousFailed.has(scenario.scenarioId)) status = "skipped";
@@ -709,7 +743,7 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
       });
       if (batch.ownerPid === processId && batch.ownerHost === hostName && batch.status === "running" && !activeBatchRuns.has(batch.batchId)) {
         activeBatchRuns.add(batch.batchId);
-        void runReleaseBaselineBatch(this, identity.teamId, teamVersionId, batch.batchId, locale)
+        void runTrainingBaselineBatch(this, identity.teamId, teamVersionId, batch.batchId, locale)
           .catch(async (error) => {
             const message = redactStudioSimulationText(error instanceof Error ? error.message : String(error)).slice(0, 500);
             await markBatchTerminal(teamVersionId, batch.batchId, "failed", { failureSummary: message }).catch(() => undefined);
@@ -719,13 +753,13 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
       return batch;
     },
 
-    async getReleaseBaselineBatchStatus(teamVersionId) {
+    async getTrainingBaselineBatchStatus(teamVersionId) {
       if (!simulationStore.readLatestBatch || !simulationStore.writeLatestBatch) throw new Error("STUDIO_SIMULATION_BATCH_UNAVAILABLE");
       const batch = await withLockedTeamVersion(teamVersionId, () => recoverStaleBatchUnderLock(teamVersionId));
       return publicSimulation({ teamVersionId, batch });
     },
 
-    async cancelReleaseBaselineBatch(teamVersionId, batchId) {
+    async cancelTrainingBaselineBatch(teamVersionId, batchId) {
       if (!simulationStore.readLatestBatch || !simulationStore.writeLatestBatch) throw new Error("STUDIO_SIMULATION_BATCH_UNAVAILABLE");
       return publicSimulation(await updateBatchUnderLock(teamVersionId, batchId, (batch) => {
         if (batch.status !== "running") return batch;
@@ -733,19 +767,19 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
       }));
     },
 
-    async compareReleaseBaselines(teamVersionId, target = "parent_version") {
+    async compareTrainingBaselines(teamVersionId, target = "parent_version") {
       const current = await loadTeamVersion((await teamCatalog.getTeamVersion(teamVersionId))?.teamId || teamVersionId, teamVersionId);
       const siblings = typeof teamCatalog.listTeamRepository === "function"
         ? await teamCatalog.listTeamRepository({ includeUnreleased: true })
         : [];
       const sameTeam = siblings.filter((item) => !item.teamProjectId && (item.teamRootId || item.teamId) === current.teamId);
-      const parent = current.team.parentTeamVersionId ? sameTeam.find((item) => item.teamVersionId === current.team.parentTeamVersionId && item.teamVersionStatus === "released") : null;
-      const latest = sameTeam.filter((item) => item.teamVersionStatus === "released" && item.teamVersionId !== teamVersionId)
+      const parent = current.team.parentTeamVersionId ? sameTeam.find((item) => item.teamVersionId === current.team.parentTeamVersionId && item.teamVersionStatus === "trained") : null;
+      const latest = sameTeam.filter((item) => item.teamVersionStatus === "trained" && item.teamVersionId !== teamVersionId)
         .sort((left, right) => (right.teamVersionNumber || 0) - (left.teamVersionNumber || 0) || String(right.updatedAt || "").localeCompare(String(left.updatedAt || "")))[0] || null;
-      const targetTeam = target === "latest_released" ? latest : target === "parent_version" ? parent : null;
+      const targetTeam = target === "latest_trained" ? latest : target === "parent_version" ? parent : null;
       const targetSnapshot = targetTeam ? await loadTeamVersion(current.teamId, targetTeam.teamVersionId || targetTeam.projectId) : null;
-      const currentScenarios = current.bundle?.team?.releaseBaselineScenarios || [];
-      const targetScenarios = targetSnapshot?.bundle?.team?.releaseBaselineScenarios || [];
+      const currentScenarios = current.bundle?.team?.trainingBaselineScenarios || [];
+      const targetScenarios = targetSnapshot?.bundle?.team?.trainingBaselineScenarios || [];
       const targetById = new Map(targetScenarios.map((scenario) => [scenario.scenarioId, scenario]));
       const currentById = new Map(currentScenarios.map((scenario) => [scenario.scenarioId, scenario]));
       const comparisons = [];
@@ -755,7 +789,7 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
         const previous = targetById.get(scenarioId);
         const currentPassed = scenario ? await hasValidScenarioEvidence(teamVersionId, current.teamCoreDigest, scenario) : false;
         const targetPassed = previous ? await hasValidScenarioEvidence(targetSnapshot.team.teamVersionId || targetSnapshot.team.projectId, targetSnapshot.teamCoreDigest, previous) : false;
-        const revisionChanged = Boolean(previous && scenario && packageIntegrity.computeReleaseBaselineDigest(previous) !== packageIntegrity.computeReleaseBaselineDigest(scenario));
+        const revisionChanged = Boolean(previous && scenario && packageIntegrity.computeTrainingBaselineDigest(previous) !== packageIntegrity.computeTrainingBaselineDigest(scenario));
         comparisons.push({
           scenarioId,
           name: scenario?.name || previous?.name,
@@ -771,13 +805,13 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
         teamVersionId: team.teamVersionId || team.projectId,
         versionNumber: team.teamVersionNumber,
         teamName: team.teamName || team.name,
-        label: kind === "parent_version" ? "Parent version" : "Latest released"
+        label: kind === "parent_version" ? "Parent version" : "Latest trained"
       } : null;
       return {
         teamVersionId,
         availableTargets: {
           parent_version: describeTarget("parent_version", parent),
-          latest_released: describeTarget("latest_released", latest)
+          latest_trained: describeTarget("latest_trained", latest)
         },
         selectedTarget: targetTeam ? target : null,
         targetTeamVersionId: targetTeam?.teamVersionId || targetTeam?.projectId || null,
@@ -821,24 +855,35 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
       });
     },
 
-    async listTeamVersionSimulationArtifacts(teamId, teamVersionId, simulationId) {
+    async listTeamVersionSimulationEvidence(teamId, teamVersionId, simulationId) {
       await loadSimulationEvidence(teamId, teamVersionId, simulationId);
-      if (typeof simulationStore.listSimulationArtifacts !== "function") throw new Error("STUDIO_SIMULATION_ARTIFACTS_UNAVAILABLE");
+      if (typeof simulationStore.listSimulationArtifacts !== "function") throw new Error("STUDIO_SIMULATION_EVIDENCE_UNAVAILABLE");
       const payload = await simulationStore.listSimulationArtifacts(teamVersionId, simulationId);
-      let sealedEntries = [];
+      let materializationEntries = [];
+      if (typeof simulationStore.listSimulationMaterializationFiles === "function") {
+        materializationEntries = (await simulationStore.listSimulationMaterializationFiles(teamVersionId, simulationId)).map((entry) => ({
+          path: `materialization/${entry.path}`,
+          kind: "file",
+          size: Number(entry.sizeBytes || 0),
+          sizeBytes: Number(entry.sizeBytes || 0),
+          sha256: String(entry.digest || "").replace(/^sha256:/, ""),
+          mediaType: entry.path.endsWith(".md") ? "text/markdown" : entry.path.endsWith(".json") ? "application/json" : "application/octet-stream",
+          materialized: true
+        }));
+      }
       if (typeof simulationStore.readSimulationSealManifest === "function") {
         try {
           const manifest = await simulationStore.readSimulationSealManifest(teamVersionId, simulationId);
           const artifactRoot = String(manifest.artifact || "").replace(/^shared\//, "").replace(/\/$/, "");
           if (artifactRoot && Array.isArray(manifest.files)) {
-            sealedEntries = manifest.files.map((entry) => ({
-              path: `sealed/${artifactRoot}/${entry.path}`,
+            materializationEntries = manifest.files.map((entry) => ({
+              path: `materialization/${artifactRoot}/${entry.path}`,
               kind: "file",
               size: Number(entry.sizeBytes || 0),
               sizeBytes: Number(entry.sizeBytes || 0),
               sha256: entry.sha256,
               mediaType: entry.mediaType || "application/octet-stream",
-              sealed: true
+              materialized: true
             }));
           }
         } catch (error) {
@@ -852,40 +897,34 @@ export function createStudioSimulationUseCases({ teamCatalog, teamPackageReader,
         teamVersionId,
         simulationId,
         ...payload,
-        entries: [...(payload.entries || []), ...sealedEntries].map((entry) => ({
+        entries: [...(payload.entries || []), ...materializationEntries].map((entry) => ({
           ...entry,
-          url: `${artifactsUrl(teamId, teamVersionId, simulationId)}/${entry.path.split("/").map(encodeURIComponent).join("/")}`
+          url: `${evidenceUrl(teamId, teamVersionId, simulationId)}/${entry.path.split("/").map(encodeURIComponent).join("/")}`
         }))
       });
     },
 
-    async readTeamVersionSimulationArtifact(teamId, teamVersionId, simulationId, pathValue, options = {}) {
+    async readTeamVersionSimulationEvidence(teamId, teamVersionId, simulationId, pathValue, options = {}) {
       await loadSimulationEvidence(teamId, teamVersionId, simulationId);
-      if (typeof simulationStore.readSimulationArtifact !== "function") throw new Error("STUDIO_SIMULATION_ARTIFACTS_UNAVAILABLE");
+      if (typeof simulationStore.readSimulationArtifact !== "function") throw new Error("STUDIO_SIMULATION_EVIDENCE_UNAVAILABLE");
       return simulationStore.readSimulationArtifact(teamVersionId, simulationId, pathValue, options);
-    },
-
-    async readTeamVersionSimulationSealManifest(teamId, teamVersionId, simulationId) {
-      await loadSimulationEvidence(teamId, teamVersionId, simulationId);
-      if (typeof simulationStore.readSimulationSealManifest !== "function") throw new Error("STUDIO_SIMULATION_SEALED_ARTIFACTS_UNAVAILABLE");
-      return simulationStore.readSimulationSealManifest(teamVersionId, simulationId);
     },
 
     async readTeamVersionSimulationVerificationReport(teamId, teamVersionId, simulationId) {
       await loadSimulationEvidence(teamId, teamVersionId, simulationId);
-      if (typeof simulationStore.readSimulationVerificationReport !== "function") throw new Error("STUDIO_SIMULATION_SEALED_ARTIFACTS_UNAVAILABLE");
+      if (typeof simulationStore.readSimulationVerificationReport !== "function") throw new Error("STUDIO_SIMULATION_MATERIALIZATION_UNAVAILABLE");
       return simulationStore.readSimulationVerificationReport(teamVersionId, simulationId);
     },
 
-    async readTeamVersionSimulationSealedFile(teamId, teamVersionId, simulationId, pathValue, options = {}) {
+    async readTeamVersionSimulationMaterializationFile(teamId, teamVersionId, simulationId, pathValue, options = {}) {
       await loadSimulationEvidence(teamId, teamVersionId, simulationId);
-      if (typeof simulationStore.readSimulationSealedFile !== "function") throw new Error("STUDIO_SIMULATION_SEALED_ARTIFACTS_UNAVAILABLE");
+      if (typeof simulationStore.readSimulationSealedFile !== "function") throw new Error("STUDIO_SIMULATION_MATERIALIZATION_UNAVAILABLE");
       return simulationStore.readSimulationSealedFile(teamVersionId, simulationId, pathValue, options);
     },
 
-    async openTeamVersionSimulationSealedFile(teamId, teamVersionId, simulationId, pathValue, options = {}) {
+    async openTeamVersionSimulationMaterializationFile(teamId, teamVersionId, simulationId, pathValue, options = {}) {
       await loadSimulationEvidence(teamId, teamVersionId, simulationId);
-      if (typeof simulationStore.openSimulationSealedFile !== "function") throw new Error("STUDIO_SIMULATION_SEALED_ARTIFACTS_UNAVAILABLE");
+      if (typeof simulationStore.openSimulationSealedFile !== "function") throw new Error("STUDIO_SIMULATION_MATERIALIZATION_UNAVAILABLE");
       return simulationStore.openSimulationSealedFile(teamVersionId, simulationId, pathValue, options);
     },
 

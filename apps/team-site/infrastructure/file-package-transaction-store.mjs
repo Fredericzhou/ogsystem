@@ -70,7 +70,7 @@ export function createFilePackageTransactionStore({
     const teamVersionId = String(mountedTeam.teamVersionId || "");
     assertCanonicalTeamVersionId(teamVersionId);
     const team = await readProject(teamVersionId);
-    if (team.teamProjectId || team.teamVersionStatus !== "released") throw new Error("TEAM_VERSION_NOT_RELEASED: only a released team version can be exported.");
+    if (team.teamProjectId || team.teamVersionStatus !== "trained") throw new Error("TEAM_VERSION_NOT_TRAINED: only a trained team version can be exported.");
     const rawPackage = await exportTeamPackage(team.workdir);
     const teamPackage = {
       ...rawPackage,
@@ -81,7 +81,7 @@ export function createFilePackageTransactionStore({
           name: team.teamName || team.name,
           teamName: team.teamName || team.name,
           overview: team.overview,
-          teamVersionStatus: team.teamVersionStatus || "released",
+          teamVersionStatus: team.teamVersionStatus || "trained",
           teamVersionNumber: team.teamVersionNumber || mountedTeam.teamVersionNumber || 1,
           projectId: team.projectId || teamVersionId,
           teamRootId: team.teamRootId || team.teamId || teamVersionId,
@@ -228,10 +228,10 @@ export function createFilePackageTransactionStore({
       teamId: teamRootId,
       teamRootId,
       teamVersionId: projectId,
-      teamVersionStatus: "released",
+      teamVersionStatus: "trained",
       projectDigest: await computeProjectAssetDigest(workdir),
       teamCoreDigest,
-      releasedAt: now,
+      trainedAt: now,
       source: "imported",
       updatedAt: now
     };

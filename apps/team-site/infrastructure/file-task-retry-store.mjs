@@ -144,6 +144,20 @@ export function createFileTaskRetryStore({ projectsRoot = resolve(process.env.OG
     async resolveRunArtifactPath(projectId, taskId, runId, relativePath) {
       const { workdir } = await evidenceRoot(projectId, taskId, runId);
       return safeRunArtifact(workdir, runId, relativePath);
+    },
+    async resolveRunArtifactDirectory(projectId, taskId, runId, relativePath) {
+      const value = String(relativePath || "");
+      if (!value || value.startsWith("/") || value.startsWith("\\") || /^[A-Za-z]:/.test(value)) {
+        throw new Error("TASK_RETRY_STORAGE_INVALID: material snapshot directory is invalid.");
+      }
+      const segments = value.split(/[\\/]+/);
+      if (segments.some((segment) => !segment || segment === "." || segment === "..")) {
+        throw new Error("TASK_RETRY_STORAGE_INVALID: material snapshot directory is invalid.");
+      }
+      const { workdir } = await evidenceRoot(projectId, taskId, runId);
+      return assertSafeEvidencePath(workdir, [".ogs", "runs", safeRunId(runId), ...segments], {
+        kind: "directory", label: "Run material snapshot directory"
+      });
     }
   });
 }

@@ -2,9 +2,15 @@ import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { createFilesystemRuntimeServices, runSystemWithAdapter } from "../../../dist/runtime/adapter.js";
+import {
+  createFilesystemRuntimeServices,
+  createGitCollaboration,
+  createWorkspaceCoordinator,
+  runSystemWithAdapter
+} from "../../../dist/runtime/adapter.js";
 import { exportTeamPackage, loadTeamPackage } from "../../../dist/visualizer/project-projection.js";
-import { TEAM_RUN_EVENT_TYPES } from "./runtime-business-event-types.mjs";
+import { isRuntimeBusinessEvent } from "./runtime-business-event-types.mjs";
+import { ensureGitLfsWorkspace } from "./workspace-repository.mjs";
 
 function normalizeRuntimeStatus(status) {
   const value = String(status || "").toLowerCase();
@@ -15,13 +21,18 @@ function normalizeRuntimeStatus(status) {
 
 export function createRuntimeTeamSimulation({ run = runSystemWithAdapter, getDefaultHarnessBinding = async () => undefined } = {}) {
   return Object.freeze({
-    async simulate(team, { prompt, teamPackageBundle, mode = "dry-run", runtimeEdgeIdsByTransition, onRuntimeEvent, runEvidenceDirectory, simulationScenario }) {
+    async simulate(team, { prompt, teamPackageBundle, mode = "dry-run", runtimeEdgeIdsByTransition, onRuntimeEvent, runEvidenceDirectory, simulationId, simulationScenario }) {
       if (simulationScenario && (mode !== "dry-run" || simulationScenario !== "review-reject-once")) {
         throw new Error("DRY_RUN_SCENARIO_INVALID: named simulation scenarios are available only for dry-run execution.");
       }
-      const workdir = await mkdtemp(join(tmpdir(), "ogs-team-simulation-"));
-      const runId = `simulation-${randomUUID()}`;
+      const persistentWorkspace = Boolean(runEvidenceDirectory);
+      const workdir = persistentWorkspace
+        ? resolve(runEvidenceDirectory, "..", "workspace")
+        : await mkdtemp(join(tmpdir(), "ogs-team-simulation-"));
+      const runId = `simulation-${simulationId || randomUUID()}`;
+      let coordinator;
       try {
+        await mkdir(workdir, { recursive: true });
         await mkdir(join(workdir, ".ogs"), { recursive: true });
         const bundle = teamPackageBundle || await exportTeamPackage(team.workdir);
         const loaded = await loadTeamPackage({ workdir, bundle });
@@ -35,6 +46,21 @@ export function createRuntimeTeamSimulation({ run = runSystemWithAdapter, getDef
             : "";
           throw new Error(`TEAM_SIMULATION_INVALID: team version failed validation.${diagnostics ? ` ${diagnostics}` : ""}`);
         }
+        const workspace = await ensureGitLfsWorkspace({ workspaceDir: workdir });
+        const collaboration = createGitCollaboration({
+          repositoryRoot: workdir,
+          worktreeRoot: resolve(workdir, "..", "worktrees"),
+          runId,
+          workspaceId: workspace.workspaceId
+        });
+        coordinator = runEvidenceDirectory
+          ? createWorkspaceCoordinator({
+              repositoryRoot: workdir,
+              evidenceDir: runEvidenceDirectory,
+              collaboration,
+              workspaceId: workspace.workspaceId
+            })
+          : undefined;
         const modelConfig = await getDefaultHarnessBinding();
         const result = await run({
           systemPath: resolve(workdir, "system.mmd"),
@@ -45,6 +71,32 @@ export function createRuntimeTeamSimulation({ run = runSystemWithAdapter, getDef
           dryRun: mode === "dry-run",
           executionMode: mode,
           runKind: "studio_simulation",
+          gitCollaboration: coordinator
+            ? {
+                collaboration,
+                baseCommit: workspace.baseCommit,
+                onRoleCommit: async (branchId, commit) => (await coordinator.recordRoleCommit({
+                  runId,
+                  nodeId: commit.roleId,
+                  branchId,
+                  roleCommit: commit
+                })).event,
+                onMerge: async (merge) => (await coordinator.recordMerge({
+                  runId,
+                  nodeId: `merge-${merge.mergeId}`,
+                  merge
+                })).event,
+                publish: (merge) => coordinator.publishRelease({
+                  releaseId: `release-${runId}`,
+                  runId,
+                  workspaceDir: workdir,
+                  sourceDir: workdir,
+                  releaseCommit: merge.mergeCommit,
+                  expectedCanonicalHead: workspace.baseCommit,
+                  downloadReference: `simulation://${team.teamVersionId}/${runId}/release`
+                }).then(() => undefined)
+              }
+            : undefined,
           trustedProjectTopology: team.source === "classic" || team.source === "classic-template",
           modelCatalogModels: modelConfig?.modelCatalogModels,
           modelCatalogGeneratedAt: modelConfig?.modelCatalogGeneratedAt,
@@ -65,7 +117,7 @@ export function createRuntimeTeamSimulation({ run = runSystemWithAdapter, getDef
                 ...services.audit,
                 append: async (event) => {
                   await services.audit.append(event);
-                  if (event.type === "audit" || TEAM_RUN_EVENT_TYPES.has(event.type)) {
+                  if (event.type === "audit" || isRuntimeBusinessEvent(event)) {
                     await onRuntimeEvent(event);
                   }
                 }
@@ -81,6 +133,9 @@ export function createRuntimeTeamSimulation({ run = runSystemWithAdapter, getDef
           finalOutputsByRoleId: result.finalOutputsByRoleId || {},
           finalOutputRoleOrder: result.finalOutputRoleOrder || [],
           stages: Array.isArray(result.stages) ? result.stages : [],
+          workspaceId: workspace.workspaceId,
+          workspaceBackend: "git-lfs",
+          workspaceCommit: workspace.baseCommit,
           auditTrail: Array.isArray(result.auditTrail) ? result.auditTrail.map((item) => ({
             at: item.at,
             roleId: item.roleId,
@@ -117,7 +172,8 @@ export function createRuntimeTeamSimulation({ run = runSystemWithAdapter, getDef
           durationMs: 0
         };
       } finally {
-        await rm(workdir, { recursive: true, force: true });
+        if (coordinator) await coordinator.writeEvidenceManifest({ runId });
+        if (!persistentWorkspace) await rm(workdir, { recursive: true, force: true });
       }
     }
   });

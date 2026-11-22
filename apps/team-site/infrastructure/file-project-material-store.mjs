@@ -3,6 +3,7 @@ import { lstat, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { extname, join, resolve } from "node:path";
 import { normalizeMaterialPath } from "../domain/material-path.mjs";
 import { projectOgsDir, projectWorkspaceDir } from "./project-paths.mjs";
+import { commitGitLfsWorkspace } from "./workspace-repository.mjs";
 
 function slug(value) {
   const normalized = String(value || "material").trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
@@ -116,6 +117,10 @@ export function createFileProjectMaterialStore({ computeProjectDefinitionDigest 
         moved = true;
         await writeJson(indexPath, index);
         indexWritten = true;
+        await commitGitLfsWorkspace({
+          workspaceDir: workspaceRoot,
+          message: `Add Project materials ${batchId}`
+        });
         await writeJson(metadataPath, nextMetadata);
         metadataWritten = true;
         return entries;

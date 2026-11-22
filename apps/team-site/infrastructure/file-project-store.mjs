@@ -9,6 +9,7 @@ import { assertLatestProjectOverview } from "../domain/contracts.mjs";
 import { assertCanonicalTeamVersionId } from "../domain/team.mjs";
 import { createFileTeamCatalog } from "./file-team-catalog.mjs";
 import { createFileTeamLifecycleLocks } from "./file-team-lifecycle-locks.mjs";
+import { ensureGitLfsWorkspace } from "./workspace-repository.mjs";
 
 const projectsRoot = resolve(process.env.OGS_SITE_PROJECTS_DIR || join(homedir(), ".ogsystem", "projects"));
 const fileTeamCatalog = createFileTeamCatalog({ projectsRoot });
@@ -68,6 +69,9 @@ function normalizeMeta(meta, projectId) {
     if (meta?.[field]) assertCanonicalTeamVersionId(meta[field]);
   }
   const collaborationProject = meta?.projectType === "collaboration";
+  if (collaborationProject && (typeof meta?.workspaceId !== "string" || !meta.workspaceId.trim() || meta?.workspaceBackend !== "git-lfs")) {
+    throw new Error("Collaboration Project requires a Git LFS Workspace binding.");
+  }
   const confirmed = collaborationProject && meta?.projectStatus === "confirmed" && typeof meta?.projectDigest === "string" && typeof meta?.confirmedAt === "string";
   const teamVersionStatus = meta?.teamVersionStatus || "draft";
   const teamRootId = String(meta?.teamRootId || meta?.teamId || (meta?.teamProjectId || meta?.projectType === "collaboration" ? "" : projectId));
@@ -94,10 +98,12 @@ function normalizeMeta(meta, projectId) {
     teamVersionStatus,
     teamName: String(meta?.teamName || meta?.name || "New team"),
     parentTeamVersionId: meta?.parentTeamVersionId || undefined,
-    releasedAt: meta?.releasedAt || null,
+    trainedAt: meta?.trainedAt || null,
     archivedAt: meta?.archivedAt || null,
     ...(meta?.teamProjectId ? { teamProjectId: meta.teamProjectId } : {}),
     ...(meta?.workspaceKey ? { workspaceKey: String(meta.workspaceKey) } : {}),
+    ...(meta?.workspaceId ? { workspaceId: String(meta.workspaceId) } : {}),
+    ...(meta?.workspaceBackend ? { workspaceBackend: String(meta.workspaceBackend) } : {}),
     ...(meta?.caseId ? { caseId: meta.caseId } : {}),
     ...(meta?.trustedClassicTopologyDigest ? { trustedClassicTopologyDigest: meta.trustedClassicTopologyDigest } : {}),
     ...(meta?.ogsProjectId ? { ogsProjectId: meta.ogsProjectId } : {})
@@ -166,7 +172,7 @@ async function writeTeamReferenceFiles(workdir, meta) {
     teamDigestVersion: Number.isInteger(meta.teamDigestVersion) ? meta.teamDigestVersion : null,
     createdAt: meta.createdAt,
     updatedAt: meta.updatedAt,
-    releasedAt: meta.releasedAt || null,
+    trainedAt: meta.trainedAt || null,
     archivedAt: meta.archivedAt || null
   });
 }
@@ -213,6 +219,9 @@ async function createProjectAt(workdir, { projectId, name, overview, templateId 
   const normalizedName = String(name || "New team").trim().slice(0, 120) || "New team";
   const resolvedTeamName = String(teamName || normalizedName).trim().slice(0, 120) || normalizedName;
   const isTeamAsset = source !== "collaboration-project" && source !== "workspace";
+  const resolvedWorkspaceDir = typeof workspaceDir === "string" && workspaceDir.trim()
+    ? workspaceDir.trim()
+    : (!isTeamAsset ? "workspace" : undefined);
   await mkdir(workdir, { recursive: true });
   const now = new Date().toISOString();
   const metadata = {
@@ -234,11 +243,17 @@ async function createProjectAt(workdir, { projectId, name, overview, templateId 
       source,
       ...(isTeamAsset ? { teamRootId: teamRootId || teamId || projectId } : {}),
       ...(caseId ? { caseId } : {})
-      ,...(typeof workspaceDir === "string" && workspaceDir.trim() ? { workspaceDir: workspaceDir.trim() } : {})
+      ,...(resolvedWorkspaceDir ? { workspaceDir: resolvedWorkspaceDir } : {})
     };
   await writeJson(join(workdir, ".site", "project.json"), metadata);
-  const workspaceRoot = resolve(workdir, workspaceDir || ".");
+  const workspaceRoot = resolve(workdir, resolvedWorkspaceDir || ".");
   await writeJson(join(workspaceRoot, "workspace", "index.json"), { version: 1, materials: [] });
+  if (!isTeamAsset) {
+    const workspace = await ensureGitLfsWorkspace({ workspaceDir: workspaceRoot });
+    metadata.workspaceId = workspace.workspaceId;
+    metadata.workspaceBackend = "git-lfs";
+    await writeJson(join(workdir, ".site", "project.json"), metadata);
+  }
   await writeTeamReferenceFiles(workdir, metadata);
   return { projectId, workdir };
 }

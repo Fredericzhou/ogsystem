@@ -39,18 +39,22 @@ export function createTeamPackageValidationUseCases({ packageIntegrity }) {
     if (!bundle.team || typeof bundle.team.systemSource !== "string") {
       throw new Error("TEAM_IMPORT_INVALID: team package is missing systemSource.");
     }
+    if (Object.prototype.hasOwnProperty.call(bundle, "releaseManifest")
+      || Object.prototype.hasOwnProperty.call(bundle.team, "releaseBaselineScenarios")) {
+      throw new Error("V2_LEGACY_TEAM_PACKAGE_FIELDS: use packageManifest and trainingBaselineScenarios.");
+    }
     const declaredDigestVersion = Number(bundle.team.digestVersion
       || bundle.team.project?.teamDigestVersion
       || bundle.teamDigestVersion
       || TEAM_CORE_DIGEST_VERSION);
     if (declaredDigestVersion !== TEAM_CORE_DIGEST_VERSION) {
-      throw new Error(`TEAM_DIGEST_VERSION_UNSUPPORTED: expected v${TEAM_CORE_DIGEST_VERSION}, received v${declaredDigestVersion}. Rebuild and simulate this TeamVersion before release.`);
+      throw new Error(`TEAM_DIGEST_VERSION_UNSUPPORTED: expected v${TEAM_CORE_DIGEST_VERSION}, received v${declaredDigestVersion}. Rebuild and simulate this TeamVersion before training.`);
     }
-    const manifestPaths = bundle.releaseManifest?.artifactScope || bundle.team.releaseManifest?.artifactScope || [];
+    const manifestPaths = bundle.packageManifest?.executableAssets || [];
     if (!Array.isArray(manifestPaths) || manifestPaths.some((path) => {
       if (typeof path !== "string" || path.startsWith("/") || path.includes("\\") || path.includes("\0")) return true;
       return path.split("/").some((part) => part === ".." || part === "");
-    })) throw new Error("PROJECT_IMPORT_INVALID: unsafe artifact path.");
+    })) throw new Error("PROJECT_IMPORT_INVALID: unsafe executable asset path.");
     if (bundle.team.systemSource.length > 2 * 1024 * 1024) throw new Error("TEAM_IMPORT_INVALID: system source is too large.");
 
     const calculatedPackageDigest = packageIntegrity.computePackageDigest(bundle);

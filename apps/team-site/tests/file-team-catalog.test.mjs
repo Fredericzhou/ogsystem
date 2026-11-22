@@ -16,9 +16,9 @@ test("file Team Catalog projects released teams, built-ins, factory drafts, and 
     if (systemSource !== undefined) await writeFile(join(workdir, "system.mmd"), systemSource, "utf8");
   };
   try {
-    await writeProject("released-team", { name: "Released Team", teamVersionStatus: "released", projectStatus: "confirmed", projectDigest: "digest", confirmedAt: "2026-01-01", teamId: "team-a", teamVersionNumber: 1, category: "Product" });
+    await writeProject("released-team", { name: "Released Team", teamVersionStatus: "trained", projectStatus: "confirmed", projectDigest: "digest", confirmedAt: "2026-01-01", teamId: "team-a", teamVersionNumber: 1, category: "Product" });
     await writeProject("legacy-released-team", { name: "Legacy Released Team", projectStatus: "confirmed", projectDigest: "legacy-digest", confirmedAt: "2025-12-31", teamId: "legacy-root", teamVersionNumber: 1 });
-    await writeProject("software-team-v1", { name: "软件研发", teamName: "软件研发", source: "classic", caseId: "software-team", teamId: "software-team", teamVersionId: "software-team-v1", teamVersionNumber: 1, teamVersionStatus: "released", projectStatus: "confirmed", projectDigest: "builtin-digest", confirmedAt: "2026-01-01", systemSource: "flowchart TD\n" });
+    await writeProject("software-team-v1", { name: "软件研发", teamName: "软件研发", source: "classic", caseId: "software-team", teamId: "software-team", teamVersionId: "software-team-v1", teamVersionNumber: 1, teamVersionStatus: "trained", projectStatus: "confirmed", projectDigest: "builtin-digest", confirmedAt: "2026-01-01", systemSource: "flowchart TD\n" });
     await writeProject("stale-classic-template", { name: "Stale Template", source: "classic-template", caseId: "removed-case", teamId: "stale-classic-template", teamVersionId: "stale-classic-template", teamVersionStatus: "draft" });
     await writeProject("unsupported-team-ir", { name: "Unsupported Team IR", source: "team-ir-v2", teamId: "unsupported-team-ir", teamVersionId: "unsupported-team-ir", teamVersionStatus: "draft" });
     await writeProject("draft-team", { name: "Draft Team", teamVersionStatus: "draft", teamId: "team-b", teamVersionNumber: 2 });
@@ -37,9 +37,9 @@ test("file Team Catalog projects released teams, built-ins, factory drafts, and 
     assert.ok(repository.some((team) => team.projectId === "released-team" && team.teamVersionId === "released-team"));
     const legacyReleasedTeam = await catalog.getTeamVersion("legacy-released-team");
     assert.equal(legacyReleasedTeam.teamVersionStatus, "draft");
-    assert.equal(legacyReleasedTeam.releasedAt, null);
+    assert.equal(legacyReleasedTeam.trainedAt, null);
     const releasedTeam = await catalog.getTeamVersion("released-team");
-    assert.equal(releasedTeam.teamVersionStatus, "released");
+    assert.equal(releasedTeam.teamVersionStatus, "trained");
     assert.equal(Object.hasOwn(releasedTeam, "projectStatus"), false, "TeamVersion DTO must expose one lifecycle field");
     assert.equal(Object.hasOwn(releasedTeam, "confirmedAt"), false, "TeamVersion DTO must not expose legacy confirmation state");
     assert.ok(!repository.some((team) => ["draft-team", "archived-team", "project-workspace", "collaboration"].includes(team.projectId)));
@@ -72,7 +72,7 @@ test("file Team Catalog rejects a persisted TeamVersion ID that does not match i
   };
   try {
     const catalog = createFileTeamCatalog({ projectsRoot });
-    await writeProject("team-one", { name: "Team One", teamId: "team-one", teamVersionId: "elsewhere", teamVersionStatus: "released" });
+    await writeProject("team-one", { name: "Team One", teamId: "team-one", teamVersionId: "elsewhere", teamVersionStatus: "trained" });
     await assert.rejects(catalog.listTeamRepository({ includeUnreleased: true }), /does not match its workspace/);
   } finally {
     await rm(projectsRoot, { recursive: true, force: true });

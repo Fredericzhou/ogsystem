@@ -28,6 +28,7 @@ export function createRunQueryUseCases({ getProject, waitForActiveTaskWorker, ru
   if (!runQueryStore || typeof runQueryStore.readRunState !== "function"
     || typeof runQueryStore.readRunPlan !== "function"
     || typeof runQueryStore.readRunEvents !== "function"
+    || typeof runQueryStore.readRunEvidenceManifest !== "function"
     || typeof runQueryStore.readRunOwner !== "function") {
     throw new TypeError("Run query use cases require a Run query store.");
   }
@@ -111,6 +112,27 @@ export function createRunQueryUseCases({ getProject, waitForActiveTaskWorker, ru
         taskId: owner.taskId,
         runId,
         ...(await runQueryStore.readRunEvents(projectId, owner.taskId, runId, options))
+      };
+    },
+
+    async getProjectRunEvidenceManifest(projectId, taskId, runId) {
+      assertRunId(runId);
+      const project = await getProject(projectId);
+      const owner = findRunOwner(project, projectId, taskId, runId);
+      const persistedOwner = await runQueryStore.readRunOwner(projectId, owner.taskId, runId);
+      if (persistedOwner.taskNumber !== owner.taskNumber || persistedOwner.teamVersionId !== owner.teamVersionId
+        || persistedOwner.attemptNumber !== owner.attemptNumber
+        || (owner.teamCoreDigest && persistedOwner.teamCoreDigest !== owner.teamCoreDigest)
+        || (Number.isInteger(owner.teamDigestVersion) && persistedOwner.teamDigestVersion !== owner.teamDigestVersion)) {
+        throw new Error("RUN_NOT_FOUND: persisted Run owner does not match the Task.");
+      }
+      return {
+        runKind: "project_task",
+        projectId,
+        taskId,
+        runId,
+        teamVersionId: owner.teamVersionId,
+        evidenceManifest: await runQueryStore.readRunEvidenceManifest(projectId, owner.taskId, runId)
       };
     }
   });

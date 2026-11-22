@@ -39,7 +39,7 @@ function normalizeTeamMeta(meta, projectId) {
     teamVersionStatus,
     teamName: String(meta?.teamName || meta?.name || "New team"),
     parentTeamVersionId: meta?.parentTeamVersionId || undefined,
-    releasedAt: meta?.releasedAt || null,
+    trainedAt: meta?.trainedAt || null,
     archivedAt: meta?.archivedAt || null,
     ...(meta?.teamProjectId ? { teamProjectId: meta.teamProjectId } : {}),
     ...(typeof meta?.workspaceDir === "string" && meta.workspaceDir.trim() ? { workspaceDir: meta.workspaceDir.trim() } : {}),
@@ -55,7 +55,7 @@ function normalizeTeamMeta(meta, projectId) {
 }
 
 function projectStage(project, runs) {
-  if (project.teamVersionStatus !== "released") return "draft";
+  if (project.teamVersionStatus !== "trained") return "draft";
   if (runs.some((run) => ["running", "planning", "waiting_review", "paused"].includes(run.status))) return "running";
   return "idle";
 }
@@ -108,7 +108,7 @@ export function createFileTeamCatalog({ projectsRoot = resolve(process.env.OGS_S
       const hasV2Binding = await hasV2ExecutionBinding(join(root, entry.name));
       if (team.source === "team-factory" && !hasV2Binding) continue;
       if (team.source === "classic-template" && !hasV2Binding && !getCase(team.caseId)) continue;
-      if (!includeUnreleased && (team.teamVersionStatus !== "released" || team.archivedAt)) continue;
+      if (!includeUnreleased && (team.teamVersionStatus !== "trained" || team.archivedAt)) continue;
       const runIndex = await readJson(join(root, entry.name, ".ogs", "runs-index.json"), { runs: [] });
       const runs = Array.isArray(runIndex?.runs) ? runIndex.runs : [];
       storedTeams.push({ ...team, projectStage: projectStage(team, runs) });
@@ -119,7 +119,7 @@ export function createFileTeamCatalog({ projectsRoot = resolve(process.env.OGS_S
 
   async function listTeamFactory() {
     return (await listTeamRepository({ includeUnreleased: true, includeCollaboration: true })).filter((team) =>
-      !team.builtIn && team.teamVersionStatus !== "released" && team.teamVersionStatus !== "archived"
+      !team.builtIn && team.teamVersionStatus !== "trained" && team.teamVersionStatus !== "archived"
     );
   }
 

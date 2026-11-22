@@ -1,7 +1,7 @@
 import { assertCollaborationProject, assertProjectDeletionAllowed, assertProjectHasTeams, assertProjectTeamMutationAllowed } from "../domain/project.mjs";
-import { assertCanonicalTeamVersionId, assertReleasedTeamVersion, createMountedTeamRecord } from "../domain/team.mjs";
+import { assertCanonicalTeamVersionId, assertTrainedTeamVersion, createMountedTeamRecord } from "../domain/team.mjs";
 
-export function createCollaborationProjectUseCases({ projectStore, teamStore, computeProjectDefinitionDigest }) {
+export function createCollaborationProjectUseCases({ projectStore, teamStore, computeProjectDefinitionDigest, computeProjectAssetDigest, requireCurrentTeamVersion, now = () => new Date().toISOString() }) {
   if (typeof projectStore?.getProject !== "function"
     || typeof projectStore?.withProjectWriteLock !== "function"
     || typeof projectStore?.withCollaborationProjectNameLock !== "function"
@@ -20,6 +20,12 @@ export function createCollaborationProjectUseCases({ projectStore, teamStore, co
   if (typeof computeProjectDefinitionDigest !== "function") {
     throw new TypeError("Collaboration Project use cases require a definition digest function.");
   }
+  if (typeof computeProjectAssetDigest !== "function") {
+    throw new TypeError("Collaboration Project use cases require an asset digest function.");
+  }
+  if (typeof requireCurrentTeamVersion !== "function") {
+    throw new TypeError("Collaboration Project use cases require a TeamVersion freeze check.");
+  }
 
   async function resolveMountedTeams(teamVersionIds, previous = []) {
     assertProjectHasTeams(teamVersionIds);
@@ -29,7 +35,8 @@ export function createCollaborationProjectUseCases({ projectStore, teamStore, co
     for (const teamVersionId of requestedIds) {
       assertCanonicalTeamVersionId(teamVersionId);
       const team = await teamStore.getTeamVersion(teamVersionId);
-      assertReleasedTeamVersion(team);
+      assertTrainedTeamVersion(team);
+      await requireCurrentTeamVersion(team);
       mountedTeams.push(createMountedTeamRecord(team, previousById.get(team.teamVersionId || team.projectId)));
     }
     return mountedTeams;
@@ -90,6 +97,22 @@ export function createCollaborationProjectUseCases({ projectStore, teamStore, co
         projectDefinitionDigest: project.projectDefinitionDigest,
         mountedTeams: project.mountedTeams || []
       };
+    },
+
+    async confirmCollaborationProject(projectId) {
+      return projectStore.withProjectWriteLock(projectId, "project-confirm", async () => {
+        const project = await projectStore.getProject(projectId);
+        assertCollaborationProject(project);
+        const projectDigest = await computeProjectAssetDigest(project.workdir);
+        const confirmedAt = now();
+        return projectStore.saveProjectMetadata(projectId, {
+          ...project,
+          projectStatus: "confirmed",
+          projectDigest,
+          confirmedAt,
+          updatedAt: confirmedAt
+        });
+      });
     },
 
     async replaceProjectTeams(projectId, teamVersionIds = []) {

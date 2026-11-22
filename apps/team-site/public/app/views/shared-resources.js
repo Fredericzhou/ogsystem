@@ -7,14 +7,14 @@ const labels = {
     models: ["模型目录", "共享执行底座发现的模型与可运行状态。模型凭据和连通性由底座管理。"],
     data: ["共享数据", "发布并核验不可变的数据集版本。项目 Materials 与此目录分开保存；数据集不会自动注入任务或仿真。"],
     tools: ["工具目录", "登记团队可引用的工具能力。密钥只接受凭据引用，不在此处保存明文。"],
-    storage: ["存储目标", "登记受控的外部存储目标。项目成果与运行证据仍由 Projects 自己持有。"],
+    storage: ["存储目标", "登记受控的外部存储目标。项目协作产物与运行证据仍由项目自己持有。"],
     roles: ["角色仓库", "按分类浏览复用标准角色、Prompt 与接口契约。"]
   },
   en: {
     models: ["Model catalog", "Models discovered by the shared execution base, with current availability."],
     data: ["Shared data", "Publish and verify immutable dataset versions. Project Materials remain separate; datasets are not automatically injected into tasks or simulations."],
     tools: ["Tool catalog", "Register tool capabilities that teams may reference. Store credential references, never plaintext secrets."],
-    storage: ["Storage targets", "Register controlled external storage targets. Project deliverables and run evidence remain Project-owned."],
+    storage: ["Storage targets", "Register controlled external storage targets. Collaboration outputs and run evidence remain Project-owned."],
     roles: ["Role repository", "Browse and reuse standard roles, prompts, and interface contracts by category."]
   }
 };

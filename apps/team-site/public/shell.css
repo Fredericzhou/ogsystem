@@ -425,6 +425,10 @@ body { min-width: 0; }
 #projects-view .page-frame-body { display: grid; grid-template-rows: minmax(0, 1fr); }
 #collaboration-project-grid { align-content: start; }
 #collaboration-project-grid > .empty-projects { grid-column: 1 / -1; }
+#projects-view.page-content[data-template="A"] { overflow-x: hidden; overflow-y: auto; }
+#projects-view .page-frame { align-content: start; height: auto; grid-template-rows: auto auto; min-height: 100%; overflow: visible; }
+#projects-view .page-frame-body { display: block; min-height: 0; overflow: visible; }
+#projects-view #collaboration-project-grid { height: auto; overflow: visible; }
 #project-workspace-view .project-detail-sections {
   display: grid;
   gap: 16px;
@@ -442,7 +446,7 @@ body { min-width: 0; }
     grid-template-areas:
       "info tasks"
       "resources tasks"
-      "deliverables tasks";
+      "releases tasks";
     align-items: stretch;
     min-height: 0;
     overflow: hidden;
@@ -450,7 +454,7 @@ body { min-width: 0; }
   #project-workspace-view .project-detail-sections > .project-panel { min-height: 0; overflow: auto; overscroll-behavior: contain; }
   #project-workspace-view #project-info-panel { grid-area: info; }
   #project-workspace-view #project-resources-panel { grid-area: resources; }
-  #project-workspace-view #project-deliverables-panel { grid-area: deliverables; }
+  #project-workspace-view #project-releases-panel { grid-area: releases; }
   #project-workspace-view #project-run-panel { grid-area: tasks; }
 }
 @media (max-width: 767px) {
@@ -465,6 +469,10 @@ body { min-width: 0; }
   .repository-actions > a { min-height: 44px; }
   :is(.studio-repository-toolbar, .project-library-toolbar) { align-items: stretch; flex-direction: column; gap: 9px; }
   :is(.studio-repository-toolbar, .project-library-toolbar) .project-library-filters { display: grid !important; grid-template-columns: minmax(0, 1fr) minmax(130px, .55fr) auto; }
+  #projects-view .project-category-bar { align-items: stretch; flex-direction: column; }
+  #projects-view .project-category-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  #projects-view .project-category-button { flex: 0 0 auto; }
+  #projects-view .project-team-filter select { max-width: none; width: 100%; }
   .main-area .page-content .task-record-actions .text-button { min-height: 44px; padding: 8px 11px; }
   .main-area .page-content .task-record-actions .task-delete-button { min-height: 44px; min-width: 44px; padding: 8px; }
   .page-frame-header .primary-button { min-height: 44px; padding: 0 11px; white-space: nowrap; }
@@ -482,12 +490,18 @@ body { min-width: 0; }
   .studio-graph-toolbar button,
   .studio-graph-toolbar select { min-height: 44px; min-width: 44px; padding: 6px 10px; }
   .page-frame[data-template="C"] .page-frame-body { overflow: auto; }
-  #project-workspace-view .page-frame[data-template="B"] .page-frame-body { overflow: auto; }
+  #project-workspace-view.page-content[data-template="B"] { overflow: auto; overscroll-behavior: contain; }
   #project-workspace-view .project-detail-sections { overflow: visible; }
   #project-workspace-view .project-detail-sections > .project-panel { overflow: visible; }
   .studio-run-split { display: block; height: auto; }
-  .studio-run-history { display: none; }
+  .studio-run-history { border-bottom: 1px solid var(--line); border-right: 0; display: block; max-height: 320px; overflow: auto; padding: 0 0 12px; }
+  .studio-run-split.is-history-collapsed > .studio-run-history { display: none; }
 }
+@media (max-width: 900px) {
+  #project-workspace-view > .page-heading { align-items: flex-start; flex-direction: column; gap: 8px; }
+  #project-workspace-view > .page-heading > .project-status { align-self: flex-start; border-radius: 6px; flex: 0 0 auto; line-height: 1.4; padding: 4px 8px; white-space: nowrap; }
+}
+#project-workspace-view > .page-heading > .project-status { flex: 0 0 auto; white-space: nowrap; }
 @media (pointer: coarse) {
   .main-area .page-content :is(button, a[href], input:not([type="checkbox"]):not([type="radio"]), select, textarea, [role="button"]) { min-height: 44px; }
   .main-area .page-content .task-record-actions .text-button { min-height: 44px; padding: 8px 11px; }
@@ -526,3 +540,11 @@ body { min-width: 0; }
   .page-frame-header .primary-button { min-height: 44px; }
   .page-frame .primary-button { min-height: 44px; }
 }
+.accuracy-review-evidence { background: var(--canvas); border: 1px solid var(--line); border-radius: 6px; display: grid; gap: 8px; margin: 12px 0; padding: 12px; }
+.accuracy-review-evidence .field { align-items: center; display: flex; flex-wrap: wrap; gap: 8px; margin: 0; min-width: 0; }
+.accuracy-review-evidence .field input { flex: 0 0 auto; }
+.accuracy-review-evidence .field > span:not(.accuracy-review-links) { min-width: 0; overflow-wrap: anywhere; }
+.accuracy-review-links { align-items: center; display: flex; flex-wrap: wrap; gap: 2px 8px; margin-left: auto; }
+.accuracy-review-links .text-button { min-height: 30px; padding: 4px 6px; }
+.accuracy-review-digest { overflow-wrap: anywhere; }
+.accuracy-review-digest code { font-size: 10px; word-break: break-all; }

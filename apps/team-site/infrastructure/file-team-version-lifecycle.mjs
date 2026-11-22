@@ -19,7 +19,7 @@ export function createFileTeamVersionLifecycle({ projectsRoot = resolve(process.
   if (typeof getTeamVersion !== "function" || typeof listProjects !== "function" || typeof removeProjectData !== "function") throw new TypeError("File TeamVersion lifecycle requires TeamVersion read, list, and delete operations.");
   const root = resolve(projectsRoot);
 
-  async function archiveReleasedTeamVersion(teamVersionId) {
+  async function archiveTrainedTeamVersion(teamVersionId) {
     if (!/^[a-z0-9][a-z0-9-]{0,80}$/.test(String(teamVersionId || ""))) throw new Error("Invalid project id.");
     const workdir = join(root, teamVersionId);
     return acquireProjectWriteLock(workdir, "team-version-archive").then(async (lock) => {
@@ -28,7 +28,7 @@ export function createFileTeamVersionLifecycle({ projectsRoot = resolve(process.
         const meta = await readJson(metaPath);
         if (!meta) throw new Error("Project not found.");
         if (meta.teamProjectId) throw new Error("TEAM_VERSION_INVALID: project workspaces cannot be archived as team versions.");
-        if (meta.teamVersionStatus !== "released") throw new Error("TEAM_VERSION_NOT_RELEASED: only a released team version can be archived.");
+        if (meta.teamVersionStatus !== "trained") throw new Error("TEAM_VERSION_NOT_TRAINED: only a trained team version can be archived.");
         const now = new Date().toISOString();
         const next = {
           ...meta,
@@ -59,7 +59,7 @@ export function createFileTeamVersionLifecycle({ projectsRoot = resolve(process.
             teamDigestVersion: Number.isInteger(next.teamDigestVersion) ? next.teamDigestVersion : null,
             createdAt: next.createdAt,
             updatedAt: next.updatedAt,
-            releasedAt: next.releasedAt || null,
+            trainedAt: next.trainedAt || null,
             archivedAt: next.archivedAt
           });
         }
@@ -75,5 +75,5 @@ export function createFileTeamVersionLifecycle({ projectsRoot = resolve(process.
     return { deletedTeamVersionIds: [...teamVersionIds] };
   }
 
-  return Object.freeze({ archiveReleasedTeamVersion, listProjects, deleteTeamVersions });
+  return Object.freeze({ archiveTrainedTeamVersion, listProjects, deleteTeamVersions });
 }

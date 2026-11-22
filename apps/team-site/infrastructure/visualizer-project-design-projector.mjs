@@ -15,6 +15,8 @@ export function createVisualizerProjectDesignProjector({
   parseSystem = parseSystemFromMermaidSource,
   importAuthoring = importMermaidToAuthoring,
   loadAuthoringDraft = loadStudioAuthoringDraft,
+  loadBindings = loadExecutionBindingsV2,
+  loadSemanticConfig = loadStudioSemanticConfig,
   serializeAuthoring = serializeAuthoringToMermaid,
   buildViewModel = buildGraphViewModel,
   toCanvas = authoringToCanvasDocument
@@ -33,7 +35,7 @@ export function createVisualizerProjectDesignProjector({
       }
       const parsedSystem = parseSystem(systemSource);
       const design = await readJson(join(project.workdir, "system.design.json"), read);
-      const executionBindings = await loadExecutionBindingsV2(join(project.workdir, ".ogs", "execution-bindings.json"));
+      const executionBindings = await loadBindings(join(project.workdir, ".ogs", "execution-bindings.json"));
       const roleDisplayNames = new Map(
         Object.entries(design?.seats && typeof design.seats === "object" ? design.seats : {})
           .flatMap(([roleId, seat]) => {
@@ -42,7 +44,7 @@ export function createVisualizerProjectDesignProjector({
           })
       );
       const savedDraft = await loadAuthoringDraft(project.workdir);
-      const semanticConfig = await loadStudioSemanticConfig(project.workdir);
+      const semanticConfig = await loadSemanticConfig(project.workdir);
       const canonicalAuthoring = importAuthoring({
         workdir: project.workdir,
         systemPath: "system.mmd",
@@ -52,7 +54,7 @@ export function createVisualizerProjectDesignProjector({
         semanticLoops: semanticConfig.loops
       });
       let authoring = canonicalAuthoring;
-      if (savedDraft?.authoring && savedDraft.authoring.version === 1) {
+      if (savedDraft?.authoring?.ogsContractVersion === 2 && savedDraft.authoring.version === 2) {
         try {
           // Keep professional settings and layout only when the saved draft belongs to this topology.
           if (serializeAuthoring(savedDraft.authoring) === serializeAuthoring(canonicalAuthoring)) {

@@ -22,6 +22,8 @@ export function createRunPoller({
   let timer = null;
   let version = 0;
   let activeController = null;
+  let eventCursor = 0;
+  const collectedEvents = [];
 
   const stop = () => {
     stopped = true;
@@ -47,15 +49,26 @@ export function createRunPoller({
         error.status = runResponse.status;
         throw error;
       }
-      const eventsResponse = await request(`${base}/events?limit=20`, { signal: controller.signal });
-      const events = await eventsResponse.json();
-      if (stopped || pollVersion !== version || !isCurrent()) return;
-      if (!eventsResponse.ok) {
-        const error = new Error(events.error || "无法读取运行事件");
-        error.status = eventsResponse.status;
-        throw error;
-      }
-      onUpdate({ run, events });
+      let hasFullPage;
+      do {
+        const eventsResponse = await request(`${base}/events?cursor=${eventCursor}&limit=1000`, { signal: controller.signal });
+        const events = await eventsResponse.json();
+        if (stopped || pollVersion !== version || !isCurrent()) return;
+        if (!eventsResponse.ok) {
+          const error = new Error(events.error || "无法读取运行事件");
+          error.status = eventsResponse.status;
+          throw error;
+        }
+        const pageEvents = Array.isArray(events.events) ? events.events : [];
+        collectedEvents.push(...pageEvents);
+        const nextCursor = Number(events.nextCursor);
+        const lastEventCursor = Number(pageEvents.at(-1)?.cursor);
+        eventCursor = Number.isSafeInteger(nextCursor) && nextCursor > eventCursor
+          ? nextCursor
+          : Number.isSafeInteger(lastEventCursor) ? lastEventCursor + 1 : eventCursor;
+        hasFullPage = pageEvents.length === 1000;
+      } while (hasFullPage);
+      onUpdate({ run, events: { events: collectedEvents, nextCursor: eventCursor } });
       if (!isTerminalRunStatus(run.state?.status || run.status)) timer = setTimeout(poll, intervalMs);
     } catch (error) {
       if (stopped || pollVersion !== version || !isCurrent() || isAbortError(error)) return;

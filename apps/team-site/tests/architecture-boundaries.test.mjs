@@ -33,6 +33,28 @@ test("Studio Human Review authoring keeps Runtime timeout actions out of Role au
   assert.doesNotMatch(source, /Approve and continue[^\n]*pause:\s*["']Pause/);
 });
 
+test("Studio evidence exposes Materialization paths without legacy content-reference names", async () => {
+  const [route, useCases, view] = await Promise.all([
+    readFile(new URL("api/studio-simulation-routes.mjs", root), "utf8"),
+    readFile(new URL("application/studio-simulation-use-cases.mjs", root), "utf8"),
+    readFile(new URL("public/app/views/app.js", root), "utf8")
+  ]);
+  for (const [name, source] of [["route", route], ["use case", useCases], ["view", view]]) {
+    assert.doesNotMatch(source, /seal-manifest|sealed\//, `${name} must not expose legacy sealed evidence paths`);
+    assert.doesNotMatch(source, /ArtifactReference|artifactRefs/, `${name} must not expose legacy content-reference fields`);
+  }
+  assert.doesNotMatch(useCases, /legacy artifactsUrl/, "legacy field names must not cross the public error boundary");
+  assert.doesNotMatch(await readFile(new URL("infrastructure/file-studio-simulation-store.mjs", root), "utf8"), /STUDIO_SIMULATION_ARTIFACT_/, "Simulation API errors must use evidence or materialization terms");
+  assert.match(route, /materialization\//);
+  assert.match(view, /materialized\s*===\s*true/);
+});
+
+test("v2 Runtime state carries WorkspaceRef, not legacy artifact identity fields", async () => {
+  const types = await readFile(new URL("../../src/runtime/types.ts", root), "utf8");
+  assert.doesNotMatch(types, /ArtifactReference|artifactRef|artifactRefs|DeclaredRoleArtifact|VerifiedArtifactManifest|artifactId/);
+  assert.match(types, /workspaceRefs\?:\s*WorkspaceRef\[\]/);
+});
+
 test("Application modules do not depend on HTTP, filesystem, or runtime adapters", async () => {
   const files = await sourceFiles("application/");
   for (const { name, source } of files) {
@@ -59,13 +81,13 @@ test("resource API routes do not import storage, runtime, or filesystem modules"
 test("migrated Project, Package, Team, and Task lifecycle use cases have no repository facades", async () => {
   const source = await readFile(new URL("infrastructure/file-project-store.mjs", root), "utf8");
   assert.doesNotMatch(source, /from\s+["']\.\/application\//, "the repository must not compose Application use cases");
-  assert.doesNotMatch(source, /export\s+async\s+function\s+(?:updateProject|invalidateProjectConfirmation|previewProjectBundle|listProjectTeams|replaceProjectTeams|createCollaborationProject|listCollaborationProjects|createProjectTask|startProjectTask|retryProjectTask|controlProjectTask|controlProjectRun|reviewProjectTask|deleteProjectTask|createProjectWorkspace|createClassicTeamProject|provisionBuiltInTeamVersions|forkTeamVersion|releaseTeamVersion|confirmProjectTeam|addProjectMaterials|addProjectMaterial|startProjectRun)\b/);
+    assert.doesNotMatch(source, /export\s+async\s+function\s+(?:updateProject|invalidateProjectConfirmation|previewProjectBundle|listProjectTeams|replaceProjectTeams|createCollaborationProject|listCollaborationProjects|createProjectTask|startProjectTask|retryProjectTask|controlProjectTask|controlProjectRun|reviewProjectTask|deleteProjectTask|createProjectWorkspace|createClassicTeamProject|provisionBuiltInTeamVersions|forkTeamVersion|trainTeamVersion|confirmProjectTeam|addProjectMaterials|addProjectMaterial|startProjectRun)\b/);
 });
 
 test("Project file store performs persistence only and contains no application or external adapter orchestration", async () => {
   const source = await readFile(new URL("infrastructure/file-project-store.mjs", root), "utf8");
   assert.doesNotMatch(source, /function projectStage\b|projectStage\s*:/);
-  assert.doesNotMatch(source, /TEAM_PACKAGE_MODE|team-v2|artifactScope|bundle\.(?:packageDigest|teamCoreDigest)|credential field is not accepted|TEAM_IMPORT_DIGEST_MISMATCH/,
+  assert.doesNotMatch(source, /TEAM_PACKAGE_MODE|team-v2|executableAssets|bundle\.(?:packageDigest|teamCoreDigest)|credential field is not accepted|TEAM_IMPORT_DIGEST_MISMATCH/,
     "Team Package schema, digest, and credential validation belong outside the file store");
   assert.doesNotMatch(source, /saveProjectSystemSource|validateProjectSystemSource/,
     "Visualizer design persistence and validation belong behind the design application port");
