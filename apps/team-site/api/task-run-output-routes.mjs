@@ -27,12 +27,15 @@ export async function handleTaskRunOutputRoutes({ request, response, url, sendJs
       }
       const content = Buffer.isBuffer(result.content) ? result.content : Buffer.from(result.content || "");
       const filename = (filePath.split("/").at(-1) || "file").replace(/[\"\r\n]/g, "") || "file";
+      const mediaType = String(result.mediaType || "").toLowerCase().split(";", 1)[0].trim();
+      const isSvg = mediaType === "image/svg+xml" || /\.svg$/i.test(filename);
       response.writeHead(200, {
         "content-type": result.mediaType || "application/octet-stream",
         "content-length": String(content.length),
         "content-disposition": `${isDownload ? "attachment" : "inline"}; filename="${filename}"`,
         "cache-control": "no-store",
-        "x-content-type-options": "nosniff"
+        "x-content-type-options": "nosniff",
+        ...(isSvg ? { "content-security-policy": "default-src 'none'; script-src 'none'; object-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'" } : {})
       });
       response.end(content);
     } else {
