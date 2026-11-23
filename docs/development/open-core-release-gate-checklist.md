@@ -12,8 +12,8 @@
 | **Gate 1: 物理许可证与法律条款** | ❌ 未通过 | 仓库根目录仍缺少物理 `LICENSE`、`NOTICE` 文件，根 `package.json` 缺少 `license` 显式声明。 |
 | **Gate 2: Visualizer 细粒度解耦** | ❌ 未通过 | 导出脚本草案仍包含整个 `src/visualizer/` 目录，Studio 拖拽编排、自然语言转图与商业控制逻辑尚未做物理分离。 |
 | **Gate 3: Clean-Room 隔离复现** | ❌ 未通过 | 尚无脱离本地环境的独立无缓存执行证据（独立环境安装、构建、测试与离线验算尚未由 CI 自动化验证）。 |
-| **Gate 4: 运行证据与数据脱敏** | ❌ 未通过 | 证据目录中仍可检索到 `/Users/fred/...` 本机绝对路径、`127.0.0.1` 内网地址、端口号与 Session ID。 |
-| **Gate 5: 论文链接真实化** | ⚠️ 部分通过 | 论文占位符（`your-username`、`zenodo.xxxxxx`）已清除并修正为审稿期双盲声明，但真实公开仓库和 Zenodo 永久 DOI 尚未创建。 |
+| **Gate 4: 运行证据与数据脱敏** | ❌ 未通过 | 证据目录中仍可检索到 `/Users/fred/...` 本机绝对路径、`127.0.0.1` 本地回环地址、端口号与 Session ID。 |
+| **Gate 5: 论文链接真实化** | ⚠️ 部分通过 | 论文占位符（如组织/仓库占位符、未分配的 Zenodo DOI 记录号等）已清除并修正为审稿期双盲声明，但真实公开仓库和 Zenodo 永久 DOI 尚未创建。 |
 | **Gate 6: 评测数据分级与保密** | ⚠️ 规则确立 / 未隔离 | 已在文档中确立公开 Benchmark 与 Hidden Tests 隔离规则，但代码库尚未形成物理分离的独立测试包。 |
 | **Gate 7: 严格单向发布流水线** | ❌ 尚未落地 | 现有 CI 仍为普通单仓测试流水线，尚未开发包含路径白名单、自动化脱敏、构建门禁与自动推送的单向发布流水线。 |
 | **Gate 8: 依赖合规与 SBOM 清单** | ❌ 尚未落地 | 尚无第三方依赖许可证扫描报告、SBOM 物料清单或第三方致谢 NOTICE 文件。 |
@@ -60,13 +60,13 @@ Open-Core 分层架构旨在同时满足**学术严谨可复现（Academic Repro
 - [ ] **物理路径脱敏**：
   - 扫描 `docs/development/evidence/` 及所有示例日志，彻底剥离本机物理路径（如 `/Users/fred/...`），替换为标准相对路径或 `/workspace/...`；
 - [ ] **网络与凭据脱敏**：
-  - 清洗内部开发 IP（如 `127.0.0.1:4173`、局域网 IP）、内网端口与临时测试 Session ID；
+  - 清洗本地开发 IP（如 `127.0.0.1:4173` 等本地回环地址、局域网 IP）、开发端口与临时测试 Session ID；
   - 确认无任何真实的商业大模型 API Key、网关 Token 或私有业务请求明文。
 - [ ] **Commit 历史清理**：导出的 Git 历史中不得包含包含敏感信息的旧 commit 节点。
 
 ### Gate 5: 论文链接真实化与消除占位符 (Real Repository & Zenodo DOI upon Publication)
 - [ ] **消除过度承诺与虚假链接**：
-  - 文稿中严禁出现 `your-username/ogsystem-core` 或 `10.5281/zenodo.xxxxxx` 等虚假/占位符链接；
+  - 文稿中严禁出现组织/仓库占位符（如 `<org>/<repo>`）或未分配的 Zenodo DOI 记录号（如 `10.5281/zenodo.<placeholder>`）等占位符链接；
 - [ ] **分阶段规范表述**：
   - **预印本 / 同行评审阶段**：严格使用标准双盲规范表述（*“Anonymized replication package provided during review; code and Zenodo DOI will be deposited upon formal publication”*）；
   - **终稿录用阶段**：仅在公开仓库真实创建、Zenodo 实测打通生成永久 DOI 后，方可一次性回填真实地址。
