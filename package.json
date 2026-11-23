@@ -57,6 +57,8 @@
     "smoke:package-install:pnpm": "node scripts/package-install-smoke.mjs pnpm",
     "smoke:windows-lifecycle": "node scripts/windows-lifecycle-smoke.mjs",
     "bench:runtime-replay": "pnpm build && node tests/benchmarks/runtime-replay-benchmark.mjs",
+    "reproduce:paper-evidence": "node scripts/reproduce-paper-results.mjs",
+    "export:open-core": "node scripts/export-open-source-core.mjs",
     "test:examples": "pnpm exec tsx src/runtime/cli.ts run start --ogs-dir examples/target-model-binding --system examples/target-model-binding-system.mmd --input \"ci example\" --dry-run && pnpm exec tsx src/runtime/cli.ts run start --ogs-dir examples/langgraph-debate-current --system examples/langgraph-debate-current/system.mmd --laws examples/langgraph-debate-current/laws.json --user-profile examples/langgraph-debate-current/user-profile.json --input \"ci graph example\" --dry-run && pnpm exec tsx src/runtime/cli.ts run start --ogs-dir examples/medical-quorum-consultation --system examples/medical-quorum-consultation/system.mmd --laws examples/medical-quorum-consultation/laws.json --user-profile examples/medical-quorum-consultation/user-profile.json --input \"ci medical quorum\" --dry-run",
     "test:doctor": "pnpm run run:doctor --system examples/target-model-binding-system.mmd --laws .ogs/laws.json",
     "run:adapter": "tsx src/runtime/cli.ts",
