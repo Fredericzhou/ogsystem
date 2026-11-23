@@ -1,7 +1,7 @@
 # OGSystem Open-Core 正式发布门禁清单 (Open-Core Release Gate Checklist)
 
-> **当前状态 / Status:** Open-Core 架构与发布门禁设计已完成，发布实施仍处于 Gate 执行阶段，**尚未达到公开发布条件**。  
-> **纪律红线 / Invariant:** 严禁在当前阶段使用“已合规”、“门禁全量通过”或“可发布”等过度表述。在下述 8 项发布门禁逐一实测通过并签收前，**严禁向公共 GitHub 推送开源仓库、严禁公开发布 Docker 镜像、严禁申请并锁定 Zenodo DOI**。
+> **当前状态 / Status:** Open-Core 架构与发布门禁设计已完成，当前优先交付论文审稿用的匿名复现包；正式 Open-Core GA 仍未达到发布条件。
+> **纪律红线 / Invariant:** 匿名复现包与正式 Open-Core GA 使用不同门槛。在 GA 的 8 项发布门禁逐一实测通过并签收前，**严禁向公共 GitHub 推送正式开源仓库、严禁公开发布 Docker 镜像、严禁申请并锁定正式 Zenodo DOI**。
 
 ---
 
@@ -17,6 +17,28 @@
 | **Gate 6: 评测数据分级与保密** | ⚠️ 规则确立 / 未隔离 | 已在文档中确立公开 Benchmark 与 Hidden Tests 隔离规则，但代码库尚未形成物理分离的独立测试包。 |
 | **Gate 7: 严格单向发布流水线** | ❌ 尚未落地 | 现有 CI 仍为普通单仓测试流水线，尚未开发包含路径白名单、自动化脱敏、构建门禁与自动推送的单向发布流水线。 |
 | **Gate 8: 依赖合规与 SBOM 清单** | ❌ 尚未落地 | 尚无第三方依赖许可证扫描报告、SBOM 物料清单或第三方致谢 NOTICE 文件。 |
+
+---
+
+## 分阶段交付策略 (Two-Stage Delivery)
+
+### 阶段 A：匿名论文复现包 (Minimum Anonymous Artifact)
+
+阶段 A 的目标是让审稿人能够复核论文核心结论，不承担正式商业发布的全部运营和自动化要求。必须完成：
+
+- 固定公开范围：只包含论文所需的 Runtime、只读审计能力、公开 Benchmark、示例和复现脚本；
+- 排除 Team Site、Studio 编排、商业角色和 Hidden Tests；
+- 清除本机路径、Session、凭据、业务数据和其他内部运行信息；
+- 在全新临时目录完成一次安装、构建、CLI dry-run、公开测试和论文复现脚本；
+- 提供 Apache-2.0 许可证文本和第三方依赖说明，确保匿名包本身具备明确的使用授权。
+
+阶段 A 可以使用匿名压缩包或受控 Artifact 链接，不要求公开 GitHub 仓库、Docker 镜像、Zenodo DOI、自动推送流水线或完整 SBOM。
+
+### 阶段 B：正式 Open-Core GA
+
+阶段 B 才执行 Gate 1 至 Gate 8 的完整要求，包括 Visualizer 物理拆分、单向发布流水线、完整 SBOM、多平台 CI、Docker 镜像、公开仓库和 Zenodo DOI。阶段 A 的通过不代表阶段 B 已通过。
+
+**当前执行目标：先完成阶段 A；阶段 B 保持为正式录用后的发布计划。**
 
 ---
 
