@@ -37,6 +37,38 @@ LangGraph / 多角色 Agent / Git Worktree   V2 单 Project Workspace 状态协�
 四层架构、适配器接线与验证结果属于工程实现证据，不单独构成学术创新主张。
 ```
 
+## 分层开源架构与可复现性边界 (Tiered Open-Source Architecture & Reproducibility)
+
+为平衡学术严谨性（顶级期刊 SoftwareX 与会议可复现性要求）与商业工程壁垒，本项目采用 **Open-Core 分层开源体系**：
+
+### 1. 公开开源核心（Open-Source Core: Apache-2.0）
+涵盖支撑论文核心学术主张与全部形式化证明的运行时与复现包：
+- **形式化契约与核心状态机引擎 (`src/runtime/`)**：责任席位 EFSM/LTS 转移代数、Context Map 字段级投影、单一 Git+LFS Workspace 隔离 Worktree 管理器、4 值 Join 语义演算、expected-head CAS 状态协议与 WAL 记录器。
+- **轻量可观测性审计工具 (`src/visualizer/`)**：用于审稿人与审计员对单个 Run 轨迹、Mermaid/X6 拓扑图、业务事件流与决策点进行只读深度审查。
+- **论文评测与可复现套件 (`benchmarks/`, `scripts/reproduce-paper-results.mjs`)**：提供零 API 消耗的一键离线数据验算脚本、代表性运行记录、隐藏测试沙箱与 Docker 容器定义。
+- **论文基础案例集 (`examples/`)**：包含计算器、辩论、咨询等论文引用基准。
+
+### 2. 商业与企业应用层（Proprietary Commercial Layer: 保留所有权利）
+以下组件属于上层商业协作与特定领域资产，不属于论文核心协议依赖，保持私有：
+- **Team Site 协同工作台 (`apps/team-site/`)**：多项目协作、任务分配面板、局域网 (LAN) 共享服务、可视化团队编排 Studio 前端。
+- **商业专有角色包 (`og-roles/` 中绝大多数非基准角色)**：特定行业垂直领域的 Agent 模板与专有资产。
+- **企业级中间件与私有连接器**：企业 IAM/SSO 鉴权、专有私有模型安全网关。
+
+### 3. 审稿人离线一键复现指令
+审稿人无需商业大模型 API Key，亦无需安装 Team Site，仅需运行以下命令即可完成数据验算与轨迹探查：
+- **复算论文全部表格与提交凭据（耗时 < 5 秒）**：
+  ```bash
+  pnpm run reproduce:paper-evidence
+  ```
+- **交互式探查单次运行执行轨迹与拓扑图**：
+  ```bash
+  pnpm run run:visualizer -- --ogs-dir .
+  ```
+- **验证公开开源核心导出边界（零 Team Site 依赖）**：
+  ```bash
+  pnpm run export:open-core -- --dry-run
+  ```
+
 ## 2026-11-19 V2 工程增补与证据边界
 
 > **文档边界：** 本论文和研究材料以 Contract Set v2 为当前架构基线。四层产品架构是

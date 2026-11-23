@@ -4,7 +4,7 @@
 **作者身份/单位：** 独立研究者（Independent Researcher），[省份/城市]，中国  
 **联系邮箱：** [your-email@domain.com]  
 **ORCID:** [https://orcid.org/0009-XXXX-XXXX-XXXX]  
-**开源代码库与基准测试:** [https://github.com/your-username/ogsystem]
+**开源代码库与基准测试:** [https://github.com/your-username/ogsystem-core]（内核与可复现套件遵循 Apache-2.0 许可证开源；上层商业协作工作台与专有角色资产保持私有）
 
 ---
 
@@ -441,6 +441,14 @@ reference，merge/Release 证据和可能的部分外部生效状态写入 Run�
 ### 8. 结论与工程展望
 
 OGSystem 将既有状态机、契约、持久化执行和版本控制机制用于多角色协作项目，并以四层产品架构和单一文件型 Git/LFS Workspace 连接责任、执行、证据与发布状态。Worktree 提供基于提交快照的隔离工作视图，Framework 管理的状态变更用于维持一致性并支持恢复和回退。现有运行记录覆盖软件开发、管理咨询和结构化辩论；这支持文件型多角色协作的工程可行性描述，但不等于对所有办公或社会协作场景完成验证。相对先行系统的学术新颖性仍需扩大文献检索和同条件比较。未来工作包括按第 7.6 节和双语实验方案开展分场景预注册对照实验；交付质量、证据支持度、成本与恢复价值在取得数据前不作效果结论。
+
+---
+
+### 软件与数据可用性声明 (Software and Data Availability)
+
+本文报告的形式化责任契约、EFSM 运行时执行引擎、Context Map 投影规范、Git/LFS WorkspaceRef 与 Join/CAS 状态协议，以及完整的学术可复现性套件（包括离线证据验算脚本、原始 `events.ndjson` 轨迹、任务验收评测套件和 Docker 镜像定义）均基于 Apache-2.0 许可证在公开开源仓库开放（代码库：`https://github.com/your-username/ogsystem-core`，Zenodo 永久归档 DOI: `10.5281/zenodo.xxxxxx`）。
+
+任何研究人员均可通过仓库内置的 `pnpm run reproduce:paper-evidence` 脚本，在**无需任何外部商业大模型 API 凭据与成本**的前提下，离线校验并复算本文所有表格（Table 1, Table 2, Table 3）与真实运行凭据指纹（SHA-256 Digest）。面向终端团队的商业化协作工作台（Team Site）与专有行业角色资产属于企业应用层投影，按独立商业协议保留；该部分的闭源不影响本文核心协议与实证结果的独立复现与验证。
 
 ---
 

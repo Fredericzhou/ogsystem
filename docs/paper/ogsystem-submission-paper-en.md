@@ -303,9 +303,9 @@ The next evaluation should implement the controlled protocol in Section 6.4, inc
 32. Xi, Z., et al. “The Rise and Potential of Large Language Model Based Agents: A Survey.” *Science China Information Sciences*, 68(2), 2025. [DOI: 10.1007/s11432-024-4222-0](https://doi.org/10.1007/s11432-024-4222-0). OpenAlex cited_by_count: 3,314 (retrieved 2026-11-19); index coverage only.
 33. Moura, J., et al. “CrewAI: Collaborative AI Agents.” CrewAI Inc., 2024. [Documentation](https://docs.crewai.com/).
 34. Fourney, A., et al. “Magentic-One: A Generalist Multi-Agent System for Solving Complex Web and File-Based Tasks.” Microsoft Research, arXiv preprint arXiv:2411.04468, 2024. [arXiv:2411.04468](https://arxiv.org/abs/2411.04468).
-35. Wu, Y., et al. “StateFlow: Enhancing LLM Task-Solving through State-Driven Workflows.” *Conference on Language Modeling (COLM)*, 2024. [arXiv:2403.08632](https://arxiv.org/abs/2403.08632).
-36. Zhang, Y., Liu, X., & Xiao, C. “MetaAgent: Automatically Constructing Multi-Agent Systems Based on Finite State Machines.” *International Conference on Machine Learning (ICML)*, 2025. [arXiv:2410.07505](https://arxiv.org/abs/2410.07505).
-37. “SWE-EVO: Benchmarking Coding Agents on Long-Horizon Software Evolution.” arXiv preprint arXiv:2412.21159, 2024. [arXiv:2412.21159](https://arxiv.org/abs/2412.21159).
+35. Wu, Y., Yue, T., Zhang, S., Wang, C., & Wu, Q. “StateFlow: Enhancing LLM Task-Solving through State-Driven Workflows.” *First Conference on Language Modeling (COLM 2024)*, 2024. [arXiv:2403.11322](https://arxiv.org/abs/2403.11322).
+36. Zhang, Y., Liu, X., & Xiao, C. “MetaAgent: Automatically Constructing Multi-Agent Systems Based on Finite State Machines.” *Proceedings of the 42nd International Conference on Machine Learning (ICML 2025)*, 2025. [arXiv:2507.22606](https://arxiv.org/abs/2507.22606).
+37. Le, T., Thai, M. V. T., Manh, D. N., Nhat, H. P., & Bui, N. D. Q. “SWE-EVO: Benchmarking Coding Agents in Long-Horizon Software Evolution Scenarios.” arXiv preprint arXiv:2512.18470, 2024–2025. [arXiv:2512.18470](https://arxiv.org/abs/2512.18470).
 38. Wang, Z., et al. “OfficeBench: Benchmarking Language Agents across Multiple Applications for Office Automation.” arXiv preprint arXiv:2407.19056, 2024. [arXiv:2407.19056](https://arxiv.org/abs/2407.19056).
 39. Mialon, G., et al. “GAIA: A Benchmark for General AI Assistants.” *ICLR 2024 Oral*, 2024. [arXiv:2311.12983](https://arxiv.org/abs/2311.12983).
 40. Liu, M., Dong, Y., et al. “Multi-agent Collaboration with State Management.” arXiv preprint arXiv:2605.20563, May 2026. [arXiv:2605.20563](https://arxiv.org/abs/2605.20563).
@@ -314,9 +314,9 @@ The next evaluation should implement the controlled protocol in Section 6.4, inc
 43. Sun, Y., et al. “Keeping LLM Agents on Procedure: Executable Finite-State Control for Long-Horizon Instruction Fidelity.” arXiv preprint arXiv:2611.10884, Nov 2026. [arXiv:2611.10884](https://arxiv.org/abs/2611.10884).
 44. Nian, Y., Yuan, A., Zhang, H., Li, J., Li, L., Hu, X., Wei, H., Xiao, X., Xiao, C., & Zhao, Y. “Auditable Agents.” arXiv preprint arXiv:2604.05485, Apr 2026. [arXiv:2604.05485](https://arxiv.org/abs/2604.05485).
 45. Chen, M., Zhang, Y., Xie, Z., Luo, Y., Xu, J., Gao, C., Zhao, K., & Ye, Y. “TraceDev: A Traceability-Driven Multi-agent Framework for Requirement-to-Code Development.” In *Proceedings of the 35th ACM SIGSOFT International Symposium on Software Testing and Analysis (ISSTA 2026)*, 2026. [arXiv:2607.18886](https://arxiv.org/abs/2607.18886).
-46. “NeuralFSM: Adaptive Multi-Agent Coordination via Learning Finite-State Execution Policy.” In *Proceedings of the 64th Annual Meeting of the Association for Computational Linguistics (ACL 2026)*, 2026. [ACL Anthology](https://aclanthology.org/).
+46. Wang, J., Wang, Y., Li, J., Yang, S., Guo, K., & Zhao, Y. “NeuralFSM: Adaptive Multi-Agent Coordination via Learning Finite-State Execution Policy.” In *Proceedings of the 64th Annual Meeting of the Association for Computational Linguistics (ACL 2026)*, Volume 1: Long Papers, 2026. [ACL Anthology](https://aclanthology.org/).
 47. Cho, S., Fernandez, F. C., Mohammed, U., Wu, Z., Da Costa, K., Wicaksono, I., & Koshiyama, A. “Automata from Agent Traces: Failure and Next-Step Prediction.” arXiv preprint arXiv:2608.23670, Aug 2026. [arXiv:2608.23670](https://arxiv.org/abs/2608.23670).
-48. Guo, L., Liu, W., Heng, Y. W., Chen, T.-H., & Wang, Y. “Agent-SAMA: State-Aware Mobile Assistant.” In *Proceedings of the 40th AAAI Conference on Artificial Intelligence (AAAI 2026)*, 2026. [AAAI 2026](https://aaai.org/).
+48. Guo, L., Liu, W., He, Y., Chen, T.-H., & Wang, Y. “Agent-SAMA: State-Aware Mobile Assistant.” In *Proceedings of the 40th AAAI Conference on Artificial Intelligence (AAAI 2026)*, 2026. [arXiv:2505.23596](https://arxiv.org/abs/2505.23596).
 49. Li, A., Yang, S., Chen, F., Xu, T., Li, P., & Su, Z. “GraphFlow: A Graph-Based Workflow Management for Efficient LLM-Agent Serving.” In *Proceedings of the 43rd International Conference on Machine Learning (ICML 2026)*, 2026. [arXiv:2605.22566](https://arxiv.org/abs/2605.22566).
 
 ## Required Software Metadata (Elsevier SCICO OSP Track)
@@ -324,7 +324,7 @@ The next evaluation should implement the controlled protocol in Section 6.4, inc
 | Nr. | Code metadata description | Please fill in this column |
 | --- | --- | --- |
 | C1 | Current code version | v2.0.0-rc |
-| C2 | Permanent link to code/repository used of this code version | Private workspace under evaluation; release snapshot available upon publication |
+| C2 | Permanent link to code/repository used of this code version | Open-source core available at https://github.com/your-username/ogsystem-core; archived on Zenodo (DOI: 10.5281/zenodo.xxxxxx) |
 | C3 | Permanent link to Reproducible Capsule | N/A (local execution environment) |
 | C4 | Legal Code License | Apache License 2.0 |
 | C5 | Code versioning system used | Git (with Git LFS support) |
@@ -337,8 +337,8 @@ The next evaluation should implement the controlled protocol in Section 6.4, inc
 
 * **Funding:** This research did not receive any specific grant from funding agencies in the public, commercial, or not-for-profit sectors.
 * **Conflict of interest / Competing interests:** The author declares no known competing financial interests or personal relationships that could have appeared to influence the work reported in this paper.
-* **Availability of data and materials:** The test suites, configuration templates, and benchmark protocols are contained in the repository. Supplementary execution logs and digests are available in [`traceable-references.md`](traceable-references.md).
-* **Code availability:** Source code and engineering tests described in this paper are maintained in the project repository under Apache 2.0 license.
+* **Availability of data and materials:** The test suites, configuration templates, benchmark protocols, raw run traces, and offline verification script (`pnpm run reproduce:paper-evidence`) are contained in the open-source repository and Zenodo archive. Supplementary execution logs and digests are available in [`traceable-references.md`](traceable-references.md).
+* **Code availability:** The formal contracts, EFSM runtime, Context Map, Git WorkspaceRef/Join/Release protocol, Visualizer trace inspector, and replication harness are open-sourced under the Apache 2.0 license. The commercial Team Site collaboration suite and proprietary domain roles are maintained under proprietary commercial licenses and are omitted as they do not affect formal protocol verification or empirical replication.
 
 ## Downloaded Literature
 
