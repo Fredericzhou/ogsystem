@@ -59,6 +59,7 @@ references and rejection fixtures; v2 does not migrate, dual-write, or compatibi
 - [v2 Gate C failure attempts](evidence/v2-gate-c-real-workflow-attempts-2026-11-16.md): retained historical diagnostics; they do not establish current final-contract acceptance.
 - [v2 Workspace fault-injection engineering evidence](evidence/v2-workspace-fault-injection-2026-11-18.md): local fail-closed and recovery checks; it does not close real-Run UAT rows.
 - [v2 Workspace fault-injection audit](evidence/v2-workspace-fault-injection-audit-2026-11-19.md): current ten-case implementation matrix, including cleanup and retention; it does not close real-Run UAT rows.
+- [Post-merge validation (2026-11-24)](evidence/post-merge-validation-2026-11-24.md): local build, core/Team Site tests, package-install smoke, browser smoke, examples, and Doctor boundaries after the fast-forward to `main`.
 - [v2 no-content-change Release lock/CAS audit](evidence/v2-noop-release-lock-cas-audit-2026-11-20.md): closes a coordinator/design mismatch for same-value Release CAS; it does not close UAT scenario 19.
 - [v2 Studio Simulation Workspace smoke](evidence/v2-studio-simulation-workspace-smoke-2026-11-19.md): engineering evidence for isolated Git + LFS Simulation workspaces and internal materialization; it does not close Sandbox or operator UAT.
 - [v2 UAT Project creation and refresh evidence](evidence/v2-uat-project-refresh-2026-11-19.md): browser evidence for a persisted Collaboration Project and queued Task after refresh; it does not close workflow-operator UAT or sign-off.
