@@ -83,17 +83,19 @@ const CITED_EVIDENCE_FILES = [
   "v2-gate-c-real-workflow-success-2026-11-16.md"
 ];
 
-// Explicit exclusions for Stage A (Commercial / Proprietary / Legacy)
+// Explicit exclusions for Stage A (Commercial / Proprietary / Legacy / Author Tooling)
 const EXCLUDED_PATHS = [
   "apps/team-site",
   "scripts/team-site-service.mjs",
   "scripts/start-team-site-tailnet.ps1",
+  "scripts/export-open-source-core.mjs",
   "tests/team-site-page-fetch.test.mjs",
   "tests/team-site-service.test.mjs",
   "tests/team-site-service-lan.test.mjs",
   "tests/archive",
   "og-roles/roles/imported.",
   "docs/development/archive",
+  "docs/development/release-uat-checklist.md",
   "docs/development/evidence/screenshots"
 ];
 
@@ -176,7 +178,7 @@ node scripts/reproduce-paper-results.mjs
   - \`bin/\`: Installed CLI entrypoints (\`ogs\`).
   - \`src/runtime/\`: EFSM runtime execution engine, capability policies, Git Workspace coordinator, and Release materializer.
   - \`src/design/\`: Formal contract compilers, Mermaid IR parser, and state validation rules.
-  - \`src/visualizer/\`: Lightweight local single-node Visualizer & Studio research workbench (graph reading, timeline projection, and interactive MMD workbench).
+  - \`src/visualizer/\`: Lightweight local single-node Visualizer & Studio research workbench (graph reading, timeline projection, and interactive MMD workbench for double-blind reviewer inspection).
   - \`src/business-events.ts\` & \`src/context-selector.ts\`: Event registry and Context Map fail-closed field projections.
   - \`schemas/\`: Machine-readable schemas for Role contracts and Run Evidence manifests.
   - \`tests/\`: 70+ test suites verifying invariant enforcement, fault tolerance, and security boundaries.
@@ -187,8 +189,11 @@ node scripts/reproduce-paper-results.mjs
 - **Proprietary Commercial Boundary (Excluded from this package)**:
   - \`apps/team-site\`: Enterprise multi-tenant collaboration web application.
   - Tailnet multi-host deployment scripts (\`scripts/team-site-service.mjs\`, \`scripts/start-team-site-tailnet.ps1\`).
+  - Author-side export pipeline script (\`scripts/export-open-source-core.mjs\`).
   - Commercial agent persona catalog (\`og-roles/roles/imported.*\`: 250+ enterprise roles).
-  - Internal browser acceptance recordings and screenshots.
+  - Internal browser acceptance recordings, internal UAT checklists (\`release-uat-checklist.md\`), and screenshots.
+
+*Note on Visualizer/Studio Boundary:* In this Stage A candidate review package, the local single-node Visualizer & Studio workbench is provided to allow double-blind reviewers to inspect topological graphs and state machines. In the formal Stage B GA release, Studio authoring tools will be physically separated into the commercial proprietary layer per Gate 2 requirements.
 
 ---
 
@@ -331,13 +336,13 @@ async function scanComprehensiveRedaction(targetDir) {
     { name: "Unredacted Raw Session ID", regex: /ses_e1af[a-zA-Z0-9]+/ },
     { name: "Unredacted Raw Message ID", regex: /msg_093c[a-zA-Z0-9]+/ },
     { name: "Raw Ephemeral Backend Port 52195", regex: /:52195\b/ },
+    { name: "Raw Development/Team-Site Port", regex: /(?:127\.0\.0\.1|localhost|port\s+)(?::|\s+)(?:4173|4174|4177)\b/ },
     { name: "Tailscale / Tailnet Address", regex: /100\.\d{1,3}\.\d{1,3}\.\d{1,3}/ }
   ];
 
   for (const file of allFiles) {
     if (file.endsWith(".png") || file.endsWith(".jpg") || file.endsWith(".tgz") || file.endsWith(".tar.gz")) continue;
     const rel = relative(targetDir, file);
-    if (rel === "scripts/export-open-source-core.mjs") continue;
 
     try {
       const content = await readFile(file, "utf8");
@@ -426,15 +431,16 @@ async function main() {
     });
   }
 
-  // 3. Copy scripts with explicit exclusions of Team Site service scripts
-  console.log("[-] Copying scripts (excluding Team Site deployment scripts)...");
+  // 3. Copy scripts with explicit exclusions of Team Site service scripts and author exporter
+  console.log("[-] Copying scripts (excluding Team Site deployment scripts and author exporter)...");
   const scriptsSrc = join(repoRoot, "scripts");
   const scriptsDest = join(outDir, "scripts");
   await copyCleanDirectory(scriptsSrc, scriptsDest, {
     excludeNames: GENERAL_EXCLUDED_NAMES,
     excludePaths: [
       "scripts/team-site-service.mjs",
-      "scripts/start-team-site-tailnet.ps1"
+      "scripts/start-team-site-tailnet.ps1",
+      "scripts/export-open-source-core.mjs"
     ]
   });
 
@@ -530,7 +536,7 @@ async function main() {
     }
     process.exit(1);
   }
-  console.log("✓ Gate 4 Audit Passed: 0 local machine paths, 0 unredacted session/message IDs, 0 raw ephemeral ports detected.\n");
+  console.log("✓ Gate 4 Audit Passed: 0 local machine paths, 0 unredacted session/message IDs, 0 unredacted development/service ports (52195/4173/4174/4177) detected (100% full scan, 0 exclusions).\n");
 
   // 13. Generate SHA-256 Manifest
   console.log("[-] Generating SHA-256 digest manifest for all exported files...");
@@ -562,10 +568,10 @@ async function main() {
     console.log(`  Tarball SHA-256: ${archiveSha256}\n`);
   }
 
-  // 15. Clean-Room verification
+  // 15. Standalone isolated directory reproduction
   if (values["verify-cleanroom"]) {
     console.log("================================================================================");
-    console.log("   CLEAN-ROOM ISOLATED VERIFICATION (Standalone Build & Reproduction)");
+    console.log("   ISOLATED DIRECTORY VERIFICATION (Stage A Candidate Reproduction)");
     console.log("================================================================================\n");
 
     const startTime = Date.now();
@@ -599,11 +605,12 @@ async function main() {
 
     const totalDurationSec = ((Date.now() - startTime) / 1000).toFixed(1);
 
-    // Write Clean-Room Audit Report to repository commit history
+    // Write Isolated Directory Verification Audit Report to repository commit history
     const reportPath = join(repoRoot, "docs", "development", "evidence", "stage-a-cleanroom-report.md");
-    const cleanRoomReportContent = `# OGSystem Stage A (Anonymous Artifact) Clean-Room 隔离复现审计报告
+    const cleanRoomReportContent = `# OGSystem Stage A (Candidate Replication Package) 导出包独立目录隔离复现审计报告
 
 > **报告时间 / Timestamp:** ${new Date().toISOString()}  
+> **验证类型 / Verification Type:** 导出包独立目录隔离复现 (Local Darwin Isolated Directory Verification; 真实容器 Clean-Room / CI 无缓存验证留待阶段 B)  
 > **验证环境 / Environment:** macOS Darwin (Node.js ${process.version}, pnpm ${execFileSync("pnpm", ["--version"], { encoding: "utf8" }).trim()})  
 > **产物压缩包 / Tarball:** \`dist/ogsystem-anonymous-artifact.tar.gz\`  
 > **压缩包大小 / Size:** ${(archiveSizeBytes / (1024 * 1024)).toFixed(2)} MB (${archiveSizeBytes} bytes)  
@@ -617,7 +624,7 @@ async function main() {
 
 1. **测试口径对比与统一**：
    - **全仓工程基准（Full Monorepo）**：共发现 596 项测试（488 项核心通过、1 项 Windows 平台跳过、107 项 Team Site 通过、0 项失败）；
-   - **阶段 A 匿名复现包（Stage A Anonymous Package）**：共发现 **486 项** 核心回归测试（完全剔除 \`apps/team-site\` 专有的 3 项测试治具及 \`tests/archive/\` 历史测试）；
+   - **阶段 A 匿名复现包（Stage A Candidate Package）**：共发现 **486 项** 核心回归测试（完全剔除 \`apps/team-site\` 专有的 3 项测试治具及 \`tests/archive/\` 历史测试）；
    - **实测执行结果**：**485 项通过，1 项按环境跳过（Windows PowerShell smoke），0 项失败，通过率 100%（执行测试无一失败）**。
 
 2. **零成本离线论文验算（reproduce-paper-results.mjs）**：
@@ -635,20 +642,22 @@ async function main() {
 - [x] **已排除商业多机服务脚本**：\`scripts/team-site-service.mjs\`、\`scripts/start-team-site-tailnet.ps1\` 全量排除；
 - [x] **已排除商业测试**：\`tests/team-site-*.test.mjs\`、\`tests/archive/\` 全量排除；
 - [x] **已排除商业导入 Persona**：\`og-roles/roles/imported.*\`（250+ 商业角色）全量排除；
-- [x] **已排除内部录像与截图**：\`docs/development/evidence/screenshots/\` 全量排除；
+- [x] **已排除内部 UAT 与截图**：\`docs/development/release-uat-checklist.md\`、\`docs/development/evidence/screenshots/\` 全量排除；
 - [x] **已排除动态运行数据**：所有 \`.ogs/runs/\` 及 \`runs-index.json\` 历史调试数据全量排除；
-- [x] **明确开源工具范围**：Visualizer & Studio 本地单机工作台（\`src/visualizer/\`）正式确认为 Apache-2.0 公开研究与开发者工具，向审稿人完整提供可视化审查能力。
+- [x] **已排除作者端导出流水线脚本**：\`scripts/export-open-source-core.mjs\` 排除出导出包；
+- [x] **明确审稿期研究工具范围**：Visualizer & Studio 本地单机工作台（\`src/visualizer/\`）作为审稿期单节点研究辅助工具随包提供；正式 GA 阶段须按 Gate 2 将 Studio 编排剥离保留在私有层。
 
 ---
 
-## 三、 全文件脱敏审计（Gate 4）
+## 三、 全文件脱敏审计（Gate 4 导出物无死角审计）
 
-审计器执行了物理扫描，确认以下标识泄露数为 **0**：
+审计器对导出目录执行了 100% 文件物理扫描（**无任何自我排除白名单例外**），确认以下标识泄露数为 **0**：
 - **本地主机绝对路径**（如本机用户名路径）：0 处
 - **真实未脱敏 Session ID**（如 \`ses_e1af...\`、\`01a1e50e-...\`）：0 处
 - **真实未脱敏 Message ID**（如 \`msg_093c...\`）：0 处
-- **未脱敏本地开发端口**（如 \`52195\`、\`4173\`）：0 处
+- **未脱敏本地开发/服务端口**（如 \`52195\`、\`4173\`、\`4174\`、\`4177\`）：0 处
 - **未脱敏服务 PID**：0 处（均已归零或占位化）
+- **Tailnet 地址**：0 处
 
 ---
 
@@ -662,13 +671,13 @@ async function main() {
 `;
 
     await writeFile(reportPath, cleanRoomReportContent, "utf8");
-    console.log(`✓ Clean-Room 审计报告已写入: ${reportPath}`);
+    console.log(`✓ 独立目录复现审计报告已写入: ${reportPath}`);
 
     console.log("\n================================================================================");
-    console.log("✓ CLEAN-ROOM VERIFICATION 100% SUCCESSFUL!");
+    console.log("✓ ISOLATED DIRECTORY VERIFICATION 100% SUCCESSFUL!");
     console.log(`  Tarball: ${archivePath}`);
     console.log(`  SHA-256: ${archiveSha256}`);
-    console.log("  Stage A Anonymous Artifact is verified standalone and ready for peer review.");
+    console.log("  Stage A Candidate Replication Package is verified standalone in isolated directory.");
     console.log("================================================================================\n");
   } else {
     console.log("✓ Stage A Anonymous Artifact export completed.");

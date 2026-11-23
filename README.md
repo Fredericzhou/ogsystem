@@ -133,11 +133,11 @@ ogs vis --ogs-dir .
 ogs visualizer --ogs-dir .
 ```
 
-The product site, including Projects, team design, platform settings, and run diagnostics, uses one
-Team Site origin. Local development opens the team showcase at [`http://127.0.0.1:4173/`](http://127.0.0.1:4173/); Projects is at [`http://127.0.0.1:4173/projects`](http://127.0.0.1:4173/projects).
+The product site (Team Site), including Projects, team design, platform settings, and run diagnostics, uses one
+Team Site origin. Local development opens the team showcase at `http://localhost:<web-port>/`; Projects is at `http://localhost:<web-port>/projects`.
 For LAN access, run `pnpm team-site:restart:lan`; the status command prints the current network URLs. For Tailnet
 access, use the startup command in [`apps/team-site/README.md`](apps/team-site/README.md); the site is
-exposed on `http://<tailnet-host>:4174/projects`. The Visualizer service on port `4177` is a server-side upstream,
+exposed on `http://<tailnet-host>:<web-port>/projects`. The Visualizer service runs as a server-side upstream on its configured port,
 not a separate product URL. The standalone `ogs vis` command remains available for operator diagnostics.
 
 Stable lifecycle command anchors:

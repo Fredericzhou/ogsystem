@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-11-23T17:26:38.171Z",
-  "totalFiles": 805,
+  "generatedAt": "2026-11-23T17:39:09.838Z",
+  "totalFiles": 804,
   "files": [
     {
       "path": ".ogs/README.md",
@@ -49,13 +49,13 @@
     },
     {
       "path": "README.md",
-      "sizeBytes": 20761,
-      "sha256": "a4bdb39779d50f79d25515e15159043bf2375f8980bd1c365bce8f42b4cba5c9"
+      "sizeBytes": 20744,
+      "sha256": "04b31a7730226f3129aeefeb64efe01e38fc7b4bcac702f90f0bfc1207f98125"
     },
     {
       "path": "REPRODUCE.md",
-      "sizeBytes": 4308,
-      "sha256": "2c2f87466ef81b6852dcea0f3065c0e930b03f6ad99195103332225e57bfbc43"
+      "sizeBytes": 4856,
+      "sha256": "34f935d7e61335986e8b193746b6b7d3ea0e3b123e75bc9991bac85829e6de0f"
     },
     {
       "path": "bin/ogs.mjs",
@@ -144,13 +144,13 @@
     },
     {
       "path": "docs/development/open-core-release-gate-checklist.md",
-      "sizeBytes": 10942,
-      "sha256": "6b390bd6e5b9f5ce7ea6f9696545d726a2294e07e542e706e75c6170f65ed06f"
+      "sizeBytes": 11212,
+      "sha256": "36a6c2a36479a8da31a53505373e2a584369b7a791a1231afcb2226e962dc4ae"
     },
     {
       "path": "docs/development/release-uat-checklist.md",
-      "sizeBytes": 64782,
-      "sha256": "d8330f7fb51b78ce46d2a1ac6f8a33283e0a38ce269f3ea40addfaf51129b593"
+      "sizeBytes": 64788,
+      "sha256": "57524b11265f38c314d0d00497aef81a98aba07edcc71f5621a6917fcf2970c8"
     },
     {
       "path": "docs/development/role-execution-architecture.md",
@@ -2426,11 +2426,6 @@
       "path": "scripts/docs-command-drift-check.mjs",
       "sizeBytes": 3106,
       "sha256": "471427c586d4d418a4d494c7ba710ebd7a8768faf4270b2050ecdea11bac7699"
-    },
-    {
-      "path": "scripts/export-open-source-core.mjs",
-      "sizeBytes": 28472,
-      "sha256": "14d7e97c3369540b26a27d269916ae54f22b8ce8f10d6e49a9b69cd51e0b225a"
     },
     {
       "path": "scripts/install-system-home.cjs",
