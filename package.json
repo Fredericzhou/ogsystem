@@ -2,6 +2,7 @@
   "name": "ogsystem",
   "version": "2.0.0",
   "private": false,
+  "license": "Apache-2.0",
   "type": "module",
   "packageManager": "pnpm@10.33.2",
   "bin": {

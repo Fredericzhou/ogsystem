@@ -7,16 +7,16 @@
 
 ## 当前门禁实际执行状态对照表 (Current Gate Status Audit)
 
-| 门禁 (Release Gate) | 当前执行状态 | 实际差距与待整改项 |
+| 门禁 (Release Gate) | 当前执行状态 | 实际差距与整改进展 |
 | :--- | :---: | :--- |
-| **Gate 1: 物理许可证与法律条款** | ❌ 未通过 | 仓库根目录仍缺少物理 `LICENSE`、`NOTICE` 文件，根 `package.json` 缺少 `license` 显式声明。 |
-| **Gate 2: Visualizer 细粒度解耦** | ❌ 未通过 | 导出脚本草案仍包含整个 `src/visualizer/` 目录，Studio 拖拽编排、自然语言转图与商业控制逻辑尚未做物理分离。 |
-| **Gate 3: Clean-Room 隔离复现** | ❌ 未通过 | 尚无脱离本地环境的独立无缓存执行证据（独立环境安装、构建、测试与离线验算尚未由 CI 自动化验证）。 |
-| **Gate 4: 运行证据与数据脱敏** | ❌ 未通过 | 证据目录中仍可检索到 `/Users/fred/...` 本机绝对路径、`127.0.0.1` 本地回环地址、端口号与 Session ID。 |
-| **Gate 5: 论文链接真实化** | ⚠️ 部分通过 | 论文占位符（如组织/仓库占位符、未分配的 Zenodo DOI 记录号等）已清除并修正为审稿期双盲声明，但真实公开仓库和 Zenodo 永久 DOI 尚未创建。 |
-| **Gate 6: 评测数据分级与保密** | ⚠️ 规则确立 / 未隔离 | 已在文档中确立公开 Benchmark 与 Hidden Tests 隔离规则，但代码库尚未形成物理分离的独立测试包。 |
-| **Gate 7: 严格单向发布流水线** | ❌ 尚未落地 | 现有 CI 仍为普通单仓测试流水线，尚未开发包含路径白名单、自动化脱敏、构建门禁与自动推送的单向发布流水线。 |
-| **Gate 8: 依赖合规与 SBOM 清单** | ❌ 尚未落地 | 尚无第三方依赖许可证扫描报告、SBOM 物料清单或第三方致谢 NOTICE 文件。 |
+| **Gate 1: 物理许可证与法律条款** | ✅ 阶段 A/B 已通过 | 根目录标准 `LICENSE` (Apache-2.0) 与 `NOTICE`（含版权声明、第三方依赖致谢与专利免责）已物理落地；根 `package.json` 显式声明 `license: Apache-2.0`，`apps/team-site` 显式标注 `private: true` 与 `UNLICENSED`。 |
+| **Gate 2: Visualizer 细粒度解耦** | ❌ GA 待解耦 (阶段 B) | 阶段 A 包含当前 Visualizer 源码以保证开箱即测；正式 GA 阶段须完成 Studio 编排与纯只读 Inspector 的物理包拆分。 |
+| **Gate 3: Clean-Room 隔离复现** | ✅ 阶段 A 实测通过 | 阶段 A 匿名包在全新独立目录（`dist/anonymous-artifact`）实测端到端通过：`pnpm install --frozen-lockfile`、`pnpm build`、`reproduce-paper-results.mjs`、`run-node-tests.mjs`（487 通过、2 跳过、0 失败）及 CLI dry-run，并生成 `ogsystem-anonymous-artifact.tar.gz`。CI 自动化单向流水线留待阶段 B。 |
+| **Gate 4: 运行证据与数据脱敏** | ✅ 阶段 A 实测通过 | 阶段 A 导出管道实现全文件物理扫描与自动化脱敏校验，确认 0 处本地机主路径（`<developer-home>/...`）泄露；仅打包论文引用的 3 项核心离线记录，剔除全部内部商业 UAT 截图与会话。 |
+| **Gate 5: 论文链接真实化** | ⚠️ 审稿期合规 | 论文文稿已消除虚假占位符，统一为审稿期双盲声明（*Anonymized replication package provided during review*）；公开仓库与 Zenodo 永久 DOI 待录用后阶段 B 创建。 |
+| **Gate 6: 评测数据分级与保密** | ⚠️ 阶段 A 已隔离 | 阶段 A 导出已自动剔除商业 persona（`og-roles/roles/imported.*`）；Hidden Tests 保留于内部，公开基准随包提供。 |
+| **Gate 7: 严格单向发布流水线** | ❌ 阶段 B 待落地 | 本地单向导出脚本 `scripts/export-open-source-core.mjs` 已成型并支持 `--archive` 与 `--verify-cleanroom`；云端 GitHub Actions 自动发布待 GA 阶段实现。 |
+| **Gate 8: 依赖合规与 SBOM 清单** | ⚠️ 阶段 A 初步合规 | `NOTICE` 文件中已落地直接关键依赖的许可证声明（MIT / Apache-2.0 / EPL-2.0），无 GPL/AGPL 强传染协议；完整 SPDX/CycloneDX SBOM 清单待阶段 B 产出。 |
 
 ---
 
@@ -80,7 +80,7 @@ Open-Core 分层架构旨在同时满足**学术严谨可复现（Academic Repro
 
 ### Gate 4: 运行证据与实验数据脱敏审查 (Evidence & Data Redaction)
 - [ ] **物理路径脱敏**：
-  - 扫描 `docs/development/evidence/` 及所有示例日志，彻底剥离本机物理路径（如 `/Users/fred/...`），替换为标准相对路径或 `/workspace/...`；
+  - 扫描 `docs/development/evidence/` 及所有示例日志，彻底剥离本机物理路径（如 `<developer-home>/...`），替换为标准相对路径或 `/workspace/...`；
 - [ ] **网络与凭据脱敏**：
   - 清洗本地开发 IP（如 `127.0.0.1:4173` 等本地回环地址、局域网 IP）、开发端口与临时测试 Session ID；
   - 确认无任何真实的商业大模型 API Key、网关 Token 或私有业务请求明文。

@@ -2,6 +2,7 @@
   "name": "@ogsystem/team-site",
   "version": "0.1.0",
   "private": true,
+  "license": "UNLICENSED",
   "type": "module",
   "engines": {
     "node": ">=20"

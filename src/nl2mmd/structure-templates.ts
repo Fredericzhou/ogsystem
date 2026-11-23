@@ -78,7 +78,7 @@ const TEMPLATES: readonly Nl2MmdStructureTemplate[] = [
     skeleton: [
       "flowchart TD",
       "%% system.id=<system.id>",
-      "%% system.version=1.0.0",
+      "%% system.version=2.0.0",
       "%% law.global=<law.ref>",
       "start[开始] -->|START| <node>[Role:<role-id>]",
       "<node>[Role:<role-id>] -->|<EVENT>| end[结束]"
@@ -203,7 +203,7 @@ const TEMPLATES: readonly Nl2MmdStructureTemplate[] = [
     skeleton: [
       "flowchart TD",
       "%% system.id=<system.id>",
-      "%% system.version=1.0.0",
+      "%% system.version=2.0.0",
       "%% law.global=<law.ref>",
       "start[开始] -->|START| <main>[Role:<main-role>]",
       "<main>[Role:<main-role>] -->|READY| end[结束]",
@@ -252,7 +252,7 @@ const TEMPLATES: readonly Nl2MmdStructureTemplate[] = [
     skeleton: [
       "flowchart TD",
       "%% system.id=<system.id>",
-      "%% system.version=1.0.0",
+      "%% system.version=2.0.0",
       "%% law.global=<law.ref>",
       "%% review.mode.<reviewed-role>=required",
       "start[开始] -->|START| <reviewed>[Role:<reviewed-role>]",
@@ -276,7 +276,7 @@ const TEMPLATES: readonly Nl2MmdStructureTemplate[] = [
     skeleton: [
       "flowchart TD",
       "%% system.id=<system.id>",
-      "%% system.version=1.0.0",
+      "%% system.version=2.0.0",
       "%% law.global=<law.ref>",
       "Technical Backend and tool bindings belong in .ogs/execution-bindings.json, not Mermaid metadata.",
       "start[开始] -->|START| <model>[Role:<model-role>]",

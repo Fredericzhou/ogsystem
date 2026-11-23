@@ -52,6 +52,25 @@ The active API prefix is `/api/v2`. Team and project package labels such as `tea
 containers; the contract marker is always `ogsContractVersion: 2`. v1 endpoints and package roots
 are rejected.
 
+The installed CLI exposes the following operational entry points:
+
+```bash
+ogs doctor --system system.mmd --ogs-dir .
+ogs models discover --ogs-dir .
+ogs models sync --ogs-dir .
+ogs serve --ogs-dir .
+ogs vis --ogs-dir .
+ogs run start --system system.mmd --input "smoke" --dry-run
+ogs run resume <run-id>
+ogs run review list <run-id>
+```
+
+`ogs doctor` checks local readiness, `ogs models discover|sync` refreshes the local backend/model
+catalog, and `ogs serve` manages interactive Sessions. `ogs vis` starts the read-mostly run
+visualizer. `ogs run start --visualize` is the temporary visualizer mode for one run. For a source
+checkout, contributor-only helpers are `pnpm run run:doctor`, `pnpm run run:nl2mmd`, and
+`pnpm run lint:system`; installed operators should use the `ogs` commands above.
+
 ## Verification
 
 ```bash

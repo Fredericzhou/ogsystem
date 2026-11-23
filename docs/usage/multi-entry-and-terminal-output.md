@@ -5,7 +5,7 @@
 ```mermaid
 flowchart TD
 %% system.id=example.multi-entry
-%% system.version=1.0.0
+%% system.version=2.0.0
 %% law.global=law.minimal.base
 start[开始] -->|START| analyst[Role:analyst]
 start[开始] -->|START| reviewer[Role:reviewer]
@@ -37,7 +37,7 @@ reviewer[Role:reviewer] -->|READY| end[结束]
 ```mermaid
 flowchart TD
 %% system.id=example.random-entry
-%% system.version=1.0.0
+%% system.version=2.0.0
 %% law.global=law.minimal.base
 %% start.dispatch.mode=random_n
 %% start.dispatch.count=2

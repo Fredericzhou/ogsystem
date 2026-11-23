@@ -4,7 +4,7 @@ Date: 2026-11-05
 Scope: all Markdown under `docs/`, current source/test alignment, and release-state claims.
 
 > Status: historical audit. The active governance entry point is
-> [OGSystem Constitution and Rules](../ogsystem-constitution-v1.md), and current acceptance
+> [OGSystem Constitution and Rules](v1/ogsystem-constitution-v1.md), and current acceptance
 > evidence is maintained in the parent development directory.
 
 ## Authority Order

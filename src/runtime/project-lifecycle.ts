@@ -151,7 +151,7 @@ const PROJECT_TEMPLATES: Record<ProjectTemplateId, ProjectTemplateSpec> = {
     systemMmd: [
       "flowchart TD",
       "%% system.id=project.starter",
-      "%% system.version=1.0.0",
+      "%% system.version=2.0.0",
       "%% law.global=law.project.base",
       "",
       "start[开始] -->|START| analyst[Role:demo-analyst]",
@@ -173,7 +173,7 @@ const PROJECT_TEMPLATES: Record<ProjectTemplateId, ProjectTemplateSpec> = {
     exampleSystemMmd: [
       "flowchart TD",
       "%% system.id=project.example.minimal",
-      "%% system.version=1.0.0",
+      "%% system.version=2.0.0",
       "%% law.global=law.project.base",
       "",
       "start[开始] -->|START| analyst[Role:demo-analyst]",
@@ -189,7 +189,7 @@ const PROJECT_TEMPLATES: Record<ProjectTemplateId, ProjectTemplateSpec> = {
     systemMmd: [
       "flowchart TD",
       "%% system.id=template.minimal",
-      "%% system.version=1.0.0",
+      "%% system.version=2.0.0",
       "%% law.global=law.console.base",
       "",
       `start[开始] -->|START| hello[Role:${MINIMAL_HELLO_ROLE_ID}]`,
@@ -215,7 +215,7 @@ const PROJECT_TEMPLATES: Record<ProjectTemplateId, ProjectTemplateSpec> = {
     systemMmd: [
       "flowchart TD",
       "%% system.id=template.advanced.features",
-      "%% system.version=1.0.0",
+      "%% system.version=2.0.0",
       "%% law.global=law.console.base",
       "%% role.mode.advanced-coordinator=parallel_split",
       "%% loop.max.advanced-coordinator=2",
@@ -263,7 +263,7 @@ const PROJECT_TEMPLATES: Record<ProjectTemplateId, ProjectTemplateSpec> = {
     systemMmd: [
       "flowchart TD",
       "%% system.id=template.software-dev",
-      "%% system.version=1.0.0",
+      "%% system.version=2.0.0",
       "%% law.global=law.software-dev.base",
       "%% role.mode.demo-intake=parallel_split",
       "%% join.mode.test-operator=all_of",
@@ -296,7 +296,7 @@ const PROJECT_TEMPLATES: Record<ProjectTemplateId, ProjectTemplateSpec> = {
     systemMmd: [
       "flowchart TD",
       "%% system.id=template.consultation",
-      "%% system.version=1.0.0",
+      "%% system.version=2.0.0",
       "%% law.global=law.consultation.base",
       "",
       "start[开始] -->|START| intake[Role:demo-intake]",

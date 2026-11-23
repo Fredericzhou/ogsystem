@@ -1,0 +1,19 @@
+OGSystem
+Copyright 2026 OGSystem Authors
+
+This product includes software developed under the Apache License, Version 2.0.
+
+Patent Disclaimer:
+Grant of patent rights is limited to the extent explicitly set forth in Section 3 of
+the Apache License, Version 2.0. No additional express or implied patent licenses
+or indemnities are granted.
+
+Third-Party Components and Dependencies:
+- @antv/x6 (MIT License) - Copyright (c) 2019-present AntV
+- elkjs (EPL-2.0 / EDCL-1.0) - Copyright (c) Eclipse Foundation
+- mustache (MIT License) - Copyright (c) 2009 Chris Wanstrath
+- marked (MIT License) - Copyright (c) 2011-2026, Christopher Jeffrey
+- dompurify (Apache-2.0 / MPL-2.0) - Copyright (c) 2015 Cure53
+- @langchain/core (MIT License) - Copyright (c) Harrison Chase
+- typescript (Apache-2.0) - Copyright (c) Microsoft Corporation
+- esbuild (MIT License) - Copyright (c) 2020 Evan Wallace

@@ -6,10 +6,12 @@ not describe cross-host recovery or execution of untrusted tools.
 ## Deployment Gate
 
 Use a versioned OGSystem package tarball and record its published SHA-256 alongside the deployment
-record. Install and initialize the project from the target host:
+record. The active package line is Contract Set v2 (currently `2.0.0`); replace the filename below
+with the exact tarball produced for the release being deployed. Install and initialize the project
+from the target host:
 
 ```powershell
-npm install -g .\ogsystem-1.0.0.tgz
+npm install -g .\ogsystem-2.0.0.tgz
 ogs project create production-app --template minimal
 cd production-app
 ogs models sync

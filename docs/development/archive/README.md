@@ -6,8 +6,12 @@ but they are not the current product contract. Their old test counts, screenshot
 statements must not be used as current release evidence.
 
 Current behavior is defined by source code, tests, active manuals, the
-[OGSystem Constitution and Rules](../ogsystem-constitution-v1.md), [DECISIONS.md](../DECISIONS.md),
-and the latest [current version validation record](../current-version-validation-2026-11-10.md).
+[OGSystem Constitution and Rules](../ogsystem-constitution-v2.md), [DECISIONS.md](../DECISIONS.md),
+and the active [v2 validation and acceptance baseline](../v2-validation-and-acceptance.md).
+
+The dated validation record at
+[`../current-version-validation-2026-11-10.md`](../current-version-validation-2026-11-10.md)
+is retained for v1 archaeology only. It is not a current release or acceptance record.
 
 ## Archived Items
 
