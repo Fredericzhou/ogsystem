@@ -1,0 +1,4031 @@
+{
+  "generatedAt": "2026-11-23T17:26:38.171Z",
+  "totalFiles": 805,
+  "files": [
+    {
+      "path": ".ogs/README.md",
+      "sizeBytes": 3506,
+      "sha256": "25c4ebaa0b5a72b7a852d0e22884a9c65a4b1a8c2b8dd6a24a2f0d147fea781f"
+    },
+    {
+      "path": ".ogs/execution-bindings.json",
+      "sizeBytes": 730,
+      "sha256": "98f68128343653044777b27fe351046d271702f08f0519ec729f85b7202f1b68"
+    },
+    {
+      "path": ".ogs/laws.json",
+      "sizeBytes": 401,
+      "sha256": "d901a63e7e2a8f23d412e6ac51c9ef7b9ec5f98dbfb80b9ab76d85d843c1a65e"
+    },
+    {
+      "path": ".ogs/model-catalog.json",
+      "sizeBytes": 84679,
+      "sha256": "b3a6c64fc82724e381428ee280e65976782705f06ec1c5ac407d1f2ebc4f84e7"
+    },
+    {
+      "path": ".ogs/project.json",
+      "sizeBytes": 107,
+      "sha256": "7c7711264369aaf464da8b3f716263f193ba4aea369a4801e2e36589d3ab2df4"
+    },
+    {
+      "path": ".ogs/runtime.json",
+      "sizeBytes": 107,
+      "sha256": "9505400483455f6432cea713cd8ebe8bf823668423ae480075a19701b80d911c"
+    },
+    {
+      "path": ".ogs/user-profile.json",
+      "sizeBytes": 195,
+      "sha256": "567620729d48621e7467e3958251c0e2cf5b44813aa34f921ebd61f4253f450d"
+    },
+    {
+      "path": "LICENSE",
+      "sizeBytes": 11358,
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    {
+      "path": "NOTICE",
+      "sizeBytes": 882,
+      "sha256": "9a84a6589529ba02c2bebcd70b5da3dd6d6c1f0b5e1c272bd9aae421c1796e53"
+    },
+    {
+      "path": "README.md",
+      "sizeBytes": 20761,
+      "sha256": "a4bdb39779d50f79d25515e15159043bf2375f8980bd1c365bce8f42b4cba5c9"
+    },
+    {
+      "path": "REPRODUCE.md",
+      "sizeBytes": 4308,
+      "sha256": "2c2f87466ef81b6852dcea0f3065c0e930b03f6ad99195103332225e57bfbc43"
+    },
+    {
+      "path": "bin/ogs.mjs",
+      "sizeBytes": 54,
+      "sha256": "36fd003faeb6c3634285487dac4ac6f8f0b8348871941192699b6fe07baef071"
+    },
+    {
+      "path": "docs/README.md",
+      "sizeBytes": 7736,
+      "sha256": "53629fe6e2db7b787026d840a8b26bf39db765dd5374b76e98b501c59355da61"
+    },
+    {
+      "path": "docs/development/DECISIONS.md",
+      "sizeBytes": 3432,
+      "sha256": "a57d323185e5d1bd5a12881fb8457048d72f558f4002d28eaf844983acfbdef2"
+    },
+    {
+      "path": "docs/development/README.md",
+      "sizeBytes": 10889,
+      "sha256": "a919c3602bd060acd6e1bda3539681969a4d190440ba76f92a4211414d7b0430"
+    },
+    {
+      "path": "docs/development/backend-native-tools-standardization.md",
+      "sizeBytes": 27971,
+      "sha256": "4e9eb1f892c230611bd0e00e2620e76f454f6ba83a3238744423aa67112bd1eb"
+    },
+    {
+      "path": "docs/development/benchmarks/runtime-replay-2026-09-03.md",
+      "sizeBytes": 1470,
+      "sha256": "e6e71bfbf2aa256e86ebef1c482bdfa6d25a57971fa8b7ce1e27e21fe3b0c6b1"
+    },
+    {
+      "path": "docs/development/benchmarks/runtime-replay.md",
+      "sizeBytes": 3671,
+      "sha256": "978c24dcab216dc66d5466a36ed0a8ed2f534988accd15f1e41129d70f680f8a"
+    },
+    {
+      "path": "docs/development/commenting-style.md",
+      "sizeBytes": 6828,
+      "sha256": "8512b1517f13a165623aec0dbfbd2a75e87fbf41da6e120c8f174a790b355ffc"
+    },
+    {
+      "path": "docs/development/current-version-validation-2026-11-10.md",
+      "sizeBytes": 2364,
+      "sha256": "7209ec7d51b1b156248ba7252f27e93d4e40d6f8b0e4fd60dedc6a82e96f2d01"
+    },
+    {
+      "path": "docs/development/design-release-validation-template.md",
+      "sizeBytes": 4107,
+      "sha256": "11d8fb368eebe8e69ae35fc7ce2ad4e63f85ec61fb512cb0d782edf3f9c4b14f"
+    },
+    {
+      "path": "docs/development/evidence/v2-cross-backend-real-run-latest.json",
+      "sizeBytes": 17214,
+      "sha256": "a1f7aff0fe06699f22295ee70535d9519110255e52dee8ca46994895a5a785c2"
+    },
+    {
+      "path": "docs/development/evidence/v2-formal-software-project-run-2026-11-19.md",
+      "sizeBytes": 3086,
+      "sha256": "8d6604888f3c66ec8dde673d5a42ea809619c0114097b0a5dba02f5ff0533879"
+    },
+    {
+      "path": "docs/development/evidence/v2-gate-c-real-workflow-success-2026-11-16.md",
+      "sizeBytes": 9485,
+      "sha256": "5fbc0d4bde1717950ea04fd01c454df7adbd903a0131e6a43ac45d87054ec166"
+    },
+    {
+      "path": "docs/development/extended-state-machine-and-dag-bilingual.md",
+      "sizeBytes": 14881,
+      "sha256": "6d040b03ff26ce5d94bfde6bff60a12bca4c9de5e155d65d8985343f34712b45"
+    },
+    {
+      "path": "docs/development/file-sets.md",
+      "sizeBytes": 11138,
+      "sha256": "897b9c1f61ef4e04f50ae83fdfce0c6156f54a181e9d8c0e99e162bdfeb3e48b"
+    },
+    {
+      "path": "docs/development/framework-comparison.md",
+      "sizeBytes": 8488,
+      "sha256": "915fd3e0f7b177d2ee8ac90aa8863a69702bfd5f2e9629160b0602631c1ffb73"
+    },
+    {
+      "path": "docs/development/ogsystem-constitution-v2.md",
+      "sizeBytes": 3010,
+      "sha256": "d3f434143f73fe78455e26cdd3442c6b0336dc3782ddc9a6a63089ea03781ffb"
+    },
+    {
+      "path": "docs/development/open-core-release-gate-checklist.md",
+      "sizeBytes": 10942,
+      "sha256": "6b390bd6e5b9f5ce7ea6f9696545d726a2294e07e542e706e75c6170f65ed06f"
+    },
+    {
+      "path": "docs/development/release-uat-checklist.md",
+      "sizeBytes": 64782,
+      "sha256": "d8330f7fb51b78ce46d2a1ac6f8a33283e0a38ce269f3ea40addfaf51129b593"
+    },
+    {
+      "path": "docs/development/role-execution-architecture.md",
+      "sizeBytes": 97430,
+      "sha256": "414d529f3d9c827520ebc2d5e0a7dd17a86693c389f5145d5624f4efc15ed173"
+    },
+    {
+      "path": "docs/development/v2-validation-and-acceptance.md",
+      "sizeBytes": 26055,
+      "sha256": "df168151b0a174da22e7644eb8a8307ca743551bd7ddb7c450261eb9c1e7fbf4"
+    },
+    {
+      "path": "docs/development/v2-workspace-collaboration-design-and-acceptance.md",
+      "sizeBytes": 32995,
+      "sha256": "73c25924cd19a9458a2ad44a63a8998b51a11d97462631e528767413280acac7"
+    },
+    {
+      "path": "docs/development/v2-workspace-contracts.md",
+      "sizeBytes": 24334,
+      "sha256": "4fb26b275283b9e12b11b88b4175a3b79354c5f1fd2652495dfb2e3ab470f1a3"
+    },
+    {
+      "path": "docs/development/v2-workspace-implementation-runbook.md",
+      "sizeBytes": 8203,
+      "sha256": "3cd9070c05e3fadeed70551e12a59e7852235d578b63703b7c18e9ddf2ab4169"
+    },
+    {
+      "path": "docs/paper/README.md",
+      "sizeBytes": 21859,
+      "sha256": "a4b834e2e2a21615df348d9abfc0627ba5a2ac0f2d442a3b6fa36574101701a6"
+    },
+    {
+      "path": "docs/paper/experimental-validation-plan-bilingual.md",
+      "sizeBytes": 50215,
+      "sha256": "d929fd3b94bd9ef3bc37fc055c1d712066c45eedbfe13a38e804a2c64167c14d"
+    },
+    {
+      "path": "docs/paper/multi-agent-collaboration-models-and-tech-stacks.md",
+      "sizeBytes": 50231,
+      "sha256": "a00574270a83c8049d7a5702eedf3e824703a8404bedcb78f622313b553f2bc9"
+    },
+    {
+      "path": "docs/paper/ogsystem-paper-en.md",
+      "sizeBytes": 78917,
+      "sha256": "55e8b31a4c032a3164c3e37238acc76bea98f1fffb2a54614b5b46942ec4a41d"
+    },
+    {
+      "path": "docs/paper/ogsystem-paper-zh.md",
+      "sizeBytes": 76038,
+      "sha256": "bbc913d7f569a4a69a5f6ee5f31ce7b69c72e0f6e677cacdd76304b4d48139b3"
+    },
+    {
+      "path": "docs/paper/ogsystem-submission-paper-en.md",
+      "sizeBytes": 58288,
+      "sha256": "7c5aa2bdd54f777310dcb0752575f99f80701cb8052cce0771cccc967c15311f"
+    },
+    {
+      "path": "docs/paper/references/README.md",
+      "sizeBytes": 12446,
+      "sha256": "a6fc310ed437709d016569c07214e96eafeb36489f648b724f079dae284ae178"
+    },
+    {
+      "path": "docs/paper/references/agent-sama-arxiv-2505.23596.pdf",
+      "sizeBytes": 4717125,
+      "sha256": "bcc5fed3d5dcb4f9746780ed6b8348ee73508cf64c0697d2b71195270c7f1b95"
+    },
+    {
+      "path": "docs/paper/references/agent-survey-arxiv-2308.11432.pdf",
+      "sizeBytes": 5788348,
+      "sha256": "8709507742c260a5a92b4690ffc0459a0ab9af16dc7a5478d253a6e7b57bf23a"
+    },
+    {
+      "path": "docs/paper/references/agentless-arxiv-2407.01489.pdf",
+      "sizeBytes": 1384716,
+      "sha256": "1675c2dcd5ecaef47e8a4356062f60be642cee82e1bbacb044c9d047dce4c856"
+    },
+    {
+      "path": "docs/paper/references/auditable-agents-arxiv-2604.05485.pdf",
+      "sizeBytes": 888041,
+      "sha256": "456f08fd4b2ef8ce41e426448e043814855b4ab65032c047a66fc7dea5098b4c"
+    },
+    {
+      "path": "docs/paper/references/autogen-arxiv-2308.08155.pdf",
+      "sizeBytes": 3571809,
+      "sha256": "fcf8b1acae6b1bd6f14c92463caa9726828bf998234ba9f10c2411087897c96b"
+    },
+    {
+      "path": "docs/paper/references/automata-agent-traces-arxiv-2608.23670.pdf",
+      "sizeBytes": 5084884,
+      "sha256": "e0f2ae68601764b56f5e4109267faff885dd4955a603c9b75d57f0b9e0278352"
+    },
+    {
+      "path": "docs/paper/references/chatdev-arxiv-2307.07924.pdf",
+      "sizeBytes": 3477144,
+      "sha256": "1cffa12eae0586ec7074fc660a90b4fe90e406e9c07f3a48819a899e4bf55fd1"
+    },
+    {
+      "path": "docs/paper/references/codeact-arxiv-2402.01030.pdf",
+      "sizeBytes": 4345392,
+      "sha256": "749a45e36cf89fc7e1b701a2a72f6609ce8d3697577ceb0fff5ce9339ce8539e"
+    },
+    {
+      "path": "docs/paper/references/executable-fsm-arxiv-2611.10884.pdf",
+      "sizeBytes": 1548633,
+      "sha256": "21d9a22848c3b0f23f54c9073937da2f9d891a0f9143b9081dd0ab0bcbddb7fa"
+    },
+    {
+      "path": "docs/paper/references/gaia-arxiv-2311.12983.pdf",
+      "sizeBytes": 4254059,
+      "sha256": "5bf6f968d4f5cd20acdfca6e81e3c9f5277bb66061fad7a02e35442dff812ba0"
+    },
+    {
+      "path": "docs/paper/references/graphflow-arxiv-2605.22566.pdf",
+      "sizeBytes": 2842416,
+      "sha256": "0357938354833127a093809e279495f657f43214bcb7192a00252b8c152a31c3"
+    },
+    {
+      "path": "docs/paper/references/hexis-arxiv-2609.30123.pdf",
+      "sizeBytes": 650086,
+      "sha256": "e8b309d414a12a47ebaa0a4a8984f8d37c2d6b3f4576b83078ef6eb70f07974b"
+    },
+    {
+      "path": "docs/paper/references/magentic-one-arxiv-2411.04468.pdf",
+      "sizeBytes": 4793788,
+      "sha256": "e6620f66ce54a7460c90c854ac5b4dc26200f6f8d9c3b3f969e26ab8774338e9"
+    },
+    {
+      "path": "docs/paper/references/metaagent-arxiv-2507.22606.pdf",
+      "sizeBytes": 7898222,
+      "sha256": "aafe9b82626e1a3b7c284c94485efe412b31696c327db52beaef9daa8d015284"
+    },
+    {
+      "path": "docs/paper/references/metagpt-arxiv-2308.00352.pdf",
+      "sizeBytes": 16753634,
+      "sha256": "17582e47647fac8eaa3681feade41c8408310c4133acc5c6823565fbe880e1ac"
+    },
+    {
+      "path": "docs/paper/references/neuralfsm-acl-2026.pdf",
+      "sizeBytes": 3873635,
+      "sha256": "0df81492e8ddbd6f78c6d61a56c88630e347c38de442655405010e9cc0009e3b"
+    },
+    {
+      "path": "docs/paper/references/officebench-arxiv-2407.19056.pdf",
+      "sizeBytes": 1146630,
+      "sha256": "f5162305716ce6b67326b52150884bdc2d28aaec2553c13938630b4b00fff020"
+    },
+    {
+      "path": "docs/paper/references/openhands-arxiv-2407.16741.pdf",
+      "sizeBytes": 3293124,
+      "sha256": "5d802255c4a58104a06147ba736fee09569faf3c26f251e5e9b7eff5d7662c14"
+    },
+    {
+      "path": "docs/paper/references/osworld-arxiv-2404.07972.pdf",
+      "sizeBytes": 36863784,
+      "sha256": "d4c6e20dd59467f005561b1e97199f9842fd3b0e9fdd93e66e06ba0ec09edfdb"
+    },
+    {
+      "path": "docs/paper/references/ragtruth-arxiv-2401.00396.pdf",
+      "sizeBytes": 1082421,
+      "sha256": "268a06b73f7266970e0d393f8b27d74b56ac219d6ae1546da765183193a9d837"
+    },
+    {
+      "path": "docs/paper/references/stateflow-arxiv-2403.11322.pdf",
+      "sizeBytes": 10659524,
+      "sha256": "88e63a2ed74c44679862e2503ef43111f25d7e58bb795afabf5104241db51b16"
+    },
+    {
+      "path": "docs/paper/references/storm-arxiv-2605.20563.pdf",
+      "sizeBytes": 1192715,
+      "sha256": "a5bbd1b8eb5801644019edadc13f11396946b5e6842f641a374531d9203e7a80"
+    },
+    {
+      "path": "docs/paper/references/sustainable-agents-arxiv-2610.03010.pdf",
+      "sizeBytes": 1193975,
+      "sha256": "c5fea57637377850d15cbc7cebd0304bc65f5a232e7960bf1b032f9dce76a6da"
+    },
+    {
+      "path": "docs/paper/references/swe-agent-arxiv-2405.15793.pdf",
+      "sizeBytes": 4963538,
+      "sha256": "d171e0693060b910ceb2cddd0fd4bc7cae302005d42d0d8059bfdbe056c3adba"
+    },
+    {
+      "path": "docs/paper/references/swe-bench-arxiv-2310.06770.pdf",
+      "sizeBytes": 4533722,
+      "sha256": "f7e8e1df64129742b8199a21a042734519a823a1dafd6f48f8f3ddcfb48ee296"
+    },
+    {
+      "path": "docs/paper/references/swe-evo-arxiv-2512.18470.pdf",
+      "sizeBytes": 5186392,
+      "sha256": "cfa2ca71f3bd14ed93021a00d39767be80d7e2843c47f7d7ca11cf50dc9767d8"
+    },
+    {
+      "path": "docs/paper/references/tracedev-arxiv-2607.18886.pdf",
+      "sizeBytes": 2844107,
+      "sha256": "65aecc65fcb919fe77be883578c1cc3a94df11ee48737ceb20a73cd5db576271"
+    },
+    {
+      "path": "docs/paper/traceable-references.md",
+      "sizeBytes": 48631,
+      "sha256": "8814da2df7e5932313e8096f0bdcf159d72720162f9c2f83034e21cfd1eae9e1"
+    },
+    {
+      "path": "docs/usage/README.md",
+      "sizeBytes": 2120,
+      "sha256": "7ff988631077a5c8e3642116df48f3243c35cf75b026b2c0c17202f33a2caa92"
+    },
+    {
+      "path": "docs/usage/multi-entry-and-terminal-output.md",
+      "sizeBytes": 2992,
+      "sha256": "4207bb26aa3ebaeca420786e355c75b8ab13b4e9565124379b86fdda6facbe9e"
+    },
+    {
+      "path": "docs/usage/ogsystem-ebook.md",
+      "sizeBytes": 16169,
+      "sha256": "f6b892e48248c27a33afc4df5e3daa43a66b4e577ff91b8e4fe93cd4f5ce922f"
+    },
+    {
+      "path": "docs/usage/single-host-production.md",
+      "sizeBytes": 6327,
+      "sha256": "c6b2dd865b12ba5de52dfe2127c38f02c4e39afb046e7ded2b3263e4485ac949"
+    },
+    {
+      "path": "docs/usage/usage-manual.md",
+      "sizeBytes": 3495,
+      "sha256": "718840fe4c0989ddf5623135b54dba0d1c8bb5792adbab0b7e7545615b348318"
+    },
+    {
+      "path": "examples/README.md",
+      "sizeBytes": 1110,
+      "sha256": "c42543d30dad5216628b6a21269464554ed734331f1ef8de3273f44eb69c6507"
+    },
+    {
+      "path": "examples/archive/v1/README.md",
+      "sizeBytes": 207,
+      "sha256": "8c910b4e8331dbc1b102bfc56b1a3e5f7568ff68cfb135ce1576974f3c27dcf1"
+    },
+    {
+      "path": "examples/archive/v1/console-laws.json",
+      "sizeBytes": 400,
+      "sha256": "4020941d22f20f6e5e6e28382d48fea2581bcbe77594f15464d031ad1d768cda"
+    },
+    {
+      "path": "examples/archive/v1/console-profiles.json",
+      "sizeBytes": 144,
+      "sha256": "1fd1424c4ad88ac86b82f0af6205794cfee9b99dcd0e44f2a40ec355a8657037"
+    },
+    {
+      "path": "examples/archive/v1/console-system.mmd",
+      "sizeBytes": 245,
+      "sha256": "5b1a56d995ef4a8848db2d337cf5e93852f420a8e95aa9fc079844b9bd330202"
+    },
+    {
+      "path": "examples/archive/v1/console-tools.json",
+      "sizeBytes": 295,
+      "sha256": "0df03d3e84ac09f7186d51a1a51228611824b9e17ef016cafa449600370357c1"
+    },
+    {
+      "path": "examples/archive/v1/error-flow-compensation/.ogs/.gitignore",
+      "sizeBytes": 14,
+      "sha256": "240a3e0d37d2e86b614063f5347eb02d4f99ca6c254de6b82871ff8d95532a7d"
+    },
+    {
+      "path": "examples/archive/v1/error-flow-compensation/README.md",
+      "sizeBytes": 627,
+      "sha256": "637ba2fc2620e3b7d2634a193d9f651117345089a2be5c2ae4d2a00cf94a3abb"
+    },
+    {
+      "path": "examples/archive/v1/error-flow-compensation/laws.json",
+      "sizeBytes": 217,
+      "sha256": "4eb3116788e072acfc01325290a059da7f7e0c172faa723493df29c6472e04d6"
+    },
+    {
+      "path": "examples/archive/v1/error-flow-compensation/profiles.json",
+      "sizeBytes": 242,
+      "sha256": "d72a453942cfdc22494a7f1f22081822701f35ff2d933c08347f184de16a5f04"
+    },
+    {
+      "path": "examples/archive/v1/error-flow-compensation/runtime.json",
+      "sizeBytes": 175,
+      "sha256": "f5a6a707616d021f2e1aefbe341ef05399935258019da0bd613e0d17070b664a"
+    },
+    {
+      "path": "examples/archive/v1/error-flow-compensation/scripts/console-print.mjs",
+      "sizeBytes": 1217,
+      "sha256": "dec83ce776c782a03eff295997473af97b1d0765cf3e6a836bc5ab23433f9275"
+    },
+    {
+      "path": "examples/archive/v1/error-flow-compensation/scripts/error-handler.mjs",
+      "sizeBytes": 208,
+      "sha256": "dbbca81e363f106764fa3eeca8de3cea0031007275eae652ce39b16b45c05c83"
+    },
+    {
+      "path": "examples/archive/v1/error-flow-compensation/scripts/finalizer.mjs",
+      "sizeBytes": 103,
+      "sha256": "5112d8b6a71b552f3fbe5c7cc436aebd590d873a5ca2b1184c6abca03e75a7f9"
+    },
+    {
+      "path": "examples/archive/v1/error-flow-compensation/scripts/worker.mjs",
+      "sizeBytes": 95,
+      "sha256": "4eef2537dcf4aad9dc43c0d460b94d1947850bbc31858349cfc8249688a6457b"
+    },
+    {
+      "path": "examples/archive/v1/error-flow-compensation/system.mmd",
+      "sizeBytes": 906,
+      "sha256": "465295a3e00c87fd80ee13a66ebb5aa3b5c57d77fe8a6a85d9d14595551e65df"
+    },
+    {
+      "path": "examples/archive/v1/error-flow-compensation/tools.json",
+      "sizeBytes": 559,
+      "sha256": "5ce95178994f489d0b3408ed9c4b81d6495cfbeec0d520a0bb0e728e5dad7410"
+    },
+    {
+      "path": "examples/archive/v1/minimal-system.mmd",
+      "sizeBytes": 193,
+      "sha256": "72af6c5a73b0de7b11acff1d49ddb672786faccb5927edf89d4bc619bbf81be8"
+    },
+    {
+      "path": "examples/archive/v1/mulit-debate-ogs/.gitignore",
+      "sizeBytes": 56,
+      "sha256": "801df944169a9e49c9fde569cedc02add60b5fd7287de51b757c4a3811231d8b"
+    },
+    {
+      "path": "examples/archive/v1/mulit-debate-ogs/.ogs/README.md",
+      "sizeBytes": 2906,
+      "sha256": "b7e96d2f885ec54a02caa57ff391bdaf9ce51444997819334d372beba395230f"
+    },
+    {
+      "path": "examples/archive/v1/mulit-debate-ogs/.ogs/laws.json",
+      "sizeBytes": 210,
+      "sha256": "9697341e15256d19d709ff9ea9c8180f5bb1e2ebfbb47cf9da3fbcef77c9e754"
+    },
+    {
+      "path": "examples/archive/v1/mulit-debate-ogs/.ogs/model-selection.json",
+      "sizeBytes": 171,
+      "sha256": "f5cdf0acb587181f84c2dc87cb9a93a6205a7973dba497986f3daf3d9b257b28"
+    },
+    {
+      "path": "examples/archive/v1/mulit-debate-ogs/.ogs/project.json",
+      "sizeBytes": 130,
+      "sha256": "d382bd1a0184c7366c906693f96106dbdbe53a88704879889283ee1ea6ddbaf0"
+    },
+    {
+      "path": "examples/archive/v1/mulit-debate-ogs/.ogs/runtime.json",
+      "sizeBytes": 384,
+      "sha256": "a051856498c22f33a7eb08707b51a6ee8225905106a22a07b1d104259a2830ad"
+    },
+    {
+      "path": "examples/archive/v1/mulit-debate-ogs/.ogs/studio/system.authoring.json",
+      "sizeBytes": 4528,
+      "sha256": "ac1cf308cbe879e4a92e04601fae8afc919dddac793d0df5567581b6dba63e34"
+    },
+    {
+      "path": "examples/archive/v1/mulit-debate-ogs/.ogs/user-profile.json",
+      "sizeBytes": 203,
+      "sha256": "b71e80109b51cd72aa142c4a6593da5903ef25b15de38719de79453b0478a3db"
+    },
+    {
+      "path": "examples/archive/v1/mulit-debate-ogs/README.md",
+      "sizeBytes": 1633,
+      "sha256": "f13c5d9d0aae827300039dad59e41714a85920feb5245443260df7d0ff891203"
+    },
+    {
+      "path": "examples/archive/v1/mulit-debate-ogs/og-roles/README.md",
+      "sizeBytes": 1663,
+      "sha256": "acfc8948d91000f280193719c8f975a439e3fcf00c093aeca56251850b56e4ec"
+    },
+    {
+      "path": "examples/archive/v1/mulit-debate-ogs/og-roles/roles/debate-judge/agent.md",
+      "sizeBytes": 554,
+      "sha256": "097443d4328e2a7fe26660cc60a83e5b13c37907b05601e92f7f42a6fe2eb104"
+    },
+    {
+      "path": "examples/archive/v1/mulit-debate-ogs/og-roles/roles/debate-judge/output.schema.json",
+      "sizeBytes": 1360,
+      "sha256": "1c06b51cf1bc2cd8bfd461501a087b5c4f6022a7ac2718f1cc4f8c98fca531cb"
+    },
+    {
+      "path": "examples/archive/v1/mulit-debate-ogs/og-roles/roles/debate-judge/prompt.md",
+      "sizeBytes": 1068,
+      "sha256": "0a39bd600d4eb29a9839fa1c6000137bbd71c19aaefa7df4157ba6d7a919ddb6"
+    },
+    {
+      "path": "examples/archive/v1/mulit-debate-ogs/og-roles/roles/debate-judge/role.json",
+      "sizeBytes": 1071,
+      "sha256": "88f1e30bd73a4b85192f3a9a233404b47fbf70f20925a0e41dddceac1748b652"
+    },
+    {
+      "path": "examples/archive/v1/mulit-debate-ogs/og-roles/roles/debate-summary/agent.md",
+      "sizeBytes": 506,
+      "sha256": "af304543896df09bf06243d40d81f48ce704104fd89898b51dd1b26c7845a7d6"
+    },
+    {
+      "path": "examples/archive/v1/mulit-debate-ogs/og-roles/roles/debate-summary/output.schema.json",
+      "sizeBytes": 414,
+      "sha256": "4e89c0b63c873a5db2390cb77ce1fc9a2f3c768ec9ed318e798284504bf87fab"
+    },
+    {
+      "path": "examples/archive/v1/mulit-debate-ogs/og-roles/roles/debate-summary/prompt.md",
+      "sizeBytes": 719,
+      "sha256": "ac2f1cdc34a1491600f3fccb5592995d37a92d73088c3f88f9591facd8d1e850"
+    },
+    {
+      "path": "examples/archive/v1/mulit-debate-ogs/og-roles/roles/debate-summary/role.json",
+      "sizeBytes": 1024,
+      "sha256": "0189b77e7e3d8fbf431f3168d44ede3d0d014a4f33f2660ed330eba3e224366f"
+    },
+    {
+      "path": "examples/archive/v1/mulit-debate-ogs/og-roles/roles/demo-analyst/agent.md",
+      "sizeBytes": 427,
+      "sha256": "b89e0f565f7793bab6e04e1bf6d63a6ee147ab9e1d44409f175720da996fe4ee"
+    },
+    {
+      "path": "examples/archive/v1/mulit-debate-ogs/og-roles/roles/demo-analyst/output.schema.json",
+      "sizeBytes": 255,
+      "sha256": "106883596b92a62599ec3d4322a5079d9c1afffc4c32dbe8e22572151ce399dc"
+    },
+    {
+      "path": "examples/archive/v1/mulit-debate-ogs/og-roles/roles/demo-analyst/prompt.md",
+      "sizeBytes": 406,
+      "sha256": "31258d0ff9a373805dc1335b95dc8197f119a09933070519faa53be71d05d5f5"
+    },
+    {
+      "path": "examples/archive/v1/mulit-debate-ogs/og-roles/roles/demo-analyst/role.json",
+      "sizeBytes": 987,
+      "sha256": "fd5cf52e862de556647c5d4b874349e06ce5f8a9768861270f71097b2564683d"
+    },
+    {
+      "path": "examples/archive/v1/mulit-debate-ogs/og-roles/roles/investment-critic/agent.md",
+      "sizeBytes": 600,
+      "sha256": "2ab8233e5e09b6af62234ccd99bf510d6fe686cb888cd2fe21623964a2ccbf6a"
+    },
+    {
+      "path": "examples/archive/v1/mulit-debate-ogs/og-roles/roles/investment-critic/output.schema.json",
+      "sizeBytes": 886,
+      "sha256": "d0f368d774ddb5be24614570aefa8395ba9a52fe1d7d7a048ed9865fa6b699dc"
+    },
+    {
+      "path": "examples/archive/v1/mulit-debate-ogs/og-roles/roles/investment-critic/prompt.md",
+      "sizeBytes": 870,
+      "sha256": "eedc81d9cef05955a86710b7b63e94f8e918006d63c153d0d41607d6ba1132b7"
+    },
+    {
+      "path": "examples/archive/v1/mulit-debate-ogs/og-roles/roles/investment-critic/role.json",
+      "sizeBytes": 1028,
+      "sha256": "2c0c79c7a8d9efccc7d999b4b1de386244a43c207b1f06f23decc7d85d4523b9"
+    },
+    {
+      "path": "examples/archive/v1/mulit-debate-ogs/og-roles/roles/investment-optimizer/agent.md",
+      "sizeBytes": 627,
+      "sha256": "e62ec97b6ea60ff2f43f030ca72d4794d290c58e20bf04994efed6d6eecb0b13"
+    },
+    {
+      "path": "examples/archive/v1/mulit-debate-ogs/og-roles/roles/investment-optimizer/output.schema.json",
+      "sizeBytes": 951,
+      "sha256": "c6394ab3cd7b98bf1ba54db9f1821064ad6806e6381f11e443c5fc55e23e4765"
+    },
+    {
+      "path": "examples/archive/v1/mulit-debate-ogs/og-roles/roles/investment-optimizer/prompt.md",
+      "sizeBytes": 893,
+      "sha256": "ae7919395b8a3607125da55e4d693528ca15fdef15e3cccfdeff3d6ad6fa860c"
+    },
+    {
+      "path": "examples/archive/v1/mulit-debate-ogs/og-roles/roles/investment-optimizer/role.json",
+      "sizeBytes": 1029,
+      "sha256": "bea2f64dfd8ac796132ac953b168fef4c3585f27524ad7cd4edb9dbfbdebdc7c"
+    },
+    {
+      "path": "examples/archive/v1/mulit-debate-ogs/og-roles/roles/investment-proposer/agent.md",
+      "sizeBytes": 741,
+      "sha256": "e85d7bad95306d78036d5f1a15c331f3a1249828c4dcf1358f2b055c85289aa9"
+    },
+    {
+      "path": "examples/archive/v1/mulit-debate-ogs/og-roles/roles/investment-proposer/output.schema.json",
+      "sizeBytes": 510,
+      "sha256": "2e9408c168b8109cf2d99eb9dc63794153942743c1b2ff6b9df9a0ad9ba30eaf"
+    },
+    {
+      "path": "examples/archive/v1/mulit-debate-ogs/og-roles/roles/investment-proposer/prompt.md",
+      "sizeBytes": 942,
+      "sha256": "a44e17e68e93fab7591e11c849a8fd365e189ee3492d0cedf7d63444ba54bb03"
+    },
+    {
+      "path": "examples/archive/v1/mulit-debate-ogs/og-roles/roles/investment-proposer/role.json",
+      "sizeBytes": 1048,
+      "sha256": "03d195c65aac37f3ce23f898fbd253359eaa85109e28d1a7c3294770f144cf79"
+    },
+    {
+      "path": "examples/archive/v1/mulit-debate-ogs/profiles.json",
+      "sizeBytes": 143,
+      "sha256": "c4ef39c8294060cb53340c860afaa339f2b6f47112e08485ee8401de3f9130a9"
+    },
+    {
+      "path": "examples/archive/v1/mulit-debate-ogs/scripts/console-print.mjs",
+      "sizeBytes": 1218,
+      "sha256": "433a39088b14cdb207ebdaaf825b7db8c073741b29b62b99d44fbbf0681da458"
+    },
+    {
+      "path": "examples/archive/v1/mulit-debate-ogs/system.example.mmd",
+      "sizeBytes": 209,
+      "sha256": "12b72dc2aad0a912bb6b98dd917978d17b277ce95f8dcecded3971488c08713e"
+    },
+    {
+      "path": "examples/archive/v1/mulit-debate-ogs/system.mmd",
+      "sizeBytes": 775,
+      "sha256": "adee4159662e20140413f81ebf5457bed38ef1d6ab61a02be05da417d086fc9d"
+    },
+    {
+      "path": "examples/archive/v1/mulit-debate-ogs/tools.json",
+      "sizeBytes": 223,
+      "sha256": "9c1eae19dc7ac5625e1c980d4b31e9a3586f9bdc4de2e5be2073a94028b0db1d"
+    },
+    {
+      "path": "examples/archive/v1/ogs-gstacklike/.ogs/.gitignore",
+      "sizeBytes": 46,
+      "sha256": "2e78f5e265de215db501fcb02f7db8e783bac501e8da2e09bbd436620710acd6"
+    },
+    {
+      "path": "examples/archive/v1/ogs-gstacklike/.ogs/README.md",
+      "sizeBytes": 1728,
+      "sha256": "ef24f4e1de551ac4af865f978e5e459fe0fb9330b7aa7b4b0f807cea869078af"
+    },
+    {
+      "path": "examples/archive/v1/ogs-gstacklike/.ogs/laws.json",
+      "sizeBytes": 214,
+      "sha256": "80e0e5f61836803313745c79b4cf62fb8d1a71199ebcb173dc95702e39f3749f"
+    },
+    {
+      "path": "examples/archive/v1/ogs-gstacklike/.ogs/model-selection.json",
+      "sizeBytes": 42,
+      "sha256": "0533e75cadb69852cf629c700e7108569f9286bd05831ed350ac0098ab2d1591"
+    },
+    {
+      "path": "examples/archive/v1/ogs-gstacklike/.ogs/runtime.json",
+      "sizeBytes": 385,
+      "sha256": "3e75c276cf0951f4891b34552a164b3851e9e7b64f62b7319bc5f11bb5ca96ef"
+    },
+    {
+      "path": "examples/archive/v1/ogs-gstacklike/.ogs/studio/system.authoring.json",
+      "sizeBytes": 7203,
+      "sha256": "1bc94d8143cdb28a66cf7014abf67a76ba128f086d5d357489ea89b34af328cb"
+    },
+    {
+      "path": "examples/archive/v1/ogs-gstacklike/.ogs/user-profile.json",
+      "sizeBytes": 203,
+      "sha256": "b71e80109b51cd72aa142c4a6593da5903ef25b15de38719de79453b0478a3db"
+    },
+    {
+      "path": "examples/archive/v1/ogs-gstacklike/README.md",
+      "sizeBytes": 6029,
+      "sha256": "7c3c8920ab9231ff48395802c9662969275326b707eb99fe5e48af496c821298"
+    },
+    {
+      "path": "examples/archive/v1/ogs-gstacklike/og-roles/README.md",
+      "sizeBytes": 989,
+      "sha256": "fe3e934f062374055a0cb63aba91e44053c1b9f6d7bb105808b731db7ec3c1ae"
+    },
+    {
+      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/error-handler-base/agent.md",
+      "sizeBytes": 977,
+      "sha256": "67b3848c0ace9d22c31af4ec71d7107d8ed1c27cead687224e30f82dc67f6fd0"
+    },
+    {
+      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/error-handler-base/output.schema.json",
+      "sizeBytes": 829,
+      "sha256": "b338b5002621594ef2275143a86865f286f4a5a4be431539f1cb9c025a1e982c"
+    },
+    {
+      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/error-handler-base/prompt.md",
+      "sizeBytes": 698,
+      "sha256": "9fe78d4bc0f215d10067d01fe630a83661e0d0cf95dddd69ec6af4dc0f50803c"
+    },
+    {
+      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/error-handler-base/role.json",
+      "sizeBytes": 976,
+      "sha256": "54170e59c0c2eceb05ed511ff010bfab54c1d5b168070cc52c83257c1f5b2ca9"
+    },
+    {
+      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/learn/agent.md",
+      "sizeBytes": 503,
+      "sha256": "ecb2fd2828ef66d1811c3971a43d1b8f3eeb58aca270fc70bb6867d79d903439"
+    },
+    {
+      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/learn/output.schema.json",
+      "sizeBytes": 255,
+      "sha256": "106883596b92a62599ec3d4322a5079d9c1afffc4c32dbe8e22572151ce399dc"
+    },
+    {
+      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/learn/prompt.md",
+      "sizeBytes": 446,
+      "sha256": "ed13f36770941eeea3de007cb46e9a2bdf40ad0ef70b7e51a7471b6e47836a7a"
+    },
+    {
+      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/learn/role.json",
+      "sizeBytes": 840,
+      "sha256": "0ad0ed9ef95a74a9496e3e28c2c2201b0d1b90a07129ff2ec83a020ffd253962"
+    },
+    {
+      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/office-hours/agent.md",
+      "sizeBytes": 383,
+      "sha256": "bc161298cb62a1e9c9c682cab988e4239878f8e7869653cbb0b798ecc1d16efb"
+    },
+    {
+      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/office-hours/output.schema.json",
+      "sizeBytes": 278,
+      "sha256": "05c122a5efe9c950390de3a806ea5a2754489a12e50ecf088633d2dd01a8ca61"
+    },
+    {
+      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/office-hours/prompt.md",
+      "sizeBytes": 467,
+      "sha256": "732df3d180066cc552e023568273613783b1dea0c2aff744540df0f8d7a5211c"
+    },
+    {
+      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/office-hours/role.json",
+      "sizeBytes": 906,
+      "sha256": "1571e2c7f2a89b7740cba5ea2a57983c3704e632726fd4ae555e5705d117694f"
+    },
+    {
+      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/qa/agent.md",
+      "sizeBytes": 524,
+      "sha256": "5b116728713f57a55c20def40cff36efd1530208dff1e6f89f382e038c7012ff"
+    },
+    {
+      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/qa/output.schema.json",
+      "sizeBytes": 278,
+      "sha256": "c6ee86953b419afc9dbfc8a0d92ce863ebd35ad08b92d6eb9d250220ffc0414f"
+    },
+    {
+      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/qa/prompt.md",
+      "sizeBytes": 471,
+      "sha256": "019076183ffa80a46d25715d580bae63a28132f14408fb2ea191590c4d36282e"
+    },
+    {
+      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/qa/role.json",
+      "sizeBytes": 888,
+      "sha256": "d6dede25eb6bc9f2c4900d8e473b4eded07b4ab4a43a80d6b53e79656b1287c6"
+    },
+    {
+      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/retro/agent.md",
+      "sizeBytes": 527,
+      "sha256": "f2d855e3f0f8a3388112df21e8c67656b7d1a9ac7b6dfdc5c00020d160409737"
+    },
+    {
+      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/retro/output.schema.json",
+      "sizeBytes": 255,
+      "sha256": "106883596b92a62599ec3d4322a5079d9c1afffc4c32dbe8e22572151ce399dc"
+    },
+    {
+      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/retro/prompt.md",
+      "sizeBytes": 468,
+      "sha256": "9aec5f8292ebaf6503110ef378ee71527081667253e6ea751b3f694260f5727e"
+    },
+    {
+      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/retro/role.json",
+      "sizeBytes": 802,
+      "sha256": "5bc7b77075b6969c411e6fd08aa63177887f484df711f543496be797081dae9e"
+    },
+    {
+      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/review/agent.md",
+      "sizeBytes": 543,
+      "sha256": "fb599cc7c73728ca30f7e7c3f0fa07aa68bb85aadc856a38afadfc70007d5c5c"
+    },
+    {
+      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/review/output.schema.json",
+      "sizeBytes": 285,
+      "sha256": "b27160573191d7aff8f9f23037b5de6164fba73479b6bfa9b9a812635dd3951c"
+    },
+    {
+      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/review/prompt.md",
+      "sizeBytes": 463,
+      "sha256": "1532bc3f92805819e69a2165def5a335116f92c5b030880be75402685f0c4211"
+    },
+    {
+      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/review/role.json",
+      "sizeBytes": 899,
+      "sha256": "42744965fc77434718a14c3cb47060e06dd730ae4051881ebe9ee83b89930d39"
+    },
+    {
+      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/ship-deploy/agent.md",
+      "sizeBytes": 538,
+      "sha256": "9ec09b4c1b739387c34fdc0086934d550e345431a81a53871c50f38c25b091c7"
+    },
+    {
+      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/ship-deploy/output.schema.json",
+      "sizeBytes": 255,
+      "sha256": "106883596b92a62599ec3d4322a5079d9c1afffc4c32dbe8e22572151ce399dc"
+    },
+    {
+      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/ship-deploy/prompt.md",
+      "sizeBytes": 450,
+      "sha256": "fa005af47640aef76af16ece12ae38628f20efcbab993030a7a975c5f0a79891"
+    },
+    {
+      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/ship-deploy/role.json",
+      "sizeBytes": 949,
+      "sha256": "fb8c15c84e4f4b698a758ecad220a3346171be36d2be31b0331fd42e72f39897"
+    },
+    {
+      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/ship/agent.md",
+      "sizeBytes": 844,
+      "sha256": "3284c57be72b1edd592d993d7db6290bebbf50d7175074c74a683d4c219d0caf"
+    },
+    {
+      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/ship/output.schema.json",
+      "sizeBytes": 266,
+      "sha256": "42a4eda65f530a8fb8f9b8da185126e786b4009fabf9fef539cd1c1420885b57"
+    },
+    {
+      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/ship/prompt.md",
+      "sizeBytes": 591,
+      "sha256": "896967b13dd15338d66b89da106657da3e43c65307e93ecc306a7d74528815a4"
+    },
+    {
+      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/ship/role.json",
+      "sizeBytes": 987,
+      "sha256": "ae709b810ef6e5f405f47a4253e59dce67857f66c3d3612c21576c0c2163b51d"
+    },
+    {
+      "path": "examples/archive/v1/ogs-gstacklike/profiles.json",
+      "sizeBytes": 631,
+      "sha256": "e4c2f03a8e697e16791092c6e37a6ba60a7477e740701006fa9afecacb4e110f"
+    },
+    {
+      "path": "examples/archive/v1/ogs-gstacklike/scenarios/approval-rework.mmd",
+      "sizeBytes": 1311,
+      "sha256": "e1ec94eafa8092dd3b8d9439b0da7bc7b0b5df31e9bf2e382f45c27ca0716425"
+    },
+    {
+      "path": "examples/archive/v1/ogs-gstacklike/scenarios/deploy-failure.mmd",
+      "sizeBytes": 1773,
+      "sha256": "ee0e306a33b6a5fc6bf2bec19b87bd8cc23c8384a6b4b6f783180bd01f023160"
+    },
+    {
+      "path": "examples/archive/v1/ogs-gstacklike/scenarios/review-pause.mmd",
+      "sizeBytes": 1308,
+      "sha256": "d74cd5f7eff7ed6a119e8fd50839ec0f7778d8ae234bec73bac44599f2f67925"
+    },
+    {
+      "path": "examples/archive/v1/ogs-gstacklike/scenarios/review-terminate.mmd",
+      "sizeBytes": 1312,
+      "sha256": "1daa281dbedd2a7bf14eb6ed3def294949ea2609cfa19d869904b7ff81419624"
+    },
+    {
+      "path": "examples/archive/v1/ogs-gstacklike/scripts/console-print.mjs",
+      "sizeBytes": 1217,
+      "sha256": "dec83ce776c782a03eff295997473af97b1d0765cf3e6a836bc5ab23433f9275"
+    },
+    {
+      "path": "examples/archive/v1/ogs-gstacklike/scripts/emit-review-result.mjs",
+      "sizeBytes": 2142,
+      "sha256": "6e584caf70afb99e1a48c9de1f163e5ae49e7827a5ce4bd90d31f58941f8776a"
+    },
+    {
+      "path": "examples/archive/v1/ogs-gstacklike/scripts/emit-role-result.mjs",
+      "sizeBytes": 9595,
+      "sha256": "83882d083435688494ec81e4b7d4df369c0ba2ad0accd0a4659de7652e469d82"
+    },
+    {
+      "path": "examples/archive/v1/ogs-gstacklike/scripts/ship-deploy.mjs",
+      "sizeBytes": 6681,
+      "sha256": "4c6ebab092333603c5afb7dbf7a16f5a7acb1af3c8e91c1f2c9d262704ea927c"
+    },
+    {
+      "path": "examples/archive/v1/ogs-gstacklike/scripts/validate-scenarios.sh",
+      "sizeBytes": 13593,
+      "sha256": "b3f5b3cb1fd8a28b3c494d982cbb6815b4c150303d8d7605f08299c9d523d004"
+    },
+    {
+      "path": "examples/archive/v1/ogs-gstacklike/system.mmd",
+      "sizeBytes": 2118,
+      "sha256": "af9d565247db7919552d7877a80175e7b355e2b2b076ca0c119efeebd3acda94"
+    },
+    {
+      "path": "examples/archive/v1/ogs-gstacklike/tools.json",
+      "sizeBytes": 1716,
+      "sha256": "28e1d66dd441ae01208337e3c726e2f0d9d1b72a5d96f32945d43e0f42775213"
+    },
+    {
+      "path": "examples/archive/v1/runtime-native-human-review/README.md",
+      "sizeBytes": 1468,
+      "sha256": "fdd6e2addf281b5c27b49a718d1b5c4edd1bf90944f7b8be557b1dd620097617"
+    },
+    {
+      "path": "examples/archive/v1/runtime-native-human-review/system.mmd",
+      "sizeBytes": 481,
+      "sha256": "e7673a9d155844ef5b83374a6c1f95e28dcfd51d517a284134b620b97b60a5c9"
+    },
+    {
+      "path": "examples/archive/v1/rust-hello-pipeline/README.md",
+      "sizeBytes": 503,
+      "sha256": "71c721030980462c59293a47899d91daad0a8dd710a8d5c34de134c5997bbb1c"
+    },
+    {
+      "path": "examples/archive/v1/rust-hello-pipeline/profiles.json",
+      "sizeBytes": 418,
+      "sha256": "153ad15ff08ddae25cbbcde2abc3944185b93da33718746afa024d814615f1b8"
+    },
+    {
+      "path": "examples/archive/v1/rust-hello-pipeline/scripts/compiler.mjs",
+      "sizeBytes": 1243,
+      "sha256": "11470dda6c1a0dd6c9a607fe5124ddd88ef9d1823f6bd6524791785fbe316038"
+    },
+    {
+      "path": "examples/archive/v1/rust-hello-pipeline/scripts/developer.mjs",
+      "sizeBytes": 943,
+      "sha256": "905bd281d05650e433349afd3acd0e8910be764a81450b4b69d7c3b884bf476d"
+    },
+    {
+      "path": "examples/archive/v1/rust-hello-pipeline/scripts/packager.mjs",
+      "sizeBytes": 1709,
+      "sha256": "0065239f7687f89b9e3f48040bfd9e3aedd26a5853983af1474c625071d2dc75"
+    },
+    {
+      "path": "examples/archive/v1/rust-hello-pipeline/system.mmd",
+      "sizeBytes": 525,
+      "sha256": "8c99b121162512721f0fc4cf84594a287f16dda177015f40dff04cf1a109dab0"
+    },
+    {
+      "path": "examples/archive/v1/rust-hello-pipeline/tools.json",
+      "sizeBytes": 703,
+      "sha256": "cb29dfd459b8ae6efeb398da2f3e95b9a71ad5fb421d4b0ca4caf2d14f95a182"
+    },
+    {
+      "path": "examples/archive/v1/wechat-miniprogram-factory/.ogs/README.md",
+      "sizeBytes": 2906,
+      "sha256": "b7e96d2f885ec54a02caa57ff391bdaf9ce51444997819334d372beba395230f"
+    },
+    {
+      "path": "examples/archive/v1/wechat-miniprogram-factory/.ogs/laws.json",
+      "sizeBytes": 211,
+      "sha256": "c924a76eea95e6cea65981e28623e9552375bf24ad96cd58a499ae270716f550"
+    },
+    {
+      "path": "examples/archive/v1/wechat-miniprogram-factory/.ogs/model-catalog.json",
+      "sizeBytes": 106,
+      "sha256": "17a930a895d81cf3e80e4b3c89074f051cabb583faf9fd83b41a4590a6a483bd"
+    },
+    {
+      "path": "examples/archive/v1/wechat-miniprogram-factory/.ogs/model-selection.json",
+      "sizeBytes": 42,
+      "sha256": "0533e75cadb69852cf629c700e7108569f9286bd05831ed350ac0098ab2d1591"
+    },
+    {
+      "path": "examples/archive/v1/wechat-miniprogram-factory/.ogs/project.json",
+      "sizeBytes": 164,
+      "sha256": "03b6a4d62652d20dc67e2a4bbde92a4fa8bd119167caf376880b70144d5a9641"
+    },
+    {
+      "path": "examples/archive/v1/wechat-miniprogram-factory/.ogs/runtime.json",
+      "sizeBytes": 384,
+      "sha256": "a051856498c22f33a7eb08707b51a6ee8225905106a22a07b1d104259a2830ad"
+    },
+    {
+      "path": "examples/archive/v1/wechat-miniprogram-factory/.ogs/studio/system.authoring.json",
+      "sizeBytes": 3070,
+      "sha256": "b2bb3febeb8d77711deea84a021b117c46e91cea1090e80382fa43a212dfbeeb"
+    },
+    {
+      "path": "examples/archive/v1/wechat-miniprogram-factory/.ogs/user-profile.json",
+      "sizeBytes": 203,
+      "sha256": "b71e80109b51cd72aa142c4a6593da5903ef25b15de38719de79453b0478a3db"
+    },
+    {
+      "path": "examples/archive/v1/wechat-miniprogram-factory/README.md",
+      "sizeBytes": 1877,
+      "sha256": "e6d58ae553ed2f58d231a73c2f77a1cbf3bc71b2557e938d0911d821f64d9d3c"
+    },
+    {
+      "path": "examples/archive/v1/wechat-miniprogram-factory/og-roles/README.md",
+      "sizeBytes": 1663,
+      "sha256": "acfc8948d91000f280193719c8f975a439e3fcf00c093aeca56251850b56e4ec"
+    },
+    {
+      "path": "examples/archive/v1/wechat-miniprogram-factory/og-roles/roles/coding/agent.md",
+      "sizeBytes": 137,
+      "sha256": "8c39e0763c525745a639e359cadb5814e2d50a7ec63c5741795c7ad8080e7131"
+    },
+    {
+      "path": "examples/archive/v1/wechat-miniprogram-factory/og-roles/roles/coding/output.schema.json",
+      "sizeBytes": 474,
+      "sha256": "8035e601b67012a0b961879f16c478a59f4b12d02973e384c5f6dc83d8ca861e"
+    },
+    {
+      "path": "examples/archive/v1/wechat-miniprogram-factory/og-roles/roles/coding/prompt.md",
+      "sizeBytes": 306,
+      "sha256": "9b35a89f0ff5e5ed6f59bf5718736a4bb7893301e9d6ae09c815f1e344d95d0b"
+    },
+    {
+      "path": "examples/archive/v1/wechat-miniprogram-factory/og-roles/roles/coding/role.json",
+      "sizeBytes": 910,
+      "sha256": "198bd8f6a0454a2d6b2cca58e58733f97e52b083f48d9eeabdf8e937649c6f51"
+    },
+    {
+      "path": "examples/archive/v1/wechat-miniprogram-factory/og-roles/roles/design/agent.md",
+      "sizeBytes": 128,
+      "sha256": "b4fa677a09e2e6b09117d998b69f09d7fcad1698a56c9eab955dc22e819b0aa6"
+    },
+    {
+      "path": "examples/archive/v1/wechat-miniprogram-factory/og-roles/roles/design/output.schema.json",
+      "sizeBytes": 332,
+      "sha256": "68ecf087117e8daf8a3b0f4f869c7172ffb873a3edc1b25221b8186e183d3ff3"
+    },
+    {
+      "path": "examples/archive/v1/wechat-miniprogram-factory/og-roles/roles/design/prompt.md",
+      "sizeBytes": 241,
+      "sha256": "f442505b1deec19930ddbfaed6af0f64fe5fc3eac395fc330b245f2a5be85c98"
+    },
+    {
+      "path": "examples/archive/v1/wechat-miniprogram-factory/og-roles/roles/design/role.json",
+      "sizeBytes": 871,
+      "sha256": "11c752b809984c57ddd04d9590833edd0761edf03ecd70d2e82aadf38c0d2107"
+    },
+    {
+      "path": "examples/archive/v1/wechat-miniprogram-factory/og-roles/roles/hello-ogsystem/agent.md",
+      "sizeBytes": 331,
+      "sha256": "683db19381eeb40a25f02a4d7cba606795a90a4385f09fe8670095eac2004d9e"
+    },
+    {
+      "path": "examples/archive/v1/wechat-miniprogram-factory/og-roles/roles/hello-ogsystem/output.schema.json",
+      "sizeBytes": 275,
+      "sha256": "098e6b3cad61c7c3ed95246f3972f72e14225436c6df43efaa0da4b9dc13cff1"
+    },
+    {
+      "path": "examples/archive/v1/wechat-miniprogram-factory/og-roles/roles/hello-ogsystem/prompt.md",
+      "sizeBytes": 386,
+      "sha256": "f095ac8793fcf17811f5bd822edcd146bda43182d72c557af3450a8300e701ec"
+    },
+    {
+      "path": "examples/archive/v1/wechat-miniprogram-factory/og-roles/roles/hello-ogsystem/role.json",
+      "sizeBytes": 949,
+      "sha256": "922f3b47ab4b679df95e9fd28628c587b8fb0a300b7dfcdf98a7f12fea6f3443"
+    },
+    {
+      "path": "examples/archive/v1/wechat-miniprogram-factory/og-roles/roles/requirements/agent.md",
+      "sizeBytes": 149,
+      "sha256": "f9a2f158b04ad2833c0ca948056e5ce4e3011ada132706f031574b7b939a18c5"
+    },
+    {
+      "path": "examples/archive/v1/wechat-miniprogram-factory/og-roles/roles/requirements/output.schema.json",
+      "sizeBytes": 344,
+      "sha256": "76d52d76b2dfd51a80ef4cff4b89230361e403f5a9c44213413638179b8fdd40"
+    },
+    {
+      "path": "examples/archive/v1/wechat-miniprogram-factory/og-roles/roles/requirements/prompt.md",
+      "sizeBytes": 257,
+      "sha256": "3b2e7e3e47cfe63e9ab8e5ec9b883f27325821da5529c7d2dad621251c044f3a"
+    },
+    {
+      "path": "examples/archive/v1/wechat-miniprogram-factory/og-roles/roles/requirements/role.json",
+      "sizeBytes": 903,
+      "sha256": "c1a31cc2fce5b76a66ab7f37296222d42264d366fa58ce6f6979db11ba3ab00d"
+    },
+    {
+      "path": "examples/archive/v1/wechat-miniprogram-factory/og-roles/roles/seal/agent.md",
+      "sizeBytes": 115,
+      "sha256": "9d9dceec4b92e054bf697cb06615fb4cd5746bde8b4902fd303c253ec0818953"
+    },
+    {
+      "path": "examples/archive/v1/wechat-miniprogram-factory/og-roles/roles/seal/output.schema.json",
+      "sizeBytes": 450,
+      "sha256": "e3e33885cb45ac1eecb1e6cd04a34917615abb9123f1648181c892024d917dca"
+    },
+    {
+      "path": "examples/archive/v1/wechat-miniprogram-factory/og-roles/roles/seal/prompt.md",
+      "sizeBytes": 298,
+      "sha256": "9256c0c18eba67782b52d193042f27f66d1d167e1bbffa7d696cc26fe76120f8"
+    },
+    {
+      "path": "examples/archive/v1/wechat-miniprogram-factory/og-roles/roles/seal/role.json",
+      "sizeBytes": 890,
+      "sha256": "c2a502eb2b0258bab2d9b9798172cf7ead3bb9e6fa0a9ac0739fec75724b9958"
+    },
+    {
+      "path": "examples/archive/v1/wechat-miniprogram-factory/og-roles/roles/testing/agent.md",
+      "sizeBytes": 108,
+      "sha256": "b6824fc10fa6bcb8faed229c52ddc8db146fce683b2ef8799b02529468ac9b17"
+    },
+    {
+      "path": "examples/archive/v1/wechat-miniprogram-factory/og-roles/roles/testing/output.schema.json",
+      "sizeBytes": 390,
+      "sha256": "fe42f971684faa57fcb5766ec3f8259f4599fe306d8ad06bb7488c910afe92c5"
+    },
+    {
+      "path": "examples/archive/v1/wechat-miniprogram-factory/og-roles/roles/testing/prompt.md",
+      "sizeBytes": 322,
+      "sha256": "e0baab29ce95461af1c6df52faef0eeeb60631ee24ba09ecd7a6e1fa079e2b65"
+    },
+    {
+      "path": "examples/archive/v1/wechat-miniprogram-factory/og-roles/roles/testing/role.json",
+      "sizeBytes": 930,
+      "sha256": "504892ef895cbdc5958eda4073400b9e92c57913b1ebd353c22ed51ca92c6974"
+    },
+    {
+      "path": "examples/archive/v1/wechat-miniprogram-factory/profiles.json",
+      "sizeBytes": 145,
+      "sha256": "e4df08997b44d391c5a06ee825f081c55c9e8bf0e3da6e95b01a6b0285540d4e"
+    },
+    {
+      "path": "examples/archive/v1/wechat-miniprogram-factory/scripts/console-print.mjs",
+      "sizeBytes": 1217,
+      "sha256": "dec83ce776c782a03eff295997473af97b1d0765cf3e6a836bc5ab23433f9275"
+    },
+    {
+      "path": "examples/archive/v1/wechat-miniprogram-factory/scripts/hello-ogsystem.mjs",
+      "sizeBytes": 312,
+      "sha256": "6017f73177dd164b8773f076cc2ebc904275012e046e3cc9a0521c5c4e9a233d"
+    },
+    {
+      "path": "examples/archive/v1/wechat-miniprogram-factory/scripts/workflow-stage.mjs",
+      "sizeBytes": 13343,
+      "sha256": "c7757fd2b663fff0595a1a0e28222f72a8d8cdfc05aac6da51ae5166718b625e"
+    },
+    {
+      "path": "examples/archive/v1/wechat-miniprogram-factory/system.mmd",
+      "sizeBytes": 768,
+      "sha256": "397c559f4359e0f0e44be9a4ecccc3a837de85358c435d1c20f59f80c8e5faaa"
+    },
+    {
+      "path": "examples/archive/v1/wechat-miniprogram-factory/tools.json",
+      "sizeBytes": 209,
+      "sha256": "1cf6c6bbd96b6b29e150f29a186b8d2c00bcbac5be935c07edf07801a583761e"
+    },
+    {
+      "path": "examples/gate-c-docs/.gitignore",
+      "sizeBytes": 32,
+      "sha256": "3faa07814c7bc6ff258ab87ad129c610b61812f2ead76d5b6f74cc41728baf5b"
+    },
+    {
+      "path": "examples/gate-c-docs/.ogs/README.md",
+      "sizeBytes": 3176,
+      "sha256": "c406413ebb1c97f86173b868e53e916dc47437d840b70c0afd34ed20739e09fb"
+    },
+    {
+      "path": "examples/gate-c-docs/.ogs/execution-bindings.json",
+      "sizeBytes": 1207,
+      "sha256": "4fa0b3ce65c38dbedf3d62c44617e86defcd3e1475e74904d40b5b626633661c"
+    },
+    {
+      "path": "examples/gate-c-docs/.ogs/laws.json",
+      "sizeBytes": 204,
+      "sha256": "be1b34c76d2b497cf21d914daab71729535ab29925be65bff12a7a6aa86f3998"
+    },
+    {
+      "path": "examples/gate-c-docs/.ogs/project.json",
+      "sizeBytes": 92,
+      "sha256": "102fdb05f6b511df1a2d3e39a827fad3e8b15bba038ec7c7d4359aef12f46643"
+    },
+    {
+      "path": "examples/gate-c-docs/.ogs/runtime.json",
+      "sizeBytes": 107,
+      "sha256": "9505400483455f6432cea713cd8ebe8bf823668423ae480075a19701b80d911c"
+    },
+    {
+      "path": "examples/gate-c-docs/og-roles/README.md",
+      "sizeBytes": 131,
+      "sha256": "de51d913970edd07500df5427f043b0496aeed169173067db2ce0ea6908370eb"
+    },
+    {
+      "path": "examples/gate-c-docs/og-roles/roles/researcher/agent.md",
+      "sizeBytes": 104,
+      "sha256": "3988602e7567d99b07f749f3cf670a8eb1ccbc3c4aa13aa5b3e9dac5e06003d3"
+    },
+    {
+      "path": "examples/gate-c-docs/og-roles/roles/researcher/output.schema.json",
+      "sizeBytes": 278,
+      "sha256": "53584c428a96dfc50a34fb2cbf5b2ff229ead6b1a76cda00b178573690908cf1"
+    },
+    {
+      "path": "examples/gate-c-docs/og-roles/roles/researcher/prompt.md",
+      "sizeBytes": 355,
+      "sha256": "3db6d3efb2d0dc8e923b9c68c2b676e9771992396e5febb171fe2604f56b916f"
+    },
+    {
+      "path": "examples/gate-c-docs/og-roles/roles/researcher/role.json",
+      "sizeBytes": 858,
+      "sha256": "b68d15ed6393050c9fe7a7bf7f1b602042846c695244c03ac352f2d80fa5795e"
+    },
+    {
+      "path": "examples/gate-c-docs/og-roles/roles/reviewer/agent.md",
+      "sizeBytes": 122,
+      "sha256": "159432cd24145bcfe1353c06235dece2088a9380b33a79eef3703ea8068ca4b6"
+    },
+    {
+      "path": "examples/gate-c-docs/og-roles/roles/reviewer/output.schema.json",
+      "sizeBytes": 278,
+      "sha256": "53584c428a96dfc50a34fb2cbf5b2ff229ead6b1a76cda00b178573690908cf1"
+    },
+    {
+      "path": "examples/gate-c-docs/og-roles/roles/reviewer/prompt.md",
+      "sizeBytes": 473,
+      "sha256": "f34872462fa83868bf15ae5b74611589db2cc9ea0d91eae76241fe6a8ac30e31"
+    },
+    {
+      "path": "examples/gate-c-docs/og-roles/roles/reviewer/role.json",
+      "sizeBytes": 951,
+      "sha256": "0d13196c47b67c9505e7470a9981696ec3bc0a0e6c71cb149fe6e74ac3ca088f"
+    },
+    {
+      "path": "examples/gate-c-docs/og-roles/roles/writer/agent.md",
+      "sizeBytes": 135,
+      "sha256": "6fd93f7a50f7732cea62b0e59c7d75a43dac067d50212a4de34f1187378b92eb"
+    },
+    {
+      "path": "examples/gate-c-docs/og-roles/roles/writer/output.schema.json",
+      "sizeBytes": 278,
+      "sha256": "53584c428a96dfc50a34fb2cbf5b2ff229ead6b1a76cda00b178573690908cf1"
+    },
+    {
+      "path": "examples/gate-c-docs/og-roles/roles/writer/prompt.md",
+      "sizeBytes": 1009,
+      "sha256": "f57bf93ca987b7a8bd5b8bc43964361226768267d9d36de51df817bd84464e43"
+    },
+    {
+      "path": "examples/gate-c-docs/og-roles/roles/writer/role.json",
+      "sizeBytes": 860,
+      "sha256": "0ba70db24129b95fdc8c58301c65e9d70b4a94d979b8630e99cbaa1f0f4c35e6"
+    },
+    {
+      "path": "examples/gate-c-docs/release/gate-c-document-final/gate-c-document.md",
+      "sizeBytes": 1114,
+      "sha256": "0754e4faecf49f36b70a96fe7530c7f220e3d2931ff53f384662274fbeed33a2"
+    },
+    {
+      "path": "examples/gate-c-docs/release/gate-c-document-final/promotion.json",
+      "sizeBytes": 316,
+      "sha256": "701a47c94d7d0ce1150173e463b157abd16348dfa542d02eac8d679c58378985"
+    },
+    {
+      "path": "examples/gate-c-docs/release/gate-c-document/gate-c-document.md",
+      "sizeBytes": 1232,
+      "sha256": "45c778ee9c09d4110f04b55dd9513df9de55e3151ad09b8f824b8a9e15ab50d0"
+    },
+    {
+      "path": "examples/gate-c-docs/release/gate-c-document/promotion.json",
+      "sizeBytes": 316,
+      "sha256": "e0fc58ee834b02efe015bb11f9644a542b6d6dbd2862ce6b8c94ea768115e1e7"
+    },
+    {
+      "path": "examples/gate-c-docs/system.mmd",
+      "sizeBytes": 444,
+      "sha256": "6e3b3f92719a00e029ccf233702fd91ed98773672de35727a6e014cbcbc64c4a"
+    },
+    {
+      "path": "examples/gate-c-software/.gitignore",
+      "sizeBytes": 32,
+      "sha256": "3faa07814c7bc6ff258ab87ad129c610b61812f2ead76d5b6f74cc41728baf5b"
+    },
+    {
+      "path": "examples/gate-c-software/.ogs/README.md",
+      "sizeBytes": 3176,
+      "sha256": "c406413ebb1c97f86173b868e53e916dc47437d840b70c0afd34ed20739e09fb"
+    },
+    {
+      "path": "examples/gate-c-software/.ogs/execution-bindings.json",
+      "sizeBytes": 1210,
+      "sha256": "226871d9d36cdcff15d646a722ea9f58c35d0a3ca36038482e6df99512e8fab6"
+    },
+    {
+      "path": "examples/gate-c-software/.ogs/laws.json",
+      "sizeBytes": 204,
+      "sha256": "be1b34c76d2b497cf21d914daab71729535ab29925be65bff12a7a6aa86f3998"
+    },
+    {
+      "path": "examples/gate-c-software/.ogs/project.json",
+      "sizeBytes": 96,
+      "sha256": "e2050ba43255ff079fe40cae5788b1bfaea4c8917a87e3a8b0b67d8a2fb81c42"
+    },
+    {
+      "path": "examples/gate-c-software/.ogs/runtime.json",
+      "sizeBytes": 107,
+      "sha256": "9505400483455f6432cea713cd8ebe8bf823668423ae480075a19701b80d911c"
+    },
+    {
+      "path": "examples/gate-c-software/og-roles/README.md",
+      "sizeBytes": 211,
+      "sha256": "7551d2036d48da1810f145b8a64c1f8c19ca4aa0401b8b1bb2965f00464de110"
+    },
+    {
+      "path": "examples/gate-c-software/og-roles/roles/implementer/agent.md",
+      "sizeBytes": 132,
+      "sha256": "2e91b192b2269715a82d9b45a7dc286c58407d17975858718faa875284104f8f"
+    },
+    {
+      "path": "examples/gate-c-software/og-roles/roles/implementer/output.schema.json",
+      "sizeBytes": 278,
+      "sha256": "53584c428a96dfc50a34fb2cbf5b2ff229ead6b1a76cda00b178573690908cf1"
+    },
+    {
+      "path": "examples/gate-c-software/og-roles/roles/implementer/prompt.md",
+      "sizeBytes": 1044,
+      "sha256": "1935f321752e85537db2bbb7db4c05380f6ae43586f2f7977bb5d0c288e4e2fa"
+    },
+    {
+      "path": "examples/gate-c-software/og-roles/roles/implementer/role.json",
+      "sizeBytes": 890,
+      "sha256": "567cffdb6e6af7944d4ba35bf587a03f27f14c13b1add1d7d1aa41a91d5a22ad"
+    },
+    {
+      "path": "examples/gate-c-software/og-roles/roles/planner/agent.md",
+      "sizeBytes": 128,
+      "sha256": "ce3e92b2b962b0ed9e6e714d44b065faa470d2cd9a578dce96a6957d6809fde5"
+    },
+    {
+      "path": "examples/gate-c-software/og-roles/roles/planner/output.schema.json",
+      "sizeBytes": 278,
+      "sha256": "53584c428a96dfc50a34fb2cbf5b2ff229ead6b1a76cda00b178573690908cf1"
+    },
+    {
+      "path": "examples/gate-c-software/og-roles/roles/planner/prompt.md",
+      "sizeBytes": 343,
+      "sha256": "92145cd5dcb5bf75578a58a80fe37f69caa6ff196a660f07e68e1efb78330e83"
+    },
+    {
+      "path": "examples/gate-c-software/og-roles/roles/planner/role.json",
+      "sizeBytes": 853,
+      "sha256": "ba9c62aa1d41d49fb89b7f54e002868399b88455e7694832d3d9aaf6d65e1caa"
+    },
+    {
+      "path": "examples/gate-c-software/og-roles/roles/reviewer/agent.md",
+      "sizeBytes": 132,
+      "sha256": "dfe1cb22a370c331bc607a3bfd40d894d67ec45768f9f03954eca95fa6f6d456"
+    },
+    {
+      "path": "examples/gate-c-software/og-roles/roles/reviewer/output.schema.json",
+      "sizeBytes": 278,
+      "sha256": "53584c428a96dfc50a34fb2cbf5b2ff229ead6b1a76cda00b178573690908cf1"
+    },
+    {
+      "path": "examples/gate-c-software/og-roles/roles/reviewer/prompt.md",
+      "sizeBytes": 482,
+      "sha256": "c577915c7a49beea092fbe05ec25f553fccbbab7caab8954ac683890d3b767ec"
+    },
+    {
+      "path": "examples/gate-c-software/og-roles/roles/reviewer/role.json",
+      "sizeBytes": 930,
+      "sha256": "379babf0914e0f5b686b650951400d699807f07bddd3de5cabcfce4ee1c53664"
+    },
+    {
+      "path": "examples/gate-c-software/release/gate-c-output-final/gate-c-output.mjs",
+      "sizeBytes": 60,
+      "sha256": "d93ba2d5e1ad3dc0e161e8aaa1869df3576d5fa9068f46a8e4ea465e8ad762d6"
+    },
+    {
+      "path": "examples/gate-c-software/release/gate-c-output-final/gate-c-output.test.mjs",
+      "sizeBytes": 128,
+      "sha256": "9f6e744053db5fdddc6f846a6c960347cf836c4ae3a56079e562e8f2edf5e4de"
+    },
+    {
+      "path": "examples/gate-c-software/release/gate-c-output-final/promotion.json",
+      "sizeBytes": 316,
+      "sha256": "b50c9e94b3adbf15b1c9c2dbd3dae6f41d6d4e6be254549a7972f0b754cd0393"
+    },
+    {
+      "path": "examples/gate-c-software/release/gate-c-output/gate-c-output.mjs",
+      "sizeBytes": 60,
+      "sha256": "d93ba2d5e1ad3dc0e161e8aaa1869df3576d5fa9068f46a8e4ea465e8ad762d6"
+    },
+    {
+      "path": "examples/gate-c-software/release/gate-c-output/gate-c-output.test.mjs",
+      "sizeBytes": 103,
+      "sha256": "135c555f9d2da15055c1e01990807361749fc3b8ad9740c069724db0ee1ae7da"
+    },
+    {
+      "path": "examples/gate-c-software/release/gate-c-output/promotion.json",
+      "sizeBytes": 316,
+      "sha256": "30b99dbab62d21a6b2fa4e48b301919d1c25c72397062ef8199c174472465148"
+    },
+    {
+      "path": "examples/gate-c-software/system.mmd",
+      "sizeBytes": 416,
+      "sha256": "e73a476b38dee5a30e512c25e58690b0faf37533dcfc8f5bd8b03d2ac7c87dce"
+    },
+    {
+      "path": "examples/langgraph-debate-current/.gitignore",
+      "sizeBytes": 34,
+      "sha256": "e0ed5678a4ef4d9f44246cbdb3fd5319582e521b99df99d4e8a7f73cf31c5e05"
+    },
+    {
+      "path": "examples/langgraph-debate-current/.ogs/.gitignore",
+      "sizeBytes": 96,
+      "sha256": "95490584a6f54d202461ee5a0aafc25e53b54ab7bb833cf143f84a2ce8b49171"
+    },
+    {
+      "path": "examples/langgraph-debate-current/.ogs/README.md",
+      "sizeBytes": 3506,
+      "sha256": "25c4ebaa0b5a72b7a852d0e22884a9c65a4b1a8c2b8dd6a24a2f0d147fea781f"
+    },
+    {
+      "path": "examples/langgraph-debate-current/.ogs/contracts/alignmentist-done.schema.json",
+      "sizeBytes": 660,
+      "sha256": "ca322b8b106330260159baf4399ea26ac56b9c2b85e5e5a65d6bfcf22e0d212a"
+    },
+    {
+      "path": "examples/langgraph-debate-current/.ogs/contracts/debate-ready.schema.json",
+      "sizeBytes": 410,
+      "sha256": "744a25f94220194763eafdbf4eaeb8303be632bc0b64169597a790ae1569a116"
+    },
+    {
+      "path": "examples/langgraph-debate-current/.ogs/contracts/debate-rework.schema.json",
+      "sizeBytes": 287,
+      "sha256": "6e5a5c3120505edc500a6df67d8d992b96b6603c13f1fde94067cde0376e33eb"
+    },
+    {
+      "path": "examples/langgraph-debate-current/.ogs/contracts/debate-state.schema.json",
+      "sizeBytes": 1384,
+      "sha256": "e9e760eb574636d8d148bad9b0b8c8a06501d7f33313614b106ff6f1ccb74509"
+    },
+    {
+      "path": "examples/langgraph-debate-current/.ogs/contracts/decision-ready.schema.json",
+      "sizeBytes": 299,
+      "sha256": "3644387f312682044f1392471a379698f1eb2685a10a6b3687b7d8cd48f7644a"
+    },
+    {
+      "path": "examples/langgraph-debate-current/.ogs/contracts/minimalist-done.schema.json",
+      "sizeBytes": 606,
+      "sha256": "0ecb5eebfef34344352e53cbaefcba6d09601351da182732ecd393f14738b56a"
+    },
+    {
+      "path": "examples/langgraph-debate-current/.ogs/contracts/rebuttal-needed.schema.json",
+      "sizeBytes": 423,
+      "sha256": "58f3e671826906a239be9ce76c525be14ed2d1947bde6b744bff8874454cac59"
+    },
+    {
+      "path": "examples/langgraph-debate-current/.ogs/contracts/send-round.schema.json",
+      "sizeBytes": 235,
+      "sha256": "57c9fa7704f66c65ec178d80298ecb7eff325c72a6199c52352318d0ca1f97b3"
+    },
+    {
+      "path": "examples/langgraph-debate-current/.ogs/contracts/summary-ready.schema.json",
+      "sizeBytes": 226,
+      "sha256": "740a8caf707fc02cb32ee2410cb0a612407993cd7f9f6e1dfb60a79838e37ab4"
+    },
+    {
+      "path": "examples/langgraph-debate-current/.ogs/execution-bindings.json",
+      "sizeBytes": 992,
+      "sha256": "d1d903f7edf0f421d31d0e6752ac83254ee576731ae1b86e22cf624f3a5a578a"
+    },
+    {
+      "path": "examples/langgraph-debate-current/.ogs/project.json",
+      "sizeBytes": 105,
+      "sha256": "63e43ee48ca442a3e8942a4b3cb84ba715955ed02fb0b02994856eb614b2fca3"
+    },
+    {
+      "path": "examples/langgraph-debate-current/.ogs/runtime.json",
+      "sizeBytes": 224,
+      "sha256": "24e58d30733ae15a8666d82722ee6de3d3ab03281841e8d6fa1bc644eb64c79b"
+    },
+    {
+      "path": "examples/langgraph-debate-current/.ogs/semantics.yaml",
+      "sizeBytes": 2228,
+      "sha256": "95f31ccfc0399d17cf9c510464dc56b5372a08736b29fe9a44664e076f54f47f"
+    },
+    {
+      "path": "examples/langgraph-debate-current/README.md",
+      "sizeBytes": 1220,
+      "sha256": "5dc3ab1c119039683ed115de8bb501a4639727846e208063b3b650433da80c1d"
+    },
+    {
+      "path": "examples/langgraph-debate-current/laws.json",
+      "sizeBytes": 210,
+      "sha256": "b7bf515d37d106ff6c0cb727aac74dcd2b9758c2cf3571185ccc54cc07f1f334"
+    },
+    {
+      "path": "examples/langgraph-debate-current/system.mmd",
+      "sizeBytes": 944,
+      "sha256": "b8eb8b4b249b26edf8a5b5b5df7ea93a1c736f451cebfa5f619c9ca26f06610f"
+    },
+    {
+      "path": "examples/langgraph-debate-current/user-profile.json",
+      "sizeBytes": 235,
+      "sha256": "c4c9e2f883b87c6ca7f8fcbb9f022d977b477bff0edf4b274067e01590286714"
+    },
+    {
+      "path": "examples/langgraph-expert-consultation/laws.json",
+      "sizeBytes": 223,
+      "sha256": "191e5148c93f441f3a8a089b7e01be7cd20d191343d5d2c17624b7c15149a4e3"
+    },
+    {
+      "path": "examples/langgraph-expert-consultation/system.mmd",
+      "sizeBytes": 1084,
+      "sha256": "2953c963534ed70aedc9c94ab59edcc74bcd9c589943a79aa286c2bae206657c"
+    },
+    {
+      "path": "examples/langgraph-expert-consultation/user-profile.json",
+      "sizeBytes": 243,
+      "sha256": "9a4628f4c62c70f71c4706b1ecaa875141e0a845e78d5cb217da852c5b59e9a2"
+    },
+    {
+      "path": "examples/legal-rag-dev-team/.gitignore",
+      "sizeBytes": 32,
+      "sha256": "3faa07814c7bc6ff258ab87ad129c610b61812f2ead76d5b6f74cc41728baf5b"
+    },
+    {
+      "path": "examples/legal-rag-dev-team/.ogs/README.md",
+      "sizeBytes": 2934,
+      "sha256": "5c9d2d2030e56e7088236314e7fb9e13456b6716f9fb981f368332e7070263ef"
+    },
+    {
+      "path": "examples/legal-rag-dev-team/.ogs/laws.json",
+      "sizeBytes": 217,
+      "sha256": "26fd6eac2e1c935423e7cd143cc2c1c0870d87d60449480841c571d8835c5bb4"
+    },
+    {
+      "path": "examples/legal-rag-dev-team/.ogs/model-catalog.json",
+      "sizeBytes": 2808,
+      "sha256": "7fe0ae63f05278d0edb47835e1d479a24394fb681609f131d06c0c1cea61e5b9"
+    },
+    {
+      "path": "examples/legal-rag-dev-team/.ogs/model-selection.json",
+      "sizeBytes": 159,
+      "sha256": "da1e84c80c25343d9d6097394401529a32ec48fd25aa539dcf42745b730cce8d"
+    },
+    {
+      "path": "examples/legal-rag-dev-team/.ogs/project.json",
+      "sizeBytes": 99,
+      "sha256": "f446ef6326bc5524c892c0cb27b84e8f105a45b61d73fba81f7318f8f01bb101"
+    },
+    {
+      "path": "examples/legal-rag-dev-team/.ogs/providers/opencode.json",
+      "sizeBytes": 676,
+      "sha256": "10ee3eadb0cec4047bede728d81f6436506342b695c27d52d13690a9ed42a464"
+    },
+    {
+      "path": "examples/legal-rag-dev-team/.ogs/runtime.json",
+      "sizeBytes": 107,
+      "sha256": "9505400483455f6432cea713cd8ebe8bf823668423ae480075a19701b80d911c"
+    },
+    {
+      "path": "examples/legal-rag-dev-team/.ogs/user-profile.json",
+      "sizeBytes": 224,
+      "sha256": "ad0616bdf8ebef8a1ea8956c70ac57935202dbc38d8004cae0874a588aa7f924"
+    },
+    {
+      "path": "examples/legal-rag-dev-team/README.md",
+      "sizeBytes": 6494,
+      "sha256": "b20e4b997f774f31c3e9a11251ca0b7aaa6c5ac9c3819f999f3a422a79244f76"
+    },
+    {
+      "path": "examples/legal-rag-dev-team/contracts/delivery-lead-input.schema.json",
+      "sizeBytes": 706,
+      "sha256": "b673884418945591b2bc2273e1d6b6d23bd4acb94105b2fcce5500834bfff785"
+    },
+    {
+      "path": "examples/legal-rag-dev-team/contracts/flow-envelope.schema.json",
+      "sizeBytes": 319,
+      "sha256": "00fe50043a52aa5dee83c04a3090a1ae38d298f37a298ffbcced63cb4ab8d86a"
+    },
+    {
+      "path": "examples/legal-rag-dev-team/contracts/handoff.contracts.json",
+      "sizeBytes": 3384,
+      "sha256": "127d88fe2fbc241b79934a4abb24ab6d339b0b31abd568f5b5de85b81e8dd2fc"
+    },
+    {
+      "path": "examples/legal-rag-dev-team/og-roles/README.md",
+      "sizeBytes": 698,
+      "sha256": "dcbf9958860488854d5ca92205eec044ede5f40858666dc13dbcbda7d4cc2435"
+    },
+    {
+      "path": "examples/legal-rag-dev-team/og-roles/roles/answer-engineer/agent.md",
+      "sizeBytes": 742,
+      "sha256": "bf28aba7615ba42928bf7798612583b9af889e2612843dda729215b8f0fdeb01"
+    },
+    {
+      "path": "examples/legal-rag-dev-team/og-roles/roles/answer-engineer/output.schema.json",
+      "sizeBytes": 275,
+      "sha256": "098e6b3cad61c7c3ed95246f3972f72e14225436c6df43efaa0da4b9dc13cff1"
+    },
+    {
+      "path": "examples/legal-rag-dev-team/og-roles/roles/answer-engineer/prompt.md",
+      "sizeBytes": 515,
+      "sha256": "b99987171b0449fa66e68141461bdafbe85f619fd557779f6476cb68cf813d7c"
+    },
+    {
+      "path": "examples/legal-rag-dev-team/og-roles/roles/answer-engineer/role.json",
+      "sizeBytes": 916,
+      "sha256": "c8d2065ba8344dfa1a6071a5c7bca616a61c60b617de38a11d9cf975a549b34f"
+    },
+    {
+      "path": "examples/legal-rag-dev-team/og-roles/roles/citation-engineer/agent.md",
+      "sizeBytes": 844,
+      "sha256": "a1cc9f3ae5c53f2db0d2a99a23003b8206dbe0af35a63c42c49e4c86dbaf53b9"
+    },
+    {
+      "path": "examples/legal-rag-dev-team/og-roles/roles/citation-engineer/output.schema.json",
+      "sizeBytes": 275,
+      "sha256": "098e6b3cad61c7c3ed95246f3972f72e14225436c6df43efaa0da4b9dc13cff1"
+    },
+    {
+      "path": "examples/legal-rag-dev-team/og-roles/roles/citation-engineer/prompt.md",
+      "sizeBytes": 503,
+      "sha256": "5cdd3f9b3df2f372e0c18f1e1530debfd2a4b6709df0100249cfc4ef8594eb2c"
+    },
+    {
+      "path": "examples/legal-rag-dev-team/og-roles/roles/citation-engineer/role.json",
+      "sizeBytes": 943,
+      "sha256": "e02f840fe23b6380bd86650b3cf00bcff534dd447cd107f14e4ae0c3a15c575c"
+    },
+    {
+      "path": "examples/legal-rag-dev-team/og-roles/roles/delivery-lead/agent.md",
+      "sizeBytes": 1057,
+      "sha256": "ba08ca1e1fc2cc8d0177e65c616acfacf8a574352bd961a83157e9d09cdfe562"
+    },
+    {
+      "path": "examples/legal-rag-dev-team/og-roles/roles/delivery-lead/output.schema.json",
+      "sizeBytes": 275,
+      "sha256": "098e6b3cad61c7c3ed95246f3972f72e14225436c6df43efaa0da4b9dc13cff1"
+    },
+    {
+      "path": "examples/legal-rag-dev-team/og-roles/roles/delivery-lead/prompt.md",
+      "sizeBytes": 589,
+      "sha256": "7ddd87a1f04d39b0a435d36a22fde3412275dca3eb0a50375bf20c3cff82a473"
+    },
+    {
+      "path": "examples/legal-rag-dev-team/og-roles/roles/delivery-lead/role.json",
+      "sizeBytes": 1012,
+      "sha256": "2066ff3580c9a8151e440ab4e3feef46cd02879d759dd90bbc2521f4052635c6"
+    },
+    {
+      "path": "examples/legal-rag-dev-team/og-roles/roles/evaluation-engineer/agent.md",
+      "sizeBytes": 725,
+      "sha256": "2e7a03ee3354024d1a7d2dfc6b1d4c067dafab5907014421165a7b4935bb4f6e"
+    },
+    {
+      "path": "examples/legal-rag-dev-team/og-roles/roles/evaluation-engineer/output.schema.json",
+      "sizeBytes": 275,
+      "sha256": "098e6b3cad61c7c3ed95246f3972f72e14225436c6df43efaa0da4b9dc13cff1"
+    },
+    {
+      "path": "examples/legal-rag-dev-team/og-roles/roles/evaluation-engineer/prompt.md",
+      "sizeBytes": 526,
+      "sha256": "4a0f12f8478db88538d96e43f511b8bfcfd52acb975b74b0f610ebaac6077741"
+    },
+    {
+      "path": "examples/legal-rag-dev-team/og-roles/roles/evaluation-engineer/role.json",
+      "sizeBytes": 949,
+      "sha256": "7212959eef77c1e0c57cfd666cc35c614539e42d8362360b5b78150cd5617b99"
+    },
+    {
+      "path": "examples/legal-rag-dev-team/og-roles/roles/legal-knowledge-engineer/agent.md",
+      "sizeBytes": 806,
+      "sha256": "c04364c003e028f942b29a57fa63a6d9abba31827e33803ed07c1197f8aa22fa"
+    },
+    {
+      "path": "examples/legal-rag-dev-team/og-roles/roles/legal-knowledge-engineer/output.schema.json",
+      "sizeBytes": 275,
+      "sha256": "098e6b3cad61c7c3ed95246f3972f72e14225436c6df43efaa0da4b9dc13cff1"
+    },
+    {
+      "path": "examples/legal-rag-dev-team/og-roles/roles/legal-knowledge-engineer/prompt.md",
+      "sizeBytes": 522,
+      "sha256": "1060b5bc0ddadb62a2eaa927a1f1b5a4a17fd2cd37d8ddd4f7173ffe49ac9bd2"
+    },
+    {
+      "path": "examples/legal-rag-dev-team/og-roles/roles/legal-knowledge-engineer/role.json",
+      "sizeBytes": 925,
+      "sha256": "ae713a57e7c4731d0be84ebac5681b6cebc5ddcc53f8d05e960605a2181199cd"
+    },
+    {
+      "path": "examples/legal-rag-dev-team/og-roles/roles/legal-product-manager/agent.md",
+      "sizeBytes": 921,
+      "sha256": "8340ea8b01f928ec709d16c940773eaf8916c3ef8c9276471d6b52be7e3bafa8"
+    },
+    {
+      "path": "examples/legal-rag-dev-team/og-roles/roles/legal-product-manager/output.schema.json",
+      "sizeBytes": 275,
+      "sha256": "098e6b3cad61c7c3ed95246f3972f72e14225436c6df43efaa0da4b9dc13cff1"
+    },
+    {
+      "path": "examples/legal-rag-dev-team/og-roles/roles/legal-product-manager/prompt.md",
+      "sizeBytes": 528,
+      "sha256": "564f4a6bbb89182967640af9fba8e466fadfe13ae632d28e9153f94b5c7c13ea"
+    },
+    {
+      "path": "examples/legal-rag-dev-team/og-roles/roles/legal-product-manager/role.json",
+      "sizeBytes": 968,
+      "sha256": "c674bc8deb922e87986368d8391ab3822595618feff81aa5d56ff37041b9c653"
+    },
+    {
+      "path": "examples/legal-rag-dev-team/og-roles/roles/retrieval-engineer/agent.md",
+      "sizeBytes": 729,
+      "sha256": "2c03535b7f051b42371088c0b8df712ca4c98e1ef66848b2578d425f9b8fe0c7"
+    },
+    {
+      "path": "examples/legal-rag-dev-team/og-roles/roles/retrieval-engineer/output.schema.json",
+      "sizeBytes": 275,
+      "sha256": "098e6b3cad61c7c3ed95246f3972f72e14225436c6df43efaa0da4b9dc13cff1"
+    },
+    {
+      "path": "examples/legal-rag-dev-team/og-roles/roles/retrieval-engineer/prompt.md",
+      "sizeBytes": 472,
+      "sha256": "111f3bc262adfce67faeb2373f76c5554ec508d634965bf3e88332fff65a8a7a"
+    },
+    {
+      "path": "examples/legal-rag-dev-team/og-roles/roles/retrieval-engineer/role.json",
+      "sizeBytes": 916,
+      "sha256": "b679277d436bc55ec45da48fb36c524b7a2d775a66b362c4e18678d1ab325988"
+    },
+    {
+      "path": "examples/legal-rag-dev-team/og-roles/roles/solution-architect/agent.md",
+      "sizeBytes": 804,
+      "sha256": "a0c67a385ae5305c04478fd7ac33f1d3b2b2c569a354d8c9a1929be07ed578c6"
+    },
+    {
+      "path": "examples/legal-rag-dev-team/og-roles/roles/solution-architect/output.schema.json",
+      "sizeBytes": 290,
+      "sha256": "a17f066397e44234650050b3333ccd1aa967cb09df89b8831d7bf5074d86ce4a"
+    },
+    {
+      "path": "examples/legal-rag-dev-team/og-roles/roles/solution-architect/prompt.md",
+      "sizeBytes": 551,
+      "sha256": "7b4eef838b878921c0e5e95470488ade7040adb1caad8a0cc6cf34dc4adf5f70"
+    },
+    {
+      "path": "examples/legal-rag-dev-team/og-roles/roles/solution-architect/role.json",
+      "sizeBytes": 893,
+      "sha256": "6f8c14c3b7e752b111001510a8fe88d5e5a8ff156280c16f63f8db741bc605c7"
+    },
+    {
+      "path": "examples/legal-rag-dev-team/system.mmd",
+      "sizeBytes": 2211,
+      "sha256": "01e5f835c47c048a9affdcc3dc5092a301aa044d336112703a49b0fbdc056600"
+    },
+    {
+      "path": "examples/medical-quorum-consultation/.ogs/README.md",
+      "sizeBytes": 3175,
+      "sha256": "9b403a938268782d806be6fb9613e33a6a32d437b63b188773c51774c71e824c"
+    },
+    {
+      "path": "examples/medical-quorum-consultation/.ogs/execution-bindings.json",
+      "sizeBytes": 1010,
+      "sha256": "9be8bf01b55191ee2949182b77c4c0aa02f49833c8e14b4e0bbd76cc9d972f9c"
+    },
+    {
+      "path": "examples/medical-quorum-consultation/.ogs/project.json",
+      "sizeBytes": 108,
+      "sha256": "9f532fc6514826715b33b707b35875f2a95205b1dda29797a5cb7c5338eccb54"
+    },
+    {
+      "path": "examples/medical-quorum-consultation/.ogs/runtime.json",
+      "sizeBytes": 210,
+      "sha256": "63366e766cbbfd83be0ec481a2bf614bf163dbfb525b736ccce7ce69bac46c2f"
+    },
+    {
+      "path": "examples/medical-quorum-consultation/README.md",
+      "sizeBytes": 863,
+      "sha256": "624cc0a14b4ddc27674e643772dcd2252cd482513c23b3d17b99be10cda74bf3"
+    },
+    {
+      "path": "examples/medical-quorum-consultation/contracts/chief-review-input.schema.json",
+      "sizeBytes": 464,
+      "sha256": "d2ccdd7d22a1c389761b0b5ba05f3a46ae0d15a96c467d4f025356122aea7c71"
+    },
+    {
+      "path": "examples/medical-quorum-consultation/contracts/flow-envelope.schema.json",
+      "sizeBytes": 305,
+      "sha256": "8368f5d8a814584eaf3ad9c97623683a8364348e6b3f1379ee64764aeb5ed59a"
+    },
+    {
+      "path": "examples/medical-quorum-consultation/contracts/handoff.contracts.json",
+      "sizeBytes": 2062,
+      "sha256": "01e64f6983d7641c7d5f02304b3744214d28a7d1166af364d438a569e3e6da61"
+    },
+    {
+      "path": "examples/medical-quorum-consultation/laws.json",
+      "sizeBytes": 218,
+      "sha256": "7aa0550a886fdfbfb5a3c1215b860f670445e8fd9bb0498b5fdb2f2017044bb5"
+    },
+    {
+      "path": "examples/medical-quorum-consultation/system.mmd",
+      "sizeBytes": 1622,
+      "sha256": "1a6c42ca32b8b7d1a4c204dcc371e8c30e9ff263ab40e9e66a65c8f1672189dc"
+    },
+    {
+      "path": "examples/medical-quorum-consultation/user-profile.json",
+      "sizeBytes": 201,
+      "sha256": "b05ba8128929e1dd71f406e3752176466911f01d7d933c2142941c43a27e6f53"
+    },
+    {
+      "path": "examples/software-development-review/.ogs/model-catalog.json",
+      "sizeBytes": 57373,
+      "sha256": "c71a457358950baea845ad8fe147f56b1e316a93e5398110548f4354bf1b7b76"
+    },
+    {
+      "path": "examples/target-model-binding-system.mmd",
+      "sizeBytes": 377,
+      "sha256": "80926fb2d2c6442b803c68538608e501ee66c9b3eac4edf16e6853b5437404fa"
+    },
+    {
+      "path": "examples/target-model-binding/.ogs/README.md",
+      "sizeBytes": 3175,
+      "sha256": "9b403a938268782d806be6fb9613e33a6a32d437b63b188773c51774c71e824c"
+    },
+    {
+      "path": "examples/target-model-binding/.ogs/execution-bindings.json",
+      "sizeBytes": 709,
+      "sha256": "da9fa64cb6d7b85b1df601ec66fb5f37e6e8df2526ab47700d8cd5bc9d58393f"
+    },
+    {
+      "path": "examples/target-model-binding/.ogs/project.json",
+      "sizeBytes": 101,
+      "sha256": "daacc0cff4ad468f89bf594205add822de57380e76a9dfbb1184ac73c4eeda27"
+    },
+    {
+      "path": "examples/target-model-binding/.ogs/runtime.json",
+      "sizeBytes": 210,
+      "sha256": "63366e766cbbfd83be0ec481a2bf614bf163dbfb525b736ccce7ce69bac46c2f"
+    },
+    {
+      "path": "og-roles/README.md",
+      "sizeBytes": 1787,
+      "sha256": "1ada6ce29cfa74b325bf3cbe13aa22c7195c5f1412ee8e26e0b6f94459743ba8"
+    },
+    {
+      "path": "og-roles/roles/advanced-coordinator/agent.md",
+      "sizeBytes": 290,
+      "sha256": "87bcd69d859880f662ec91e52801250ffdf31f68398e1938409c1d306b783b02"
+    },
+    {
+      "path": "og-roles/roles/advanced-coordinator/output.schema.json",
+      "sizeBytes": 290,
+      "sha256": "a17f066397e44234650050b3333ccd1aa967cb09df89b8831d7bf5074d86ce4a"
+    },
+    {
+      "path": "og-roles/roles/advanced-coordinator/prompt.md",
+      "sizeBytes": 446,
+      "sha256": "1dd2780f3a829b2f56c2d915405d37e9845e5c7ee873bb2f9c08c16e87bf654c"
+    },
+    {
+      "path": "og-roles/roles/advanced-coordinator/role.json",
+      "sizeBytes": 964,
+      "sha256": "ab100c8f58feb6336b90e44453e4098349e96c3ac3652646b72426a348e194cc"
+    },
+    {
+      "path": "og-roles/roles/advanced-reviewer/agent.md",
+      "sizeBytes": 424,
+      "sha256": "7676bcf0501e698fd50d33985a7bc3d4e5ce86373cf83a297071e799b966f057"
+    },
+    {
+      "path": "og-roles/roles/advanced-reviewer/output.schema.json",
+      "sizeBytes": 291,
+      "sha256": "8b264f4203d0e7bce7544ff0c6984909cc79b7548c4d97a38ce4c676bfde39e7"
+    },
+    {
+      "path": "og-roles/roles/advanced-reviewer/prompt.md",
+      "sizeBytes": 390,
+      "sha256": "97bb88c45baddee8e676c88865689ac99f305883d44da2530ea9ef974aee4ff1"
+    },
+    {
+      "path": "og-roles/roles/advanced-reviewer/role.json",
+      "sizeBytes": 1061,
+      "sha256": "a3617651ade355d55550b9ce334f5f29c095141f7d9d088b185ad38f135b9eaf"
+    },
+    {
+      "path": "og-roles/roles/advanced-worker-a/agent.md",
+      "sizeBytes": 209,
+      "sha256": "0fad265d49bed32ab2f4082516b956f446fced83060e545a9da553bdc808b3a6"
+    },
+    {
+      "path": "og-roles/roles/advanced-worker-a/output.schema.json",
+      "sizeBytes": 275,
+      "sha256": "098e6b3cad61c7c3ed95246f3972f72e14225436c6df43efaa0da4b9dc13cff1"
+    },
+    {
+      "path": "og-roles/roles/advanced-worker-a/prompt.md",
+      "sizeBytes": 332,
+      "sha256": "2bf0350eca8958828c70c741e4441576c0d6cafdd5c6c8200169ed2e26599fc3"
+    },
+    {
+      "path": "og-roles/roles/advanced-worker-a/role.json",
+      "sizeBytes": 938,
+      "sha256": "e6d9d9d8bae346d2172fdd7a765a9e49fda98881bbcb9beb487bbc31f3c8b545"
+    },
+    {
+      "path": "og-roles/roles/advanced-worker-b/agent.md",
+      "sizeBytes": 209,
+      "sha256": "b7a7966c4e28469b56539b7dd94dcd5ca7eac3624116528095b346e1ab3480eb"
+    },
+    {
+      "path": "og-roles/roles/advanced-worker-b/output.schema.json",
+      "sizeBytes": 275,
+      "sha256": "098e6b3cad61c7c3ed95246f3972f72e14225436c6df43efaa0da4b9dc13cff1"
+    },
+    {
+      "path": "og-roles/roles/advanced-worker-b/prompt.md",
+      "sizeBytes": 332,
+      "sha256": "2bf0350eca8958828c70c741e4441576c0d6cafdd5c6c8200169ed2e26599fc3"
+    },
+    {
+      "path": "og-roles/roles/advanced-worker-b/role.json",
+      "sizeBytes": 938,
+      "sha256": "bfdddb8c7008834569fabb6f8571f7cd031850da1608708c846b9a98cc391086"
+    },
+    {
+      "path": "og-roles/roles/debate-alignmentist/agent.md",
+      "sizeBytes": 622,
+      "sha256": "a8079e5617ded44a20751be356c3d6b451cc35dfe57695b1c4ee9eff1362d8a5"
+    },
+    {
+      "path": "og-roles/roles/debate-alignmentist/output.schema.json",
+      "sizeBytes": 773,
+      "sha256": "03686a02d6ebb3192850588c9ae5d337029c28dcb07dbe14c17650aab263e605"
+    },
+    {
+      "path": "og-roles/roles/debate-alignmentist/prompt.md",
+      "sizeBytes": 589,
+      "sha256": "97cf2d06085499394b7204eee93ced3813a885518ccf7c6e4f0a3ad9975bc375"
+    },
+    {
+      "path": "og-roles/roles/debate-alignmentist/role.json",
+      "sizeBytes": 969,
+      "sha256": "2934a9fcf539aa81fe7b3368259a845d7115e1b51653404d87d99ef01debfe43"
+    },
+    {
+      "path": "og-roles/roles/debate-judge/agent.md",
+      "sizeBytes": 554,
+      "sha256": "097443d4328e2a7fe26660cc60a83e5b13c37907b05601e92f7f42a6fe2eb104"
+    },
+    {
+      "path": "og-roles/roles/debate-judge/output.schema.json",
+      "sizeBytes": 620,
+      "sha256": "05b635f80fc93bc1a0fb7c9ea418673c52a3fcf3ef5817476b83bd7996864dcb"
+    },
+    {
+      "path": "og-roles/roles/debate-judge/prompt.md",
+      "sizeBytes": 623,
+      "sha256": "06a79622e85e50f67cf156f6248766ff31e745c5c7d49775fed67f0c92b5b852"
+    },
+    {
+      "path": "og-roles/roles/debate-judge/role.json",
+      "sizeBytes": 1002,
+      "sha256": "7524b73154ceafac342d6bfa90c1b0f2ca047d3dad2668ad1b336180882e58eb"
+    },
+    {
+      "path": "og-roles/roles/debate-minimalist/agent.md",
+      "sizeBytes": 581,
+      "sha256": "b6e51e017c15e3021e3255f8f55a6cac875f3643e6ac0bb61bf73b789646ba9e"
+    },
+    {
+      "path": "og-roles/roles/debate-minimalist/output.schema.json",
+      "sizeBytes": 731,
+      "sha256": "30a27ea5771b876da0adc0ff0ea8052e52dd139987b004fb6d4529337c3b125f"
+    },
+    {
+      "path": "og-roles/roles/debate-minimalist/prompt.md",
+      "sizeBytes": 558,
+      "sha256": "f13ec60ddefa519bc168306d03bf5dc38ac70ad031b2ff22ada8246ebc43ea1b"
+    },
+    {
+      "path": "og-roles/roles/debate-minimalist/role.json",
+      "sizeBytes": 974,
+      "sha256": "428406c01b102dcaaf24b88e6858c76f340bce175a6bbca2e996c259681a6a47"
+    },
+    {
+      "path": "og-roles/roles/debate-moderator/agent.md",
+      "sizeBytes": 615,
+      "sha256": "49f10ad3e95aef7c484435572c7f5a578fdcc3efac8dc833b29698cc28764677"
+    },
+    {
+      "path": "og-roles/roles/debate-moderator/output.schema.json",
+      "sizeBytes": 445,
+      "sha256": "b61b162d22ca4ee9aa0236ecbd848862d4b907ecce60a524a012478d5911f53f"
+    },
+    {
+      "path": "og-roles/roles/debate-moderator/prompt.md",
+      "sizeBytes": 619,
+      "sha256": "6fee4d7c4acf221627e800aaac831a3d859b174429d3161113af018005308ef5"
+    },
+    {
+      "path": "og-roles/roles/debate-moderator/role.json",
+      "sizeBytes": 967,
+      "sha256": "04a1de0f1f2738cb702e03a8f80d499cf4e033e7252ed81c9668ee488b0f4beb"
+    },
+    {
+      "path": "og-roles/roles/debate-summary/agent.md",
+      "sizeBytes": 506,
+      "sha256": "af304543896df09bf06243d40d81f48ce704104fd89898b51dd1b26c7845a7d6"
+    },
+    {
+      "path": "og-roles/roles/debate-summary/output.schema.json",
+      "sizeBytes": 374,
+      "sha256": "bbbb542bbc2a602c372690ad99f24d04c99727c98c33d7222fdfcb67621de17b"
+    },
+    {
+      "path": "og-roles/roles/debate-summary/prompt.md",
+      "sizeBytes": 582,
+      "sha256": "6b95a14248ddd2b59db3adc73aea5fe028226001c592967c31dd17d2631efa36"
+    },
+    {
+      "path": "og-roles/roles/debate-summary/role.json",
+      "sizeBytes": 939,
+      "sha256": "bc265d048aca9e6c9c6cf26dd4012707f3c84fea3968841e2f5e7986ea543288"
+    },
+    {
+      "path": "og-roles/roles/demo-analyst/agent.md",
+      "sizeBytes": 427,
+      "sha256": "b89e0f565f7793bab6e04e1bf6d63a6ee147ab9e1d44409f175720da996fe4ee"
+    },
+    {
+      "path": "og-roles/roles/demo-analyst/output.schema.json",
+      "sizeBytes": 356,
+      "sha256": "19e1adda19fb009d18904ec484228f8839d26f2c4ba2efc05a2979878870991e"
+    },
+    {
+      "path": "og-roles/roles/demo-analyst/prompt.md",
+      "sizeBytes": 480,
+      "sha256": "23f13e8eadbfb5704d47383237350831a0f6afbac208a7bfb43e649b2c218c3f"
+    },
+    {
+      "path": "og-roles/roles/demo-analyst/role.json",
+      "sizeBytes": 958,
+      "sha256": "4e958fd7d2ce310d74f31d31fa2a228e543a06ae3f1a64399fbda686708ea07e"
+    },
+    {
+      "path": "og-roles/roles/demo-intake/agent.md",
+      "sizeBytes": 422,
+      "sha256": "204fb47207f41162c724c1c17a6a47e0af91d93015263b0fc92f26db8f427476"
+    },
+    {
+      "path": "og-roles/roles/demo-intake/output.schema.json",
+      "sizeBytes": 255,
+      "sha256": "106883596b92a62599ec3d4322a5079d9c1afffc4c32dbe8e22572151ce399dc"
+    },
+    {
+      "path": "og-roles/roles/demo-intake/prompt.md",
+      "sizeBytes": 406,
+      "sha256": "31258d0ff9a373805dc1335b95dc8197f119a09933070519faa53be71d05d5f5"
+    },
+    {
+      "path": "og-roles/roles/demo-intake/role.json",
+      "sizeBytes": 903,
+      "sha256": "aadb377a1086b7a8201315b5a26ce0017553e70e68e50105fceabf25fae9007f"
+    },
+    {
+      "path": "og-roles/roles/diagnosis-cardiology/agent.md",
+      "sizeBytes": 576,
+      "sha256": "3039f0dd4090b454482250b86033e808ec061e90bfc4658b5be19d9b3977c747"
+    },
+    {
+      "path": "og-roles/roles/diagnosis-cardiology/output.schema.json",
+      "sizeBytes": 255,
+      "sha256": "106883596b92a62599ec3d4322a5079d9c1afffc4c32dbe8e22572151ce399dc"
+    },
+    {
+      "path": "og-roles/roles/diagnosis-cardiology/prompt.md",
+      "sizeBytes": 453,
+      "sha256": "13e2e4dda383b444848c6f288f0c5e9efa8f4969d2ea6d74ffa7ebd8384a7272"
+    },
+    {
+      "path": "og-roles/roles/diagnosis-cardiology/role.json",
+      "sizeBytes": 983,
+      "sha256": "4f4ee9b2a51e9ee986491592698d4ab3ce47d35bc9b758fae8015511c38d7205"
+    },
+    {
+      "path": "og-roles/roles/diagnosis-chief-review/agent.md",
+      "sizeBytes": 620,
+      "sha256": "dd131ab279e62b6272e240394bd34e40e5e1184903a5b1167be69aff23097e3d"
+    },
+    {
+      "path": "og-roles/roles/diagnosis-chief-review/output.schema.json",
+      "sizeBytes": 514,
+      "sha256": "cb98e41e4785fb67b80f9026eb04dd0cb4e41114fe0c69bea0a01ea89e4e47b7"
+    },
+    {
+      "path": "og-roles/roles/diagnosis-chief-review/prompt.md",
+      "sizeBytes": 503,
+      "sha256": "03af80c9ae982f53b1beb141aba746e7890d45e8b198062cdfb89fa2f7c0fb40"
+    },
+    {
+      "path": "og-roles/roles/diagnosis-chief-review/role.json",
+      "sizeBytes": 986,
+      "sha256": "3e1b4a402e5921f82446e0cd74bef496bf2e31923e0504432920e1f405b5a8cf"
+    },
+    {
+      "path": "og-roles/roles/diagnosis-dispatch/agent.md",
+      "sizeBytes": 608,
+      "sha256": "0a0d1bd39aa90e7ea198a9c0646c9156c33f875abde6aa476020bfeda14eae3f"
+    },
+    {
+      "path": "og-roles/roles/diagnosis-dispatch/output.schema.json",
+      "sizeBytes": 290,
+      "sha256": "a17f066397e44234650050b3333ccd1aa967cb09df89b8831d7bf5074d86ce4a"
+    },
+    {
+      "path": "og-roles/roles/diagnosis-dispatch/prompt.md",
+      "sizeBytes": 513,
+      "sha256": "dfa9b5e77d52379fcf61ed8bb31606ef3e3edb2f267f0e7cb7a193e150f2d7cf"
+    },
+    {
+      "path": "og-roles/roles/diagnosis-dispatch/role.json",
+      "sizeBytes": 952,
+      "sha256": "54278a08a0775cecba6b3468302f2f67269a9dd582bc26c6ac22194c0586a2e2"
+    },
+    {
+      "path": "og-roles/roles/diagnosis-imaging/agent.md",
+      "sizeBytes": 581,
+      "sha256": "ab9888c4cf138d436702fb3cc8e33ba94c7c2e20670e26f48059a03e93b885d8"
+    },
+    {
+      "path": "og-roles/roles/diagnosis-imaging/output.schema.json",
+      "sizeBytes": 255,
+      "sha256": "106883596b92a62599ec3d4322a5079d9c1afffc4c32dbe8e22572151ce399dc"
+    },
+    {
+      "path": "og-roles/roles/diagnosis-imaging/prompt.md",
+      "sizeBytes": 457,
+      "sha256": "2b61a45d4de45e4dd2d3ce5cbfb714cb7e68a28fa26b81d91f8bfdf4691afcaa"
+    },
+    {
+      "path": "og-roles/roles/diagnosis-imaging/role.json",
+      "sizeBytes": 946,
+      "sha256": "f8a5815c1ffbd9d6bd6f1697c5efa3fee1306ac5b93fa6b71c56da4d297f6698"
+    },
+    {
+      "path": "og-roles/roles/diagnosis-neurology/agent.md",
+      "sizeBytes": 620,
+      "sha256": "f595107f70f8aa48ebcf387bfb5df2bb4221ef8ca6fc32565948c20c91dbf50a"
+    },
+    {
+      "path": "og-roles/roles/diagnosis-neurology/output.schema.json",
+      "sizeBytes": 435,
+      "sha256": "26b03b3ddd7fd6f64b425fbba39fd933d2e118a830fcb9d8823e7540cc725790"
+    },
+    {
+      "path": "og-roles/roles/diagnosis-neurology/prompt.md",
+      "sizeBytes": 466,
+      "sha256": "70ab3b9e60b5711664712bfc0d684a4853dd7eea6da52fa78ac33c86b085bb4c"
+    },
+    {
+      "path": "og-roles/roles/diagnosis-neurology/role.json",
+      "sizeBytes": 966,
+      "sha256": "bc577f4ff58c034a9b0da8429437291b5c33ce46e1c2cbcbe66d879f914d7f88"
+    },
+    {
+      "path": "og-roles/roles/error-handler-base/agent.md",
+      "sizeBytes": 857,
+      "sha256": "4a9e2a6109690dba8a633dd87dd3596db448629b4960121cf9340d5639659621"
+    },
+    {
+      "path": "og-roles/roles/error-handler-base/output.schema.json",
+      "sizeBytes": 278,
+      "sha256": "05c122a5efe9c950390de3a806ea5a2754489a12e50ecf088633d2dd01a8ca61"
+    },
+    {
+      "path": "og-roles/roles/error-handler-base/prompt.md",
+      "sizeBytes": 478,
+      "sha256": "cec8848cbf0ffc9d5f55ee89b20966609f7c0e5f5eca0d8c59f6603b82515bee"
+    },
+    {
+      "path": "og-roles/roles/error-handler-base/role.json",
+      "sizeBytes": 930,
+      "sha256": "592ab0c55704570f4daad1d6f2fcfd782b275b166f54f12513f2d3c343738ca1"
+    },
+    {
+      "path": "og-roles/roles/hello-ogsystem/agent.md",
+      "sizeBytes": 331,
+      "sha256": "683db19381eeb40a25f02a4d7cba606795a90a4385f09fe8670095eac2004d9e"
+    },
+    {
+      "path": "og-roles/roles/hello-ogsystem/output.schema.json",
+      "sizeBytes": 275,
+      "sha256": "098e6b3cad61c7c3ed95246f3972f72e14225436c6df43efaa0da4b9dc13cff1"
+    },
+    {
+      "path": "og-roles/roles/hello-ogsystem/prompt.md",
+      "sizeBytes": 386,
+      "sha256": "f095ac8793fcf17811f5bd822edcd146bda43182d72c557af3450a8300e701ec"
+    },
+    {
+      "path": "og-roles/roles/hello-ogsystem/role.json",
+      "sizeBytes": 938,
+      "sha256": "632bb80c70423ba59b96efe6aea9712768a45b0897621f2c02c85818a4a92e83"
+    },
+    {
+      "path": "og-roles/roles/rust-compiler/agent.md",
+      "sizeBytes": 172,
+      "sha256": "60392aaf4ace8787b383979f049350dffa095c4f47c97942b7854446d139c3f8"
+    },
+    {
+      "path": "og-roles/roles/rust-compiler/output.schema.json",
+      "sizeBytes": 275,
+      "sha256": "098e6b3cad61c7c3ed95246f3972f72e14225436c6df43efaa0da4b9dc13cff1"
+    },
+    {
+      "path": "og-roles/roles/rust-compiler/prompt.md",
+      "sizeBytes": 201,
+      "sha256": "d403773a7ded7697618b111f4defb10e08e8208001d9ccd55c75a9e0dfb6ca1b"
+    },
+    {
+      "path": "og-roles/roles/rust-compiler/role.json",
+      "sizeBytes": 904,
+      "sha256": "142aebfdef84acd69a0ae4118f87191944c96b13aff923ad5b7cf42d93afabfd"
+    },
+    {
+      "path": "og-roles/roles/rust-developer/agent.md",
+      "sizeBytes": 160,
+      "sha256": "58103a5de3891129d64e8d71f7e10a820b61e1587d1cb73bed7f5b8746536ea7"
+    },
+    {
+      "path": "og-roles/roles/rust-developer/output.schema.json",
+      "sizeBytes": 275,
+      "sha256": "098e6b3cad61c7c3ed95246f3972f72e14225436c6df43efaa0da4b9dc13cff1"
+    },
+    {
+      "path": "og-roles/roles/rust-developer/prompt.md",
+      "sizeBytes": 210,
+      "sha256": "c2044a9f93304cb5c12bb24b5d770e0edf5af5f5df49fa2349cebc25efdec56f"
+    },
+    {
+      "path": "og-roles/roles/rust-developer/role.json",
+      "sizeBytes": 897,
+      "sha256": "a37ae3cac1e139e7d10bcc0720ae30132b067501cd382270e18182a54b6f480d"
+    },
+    {
+      "path": "og-roles/roles/rust-packager/agent.md",
+      "sizeBytes": 175,
+      "sha256": "362040d411ba18753d2dab5297b098dc6a0b818d7838002ebd0fc5a66413f6fc"
+    },
+    {
+      "path": "og-roles/roles/rust-packager/output.schema.json",
+      "sizeBytes": 275,
+      "sha256": "098e6b3cad61c7c3ed95246f3972f72e14225436c6df43efaa0da4b9dc13cff1"
+    },
+    {
+      "path": "og-roles/roles/rust-packager/prompt.md",
+      "sizeBytes": 193,
+      "sha256": "fa9320c1ebd32d0db56a7e7fe1ba8fa865d73aa5b60a1ed1a57371ba211511e5"
+    },
+    {
+      "path": "og-roles/roles/rust-packager/role.json",
+      "sizeBytes": 908,
+      "sha256": "32e8bb48480e2294c8c067f797ca023ac29f524163b478eac7fe98f6e807d4b2"
+    },
+    {
+      "path": "og-roles/roles/test-branch-a/agent.md",
+      "sizeBytes": 103,
+      "sha256": "15c54719daea278a39c7aa54388476571ec3de4b9f783d71f6519d13b86ee976"
+    },
+    {
+      "path": "og-roles/roles/test-branch-a/output.schema.json",
+      "sizeBytes": 255,
+      "sha256": "106883596b92a62599ec3d4322a5079d9c1afffc4c32dbe8e22572151ce399dc"
+    },
+    {
+      "path": "og-roles/roles/test-branch-a/prompt.md",
+      "sizeBytes": 150,
+      "sha256": "95700c0860927ed32373ed6d8a425e58a861aa254d776cc55a7cff386db04c57"
+    },
+    {
+      "path": "og-roles/roles/test-branch-a/role.json",
+      "sizeBytes": 796,
+      "sha256": "af29014fa16e50c38817a86eabd58c851411191ed5009b9b5a9a10aa41f19fc8"
+    },
+    {
+      "path": "og-roles/roles/test-branch-b/agent.md",
+      "sizeBytes": 103,
+      "sha256": "964acd8427d3f97c7a0d6037ce62043ac9d13ae86f4c96ef04171ad42b4c31d0"
+    },
+    {
+      "path": "og-roles/roles/test-branch-b/output.schema.json",
+      "sizeBytes": 255,
+      "sha256": "106883596b92a62599ec3d4322a5079d9c1afffc4c32dbe8e22572151ce399dc"
+    },
+    {
+      "path": "og-roles/roles/test-branch-b/prompt.md",
+      "sizeBytes": 150,
+      "sha256": "95700c0860927ed32373ed6d8a425e58a861aa254d776cc55a7cff386db04c57"
+    },
+    {
+      "path": "og-roles/roles/test-branch-b/role.json",
+      "sizeBytes": 796,
+      "sha256": "78b78fb44e6d954eb4a4efc29f0c3b6d5e57417083151520c1b9b81067a3788c"
+    },
+    {
+      "path": "og-roles/roles/test-decision/agent.md",
+      "sizeBytes": 125,
+      "sha256": "9ada6d8a556413eb627560ba229b9123b3f77dceb2534207ff3a308c5279a93f"
+    },
+    {
+      "path": "og-roles/roles/test-decision/output.schema.json",
+      "sizeBytes": 326,
+      "sha256": "e79ed2a88e7dd52afc2831effebbdcb840f1baa9b248ea0455397128cefa84b1"
+    },
+    {
+      "path": "og-roles/roles/test-decision/prompt.md",
+      "sizeBytes": 150,
+      "sha256": "95700c0860927ed32373ed6d8a425e58a861aa254d776cc55a7cff386db04c57"
+    },
+    {
+      "path": "og-roles/roles/test-decision/role.json",
+      "sizeBytes": 826,
+      "sha256": "c95fcd2b2658e1ddb37a29c5759ad087559dee93ea0df75aefd070bc34d8aea5"
+    },
+    {
+      "path": "og-roles/roles/test-operator/agent.md",
+      "sizeBytes": 111,
+      "sha256": "24d8d014791319912e360670d00f68fbe21f6d958d5e1cdb0ba5564e2f37e2f2"
+    },
+    {
+      "path": "og-roles/roles/test-operator/output.schema.json",
+      "sizeBytes": 255,
+      "sha256": "106883596b92a62599ec3d4322a5079d9c1afffc4c32dbe8e22572151ce399dc"
+    },
+    {
+      "path": "og-roles/roles/test-operator/prompt.md",
+      "sizeBytes": 150,
+      "sha256": "95700c0860927ed32373ed6d8a425e58a861aa254d776cc55a7cff386db04c57"
+    },
+    {
+      "path": "og-roles/roles/test-operator/role.json",
+      "sizeBytes": 877,
+      "sha256": "a30abfb066d2aa0a6fde7b9ef080ed267d04381f2e6fd12e8b21ce5ea366248f"
+    },
+    {
+      "path": "package.json",
+      "sizeBytes": 6006,
+      "sha256": "4131d0d21bb9f6edfedfc8507676c153ab02b2bcc0594a9fc2e5741468f820dc"
+    },
+    {
+      "path": "pnpm-lock.yaml",
+      "sizeBytes": 33219,
+      "sha256": "4ff612c9ed6b70bbffc12cfec51a3a1fbe1a3cdb7ea1bcf9f0918132af0bb472"
+    },
+    {
+      "path": "pnpm-workspace.yaml",
+      "sizeBytes": 80,
+      "sha256": "6214c4ffe448c02615598c8e0bbd01a79633ff497e429354f624de823941d90d"
+    },
+    {
+      "path": "schemas/contract-v2.schema.json",
+      "sizeBytes": 14384,
+      "sha256": "5427f8aa3717a90d57e898ee4d9ed71dc80fc9a5483bd6639012059de60656ba"
+    },
+    {
+      "path": "schemas/model-catalog.schema.json",
+      "sizeBytes": 2332,
+      "sha256": "65e05e1987af7aef3ad7e8f4842c41b71f23b3056a3bac6ac8df36bc57afaffb"
+    },
+    {
+      "path": "schemas/model-selection.schema.json",
+      "sizeBytes": 965,
+      "sha256": "2e321881357f3b059ce9034d3f3f0a1470df4f1ef1a800817119f5684b58f6e0"
+    },
+    {
+      "path": "schemas/openapi.yaml",
+      "sizeBytes": 15240,
+      "sha256": "23b98e1851c3a5ebcb543ae93d4298270bb23be9ee3d381058bb90b60ae43770"
+    },
+    {
+      "path": "schemas/runtime-config.schema.json",
+      "sizeBytes": 2279,
+      "sha256": "fb4378257a2c62ed99bc9593fab558856f2ad13d9331bbfb5cd90cddb59518fd"
+    },
+    {
+      "path": "schemas/system-design.schema.json",
+      "sizeBytes": 6016,
+      "sha256": "4709ccfe8a0154cccbf454fa265dcdd4f24d6fcdf21e6f32abab343828edc2a4"
+    },
+    {
+      "path": "schemas/user-profile.schema.json",
+      "sizeBytes": 766,
+      "sha256": "3e50443ff66bdb27ddb749180df2a53b06c21a491fc62c18744f5e71957e5160"
+    },
+    {
+      "path": "scripts/build-visualizer-client.mjs",
+      "sizeBytes": 1433,
+      "sha256": "08c42e79add9bea95792570203c42b74da41ea76d9dff7d38c9cdfd4fe69108a"
+    },
+    {
+      "path": "scripts/console-print.mjs",
+      "sizeBytes": 1218,
+      "sha256": "433a39088b14cdb207ebdaaf825b7db8c073741b29b62b99d44fbbf0681da458"
+    },
+    {
+      "path": "scripts/docs-command-drift-check.mjs",
+      "sizeBytes": 3106,
+      "sha256": "471427c586d4d418a4d494c7ba710ebd7a8768faf4270b2050ecdea11bac7699"
+    },
+    {
+      "path": "scripts/export-open-source-core.mjs",
+      "sizeBytes": 28472,
+      "sha256": "14d7e97c3369540b26a27d269916ae54f22b8ce8f10d6e49a9b69cd51e0b225a"
+    },
+    {
+      "path": "scripts/install-system-home.cjs",
+      "sizeBytes": 3033,
+      "sha256": "f1d1b7057c332bec4568bfa70dbf3d4f1c64770ae32b44f4e15742d327784e27"
+    },
+    {
+      "path": "scripts/package-install-smoke.mjs",
+      "sizeBytes": 13195,
+      "sha256": "44702266d9b9ae4cfc8f9f29578bcd175cf1452ed8b3e750211cf5761a66f9eb"
+    },
+    {
+      "path": "scripts/preinstall.cjs",
+      "sizeBytes": 471,
+      "sha256": "9a69d384f632a29e986e29bdb11d387d4399d308653b1c6c78ea4455fe1b2c19"
+    },
+    {
+      "path": "scripts/reproduce-paper-results.mjs",
+      "sizeBytes": 10554,
+      "sha256": "22ea8ee6f69e3515c49597c011cd258997bc81618dbf7aee05116d5ad0c91cf6"
+    },
+    {
+      "path": "scripts/run-cross-backend-evidence.mjs",
+      "sizeBytes": 8393,
+      "sha256": "d7fb874eeb5f8f08585e5b8feb20030ac8f89096f9afa0731ac28f73f3686905"
+    },
+    {
+      "path": "scripts/run-node-tests.mjs",
+      "sizeBytes": 1061,
+      "sha256": "988b4ec7b7e1698051420a41f2223f211c8bab1e02a9fbf1679d2bd4d649801b"
+    },
+    {
+      "path": "scripts/run-real-python-calculator-team.mjs",
+      "sizeBytes": 13287,
+      "sha256": "dee2ab194e20cbb4c0c36e933967719e1aa477189f8e2ba57f2a143c113b6aee"
+    },
+    {
+      "path": "scripts/runtime-replay-threshold-check.mjs",
+      "sizeBytes": 1792,
+      "sha256": "65dd2e42969fb9dcbb5631ed1eab38504d00945187c31abcb4f60e1f652c5808"
+    },
+    {
+      "path": "scripts/visualizer-browser-smoke.mjs",
+      "sizeBytes": 5666,
+      "sha256": "3933659d8d0a31cc0d87b9968674773953848f99f80b7dba653bb85d420ee34d"
+    },
+    {
+      "path": "scripts/windows-lifecycle-smoke.mjs",
+      "sizeBytes": 4558,
+      "sha256": "a2cff3553753ccb6cba3dae454235c7dc9b883b15fd39b82176be48f4eb9df3b"
+    },
+    {
+      "path": "src/business-events.ts",
+      "sizeBytes": 4875,
+      "sha256": "00c940b9da6aa9e1951db344b0b23a5e1b1c7bacc8a2efa14e86a9720a9194c4"
+    },
+    {
+      "path": "src/context-selector.ts",
+      "sizeBytes": 7315,
+      "sha256": "1ac5732caf84847d7bfd9d0ec674b76e607b9a58a287d727000a1e9c12207f4d"
+    },
+    {
+      "path": "src/design/change-set.ts",
+      "sizeBytes": 18778,
+      "sha256": "032ee9b1226b4cb3e6a1fb853ca04d498adfb712bd3c01a522f5b5de4844317b"
+    },
+    {
+      "path": "src/design/index.ts",
+      "sizeBytes": 149,
+      "sha256": "c9bada82c677de71907d1713bc609287cab4d8f9dfe74f2441ff9a9a3ffb66f1"
+    },
+    {
+      "path": "src/design/mermaid.ts",
+      "sizeBytes": 6995,
+      "sha256": "8af86711c9b4b71013cdf1e726541ccf0144eabebfb37167d4165bf6c9ebfe36"
+    },
+    {
+      "path": "src/design/runtime.ts",
+      "sizeBytes": 3638,
+      "sha256": "02bb2934df2f0d951e2c628aaee3cb2d919029621ead16a6dfcb81bfa96ab209"
+    },
+    {
+      "path": "src/design/store.ts",
+      "sizeBytes": 1768,
+      "sha256": "8f9f3fa5babe5e9fc83dd93615be5fc822051413a57ce2e3f7fc6769322b55a8"
+    },
+    {
+      "path": "src/design/types.ts",
+      "sizeBytes": 4892,
+      "sha256": "9b03707b7710d5d8b180c1b1a18f524132161c38ccf867c0ecaf8219f84f7b80"
+    },
+    {
+      "path": "src/nl2mmd/catalog.ts",
+      "sizeBytes": 13874,
+      "sha256": "22bc3e8b721b02b8eb83855f6362420a3cae574416dbf5ccd4f615720f15a296"
+    },
+    {
+      "path": "src/nl2mmd/cli.ts",
+      "sizeBytes": 13568,
+      "sha256": "ca1d8ac6a9af11252a0ddc8a6388d9aeb2f16666886d2432e25033f39f13578f"
+    },
+    {
+      "path": "src/nl2mmd/index.ts",
+      "sizeBytes": 1518,
+      "sha256": "2cde35f17516d547434cbe98cb4f024f8c216a0e16c1f176be0c7aae2b49ce79"
+    },
+    {
+      "path": "src/nl2mmd/logger.ts",
+      "sizeBytes": 1572,
+      "sha256": "784c13783456b3c8864711b55ff2d365c1f1d7796f2a84d089b575568f48b166"
+    },
+    {
+      "path": "src/nl2mmd/normalize-mermaid.ts",
+      "sizeBytes": 16561,
+      "sha256": "39a2140da08879754cd10c3a49f68d699701e703fffaab7f5a6fcf3a61ad7ce2"
+    },
+    {
+      "path": "src/nl2mmd/prompt.ts",
+      "sizeBytes": 9731,
+      "sha256": "e664fb22fe4b8b5c0430cf1b8d0d6853ab59c5bd14f83702d8fcafab2308f237"
+    },
+    {
+      "path": "src/nl2mmd/semantic-map.ts",
+      "sizeBytes": 8832,
+      "sha256": "cc044ab5ceb5d3e4eead1db8fe1cd441e681fd240dc8ec9a7709a4335a0cf17b"
+    },
+    {
+      "path": "src/nl2mmd/service.ts",
+      "sizeBytes": 9556,
+      "sha256": "88a2297cd7f34af5c1ad86d34b65be24b9299837fab8bf91b1827050c81e2e56"
+    },
+    {
+      "path": "src/nl2mmd/structure-templates.ts",
+      "sizeBytes": 14617,
+      "sha256": "43b0a62396314d1de33cb07d5d9a405baad186a5a838f1c5740e80117ea1768e"
+    },
+    {
+      "path": "src/nl2mmd/txt-graph.ts",
+      "sizeBytes": 4720,
+      "sha256": "20fe94c52955bb5a737c583238a90f6ec7b8f50759f054787a5ecac01a15e3a9"
+    },
+    {
+      "path": "src/nl2mmd/types.ts",
+      "sizeBytes": 3625,
+      "sha256": "bc8e39b8e834567cddc02297257e1dedc28fcc92aad26d678a1aed450bae34f8"
+    },
+    {
+      "path": "src/nl2mmd/validate.ts",
+      "sizeBytes": 6235,
+      "sha256": "4751323d25cacb828c940542c0de576b47a8fd9eb0787a3c166d281b7de29793"
+    },
+    {
+      "path": "src/runtime/acp-adapter-support.ts",
+      "sizeBytes": 16231,
+      "sha256": "b3e3dc53db4624434cd3f34c9ab0ca4aec4f7844ec8b07ad2313a436e490a212"
+    },
+    {
+      "path": "src/runtime/acp-client.ts",
+      "sizeBytes": 9519,
+      "sha256": "9ac6f15b8a782c56570fe1929957b5cbafb2bcfc7907088cd0179e73d3ffad38"
+    },
+    {
+      "path": "src/runtime/adapter.ts",
+      "sizeBytes": 27441,
+      "sha256": "0a2444fe464e3438c4850f0b2ade5383e730550a3938bc6eb5afa9fe8355de7f"
+    },
+    {
+      "path": "src/runtime/agent-client-types.ts",
+      "sizeBytes": 4781,
+      "sha256": "dfda9be9ad56d4b3afa4092cf7c4e7edda9d3b7b08a8bba3cbe752ff78f121c8"
+    },
+    {
+      "path": "src/runtime/artifact-access.ts",
+      "sizeBytes": 8868,
+      "sha256": "f31a2022229215a30bd13245078c0a47123b062f1abd2e592b3054788906f850"
+    },
+    {
+      "path": "src/runtime/artifact-promotion.ts",
+      "sizeBytes": 10685,
+      "sha256": "e8bb9b32022f2149c4557b0cda4c3eda04f0e9750a45aafeb66c9d0949742e5a"
+    },
+    {
+      "path": "src/runtime/artifact-store.ts",
+      "sizeBytes": 1790,
+      "sha256": "00a2aa27a19122dc24cb61dee221b5cef4b82e952343ba6ad141fae5061a5a0e"
+    },
+    {
+      "path": "src/runtime/artifact-verifier.ts",
+      "sizeBytes": 12038,
+      "sha256": "0be8f8ce711a7ea14332c32ba78a368ed9127bed9ee43933dc5f5dd96d55ef4b"
+    },
+    {
+      "path": "src/runtime/audit-recorder.ts",
+      "sizeBytes": 6664,
+      "sha256": "10876552d2558b719484fcddd2e18c8b4f885f090bbf101c2240053cca6c11ad"
+    },
+    {
+      "path": "src/runtime/backend-capabilities.ts",
+      "sizeBytes": 3028,
+      "sha256": "7982825626d719468ec4e252c392f1027172db58238e7b7f0d485a662e901250"
+    },
+    {
+      "path": "src/runtime/binding-resolver.ts",
+      "sizeBytes": 3123,
+      "sha256": "8b5645cbb385c399c0fb0ee4196d7f931ecca6ba92a52d4754664c6ae536a0c6"
+    },
+    {
+      "path": "src/runtime/bundled-repos.ts",
+      "sizeBytes": 1225,
+      "sha256": "62a92ecfbedd0ad3167113b6bf91875f79b5f2493dfa74bac1a6bfae2ed249ac"
+    },
+    {
+      "path": "src/runtime/business-events.ts",
+      "sizeBytes": 39,
+      "sha256": "bdfea099bdcf463bd0ae337cb876e9b865d4ce6ad6e819e8522bafc41214421e"
+    },
+    {
+      "path": "src/runtime/capability-policy.ts",
+      "sizeBytes": 1597,
+      "sha256": "b15b99bc1f02dba46de8c59a940374e2d6b3ad6ecddc02ac340b9e90da2d4ae7"
+    },
+    {
+      "path": "src/runtime/checkpoint-store.ts",
+      "sizeBytes": 1074,
+      "sha256": "f43c9e27d5500976842242b50606eab6ccf8a60dbd20209a5479eca1fbf35e94"
+    },
+    {
+      "path": "src/runtime/child-process-lifecycle.ts",
+      "sizeBytes": 1286,
+      "sha256": "7882039cadd9d12f5448753b0bd3ba9a47e074d6cd241523f42f55c681200d59"
+    },
+    {
+      "path": "src/runtime/cli-adapter-support.ts",
+      "sizeBytes": 849,
+      "sha256": "d01c392ba1ae46abd8ba0c49ba97f38a93cfc51aa092201a034aea3d3d8e8002"
+    },
+    {
+      "path": "src/runtime/cli-run-output.ts",
+      "sizeBytes": 1050,
+      "sha256": "ae22b84d7913278ed4a2b4b7f0b0fc3b263a47746a25cb2c8fc507effb538205"
+    },
+    {
+      "path": "src/runtime/cli.ts",
+      "sizeBytes": 74633,
+      "sha256": "04da875349d4b2b924948c369ec83e79f72d76451042c2251e77fc5255fe8e78"
+    },
+    {
+      "path": "src/runtime/codex-app-server.ts",
+      "sizeBytes": 13563,
+      "sha256": "0b22857a193cd762b12374a74333f99260da374c23e59513334945c7074f70ca"
+    },
+    {
+      "path": "src/runtime/compiler.ts",
+      "sizeBytes": 34255,
+      "sha256": "06bd66d42bc86c9e248d92314e9bed47849fb1fbcb2398a172596e63dfef94ae"
+    },
+    {
+      "path": "src/runtime/condition-ast.ts",
+      "sizeBytes": 8342,
+      "sha256": "2e08cc87ae06a5dd66b241d5f3cf1cb21a48104022486114b73fde9fd5669325"
+    },
+    {
+      "path": "src/runtime/config.ts",
+      "sizeBytes": 13967,
+      "sha256": "d0f82f93d189a72a81c7137303341cdb5acc5a5d187d40c6b48858a04f1713a2"
+    },
+    {
+      "path": "src/runtime/console-run-log.ts",
+      "sizeBytes": 6263,
+      "sha256": "1a5901a759f950f711461ab180391465c7f9fe439a74ba78c67e1431835ba52c"
+    },
+    {
+      "path": "src/runtime/contract-v2-loader.ts",
+      "sizeBytes": 5414,
+      "sha256": "5c3c9dd44211c458c3f6fcfc12ef274677f3f7d6e69e522b6a0d0e7bc76df5cc"
+    },
+    {
+      "path": "src/runtime/contract-v2.ts",
+      "sizeBytes": 8142,
+      "sha256": "795b0cec38b8403ae031af09bf86ac2f51bc3737c183a479e4348b865d23dc68"
+    },
+    {
+      "path": "src/runtime/conversation-projector.ts",
+      "sizeBytes": 34882,
+      "sha256": "39c377db0ea2cf11d2c34c59a331679d8ed10fb7d791c20fe8340337d7bd94f2"
+    },
+    {
+      "path": "src/runtime/decision-criteria.ts",
+      "sizeBytes": 7775,
+      "sha256": "6827fc412854f32aa01e19c0cdbb0e360adefd677154711d8c78c65f9f86c8cc"
+    },
+    {
+      "path": "src/runtime/deployment-manifest.ts",
+      "sizeBytes": 8311,
+      "sha256": "4a641a40fc8d7a02a39c1686c0c93963089c080622a7e7f8048b8fe946f8b78c"
+    },
+    {
+      "path": "src/runtime/doctor.ts",
+      "sizeBytes": 23238,
+      "sha256": "116d466796bf19e6a5fc1f9219ac154982debc9ebc7b602bdd1e3cba296e24a6"
+    },
+    {
+      "path": "src/runtime/engine-adapter.ts",
+      "sizeBytes": 1426,
+      "sha256": "893e3b1817f2f0777d01ea03618b01f85ef99b979e00bd62a071753ac0c4a1fb"
+    },
+    {
+      "path": "src/runtime/error-flow-utils.ts",
+      "sizeBytes": 378,
+      "sha256": "59bfd0b5dcb428022c855054d7dba38964fba889d2d597c87ffaf1be6b7ca982"
+    },
+    {
+      "path": "src/runtime/event-contract.ts",
+      "sizeBytes": 1744,
+      "sha256": "cd4ed85dec2a114f437ddae702f36a16022f33a8bd58b3591c6ef3645f7b1f31"
+    },
+    {
+      "path": "src/runtime/executable-resolver.ts",
+      "sizeBytes": 1880,
+      "sha256": "aea1b3723ec24ec16934f4bbacba9920164ac7ab652a7a6f45d64973e07d0677"
+    },
+    {
+      "path": "src/runtime/execution-plan.ts",
+      "sizeBytes": 6022,
+      "sha256": "1d14d4f4bb36a48dff5d28e0319e9d46c83c073fbec9ccaf42a5f38801ebf0da"
+    },
+    {
+      "path": "src/runtime/executor.ts",
+      "sizeBytes": 12651,
+      "sha256": "3f4ce53b9c974bbb72f74927f2029da00d3261ee5aff67089097d1e769de41c3"
+    },
+    {
+      "path": "src/runtime/filesystem-runtime-services.ts",
+      "sizeBytes": 3392,
+      "sha256": "a95ed55c4670bc84e017bfc8e89370d9910db2ef3ba5b0f0d0ca067129b37d60"
+    },
+    {
+      "path": "src/runtime/flow-contract.ts",
+      "sizeBytes": 20915,
+      "sha256": "1b8c340306e557ec3f7e197c5a403a68145f782e96001c1f76e3df7c7b5578ae"
+    },
+    {
+      "path": "src/runtime/git-collaboration.ts",
+      "sizeBytes": 44062,
+      "sha256": "28383f51ac0eaccfb37c6bd921935852dc293db28b83adcebafd5218e9ffaa27"
+    },
+    {
+      "path": "src/runtime/graph-mode-registry.ts",
+      "sizeBytes": 12566,
+      "sha256": "795075644bdb038621feb914399d7b8647805d70ddfee3c83f35254d4687acae"
+    },
+    {
+      "path": "src/runtime/graph-runner.ts",
+      "sizeBytes": 128617,
+      "sha256": "23789b16711be86c6c75035bc887db1c8dda5a01d969c8ef0034506adbf5549d"
+    },
+    {
+      "path": "src/runtime/graph-runtime-state.ts",
+      "sizeBytes": 15317,
+      "sha256": "372b683fa565f115c3a262999fc461f47566b6dc8570a1a8fa7e71591ef33d8d"
+    },
+    {
+      "path": "src/runtime/human-review-comment.ts",
+      "sizeBytes": 1353,
+      "sha256": "49f61e51e4d7cc82f3b6885a1e45f6ef7dadf50f40d099e2ae8baa5a7c9765b8"
+    },
+    {
+      "path": "src/runtime/human-review.ts",
+      "sizeBytes": 3855,
+      "sha256": "7f0c262535d508591d253e89d2ab8a7e2ed456b4eabca83423340ca532502b03"
+    },
+    {
+      "path": "src/runtime/identity.ts",
+      "sizeBytes": 2876,
+      "sha256": "b893e3b6384e3f550ceca3215db4198e064d563c8f05697e2b045fccf48c3188"
+    },
+    {
+      "path": "src/runtime/join-policy.ts",
+      "sizeBytes": 2931,
+      "sha256": "ecc6beb986712db310a61d1662dba9b15a6952f2f7f54b51a56aa43e066c59a8"
+    },
+    {
+      "path": "src/runtime/json-file.ts",
+      "sizeBytes": 2206,
+      "sha256": "ccd3d5c6c422dcc6f7a58ed81610aa2b738afbb9f1477e1091a21f099c30f6b5"
+    },
+    {
+      "path": "src/runtime/json-schema.ts",
+      "sizeBytes": 3373,
+      "sha256": "df6933bcc330a7aedcc83b62cb2bb6d68919cee7dba6e3631e186b1b1ced2e13"
+    },
+    {
+      "path": "src/runtime/kimi-adapter.ts",
+      "sizeBytes": 6354,
+      "sha256": "cfede83e4163d0ceebf1747bbc82a0ea2a8f448e73d931e3ae9256e401457cf4"
+    },
+    {
+      "path": "src/runtime/langgraph-engine-adapter.ts",
+      "sizeBytes": 2804,
+      "sha256": "ae5aae6497ecff5db1fc864d9a5bfccaa5036d04d66369b0d6d47f89d1f8edf4"
+    },
+    {
+      "path": "src/runtime/lint.ts",
+      "sizeBytes": 3131,
+      "sha256": "ca84e0ab1dfb0a3b876bf3fa54995307fd61550b7a3a39c6a8b2d68db0da7636"
+    },
+    {
+      "path": "src/runtime/loop-budget.ts",
+      "sizeBytes": 1213,
+      "sha256": "00949dc9027cc4f4de8ee3ed506853e240366bf149d60dd88b3fc93c05dde183"
+    },
+    {
+      "path": "src/runtime/model-backend-registry.ts",
+      "sizeBytes": 34107,
+      "sha256": "d0ed788531936bb8802259574d90799a128e891db21747c9a3346f285a2161ae"
+    },
+    {
+      "path": "src/runtime/model-catalog.ts",
+      "sizeBytes": 21856,
+      "sha256": "38615ceadcc0936d7da689feb38ceb194bc6c47bbc4a9fea61c8208dcf71b0fa"
+    },
+    {
+      "path": "src/runtime/model-repo.ts",
+      "sizeBytes": 4707,
+      "sha256": "02944d482f8bc61495cda37325be625215a8b8025afe30bf455d0d86017deb26"
+    },
+    {
+      "path": "src/runtime/model-selection.ts",
+      "sizeBytes": 15125,
+      "sha256": "48f31573d9580c8a5cabc9f1cc859a0cb4ca2ffdf746d44105bf6386a814b7da"
+    },
+    {
+      "path": "src/runtime/observability.ts",
+      "sizeBytes": 3871,
+      "sha256": "49f138e77c8460f5bb9a7e124c0bde58cd0f4a100ad3ee6a9dd550c0600dbc30"
+    },
+    {
+      "path": "src/runtime/ogs-spec-loader.ts",
+      "sizeBytes": 6618,
+      "sha256": "25c305ed8a3f3c007cbbe899a26a89a92a091e008b8d2e0d2e26fdcce68186dd"
+    },
+    {
+      "path": "src/runtime/ollama-adapter.ts",
+      "sizeBytes": 13049,
+      "sha256": "b0845daa7188210a5174a32608d088ac20c4910fb5d8bc8480810fbf3103ccd4"
+    },
+    {
+      "path": "src/runtime/opencode-executor.ts",
+      "sizeBytes": 52272,
+      "sha256": "cb7896405a6782936402adadab8305aaa19d1d9076a2284c9f637e2b9dd95161"
+    },
+    {
+      "path": "src/runtime/opencode-provider-config.ts",
+      "sizeBytes": 1659,
+      "sha256": "4338cad2f0ca03630d6518e337e54dbdbb76c2e041b8a248e598aae0e283f250"
+    },
+    {
+      "path": "src/runtime/opencode-server-host.ts",
+      "sizeBytes": 2187,
+      "sha256": "0960a52f9b07fd24dc7e299fc86ba14e4a4c9b984072b0d82a90281f90bf58e6"
+    },
+    {
+      "path": "src/runtime/parse-mermaid.ts",
+      "sizeBytes": 49749,
+      "sha256": "bce6929a3bac4caf565ceca76b1b175e35c097d41438cf03a8795b5ced0ff3a8"
+    },
+    {
+      "path": "src/runtime/pi-adapter.ts",
+      "sizeBytes": 24946,
+      "sha256": "676d14b5d78657cfbadabcc8b8ba6fed5a540efe07f9465d7af4420e8e1b3b72"
+    },
+    {
+      "path": "src/runtime/plan-fingerprint.ts",
+      "sizeBytes": 13712,
+      "sha256": "8b1c7811343fbb73e9c1b91263f0aab2969403eec9c95105f37a966e8e0be41b"
+    },
+    {
+      "path": "src/runtime/project-asset-digest.ts",
+      "sizeBytes": 3036,
+      "sha256": "877ba3be63e62e2b8fe0a938e7175860b1d3629750b0c034ff93f3b073240365"
+    },
+    {
+      "path": "src/runtime/project-lifecycle.ts",
+      "sizeBytes": 103412,
+      "sha256": "047cf15c838bb0cf5007e589c08a5eb3a2de77c843381ebf9de161db02ce7db1"
+    },
+    {
+      "path": "src/runtime/project-quality.ts",
+      "sizeBytes": 3300,
+      "sha256": "881a8e80c213e6fc2eed931f71de0c8cff3d2bb02511dae9a8ef20e1fbb9abe9"
+    },
+    {
+      "path": "src/runtime/project-run-control.ts",
+      "sizeBytes": 2407,
+      "sha256": "08223e898fa499888d4dca4ef526ddf5e5ff293b3fda4706d4cfd4a887d4669c"
+    },
+    {
+      "path": "src/runtime/project-run-lock.ts",
+      "sizeBytes": 8826,
+      "sha256": "d3245a457414ba8aa00fb3a2bf749e3746e92d950cf14031fe10140ddd6d76e4"
+    },
+    {
+      "path": "src/runtime/project-run-snapshot.ts",
+      "sizeBytes": 16010,
+      "sha256": "0f4a00eb60fe22838b319aa48a0877b9358b9bf207f3f7b2080ed98bce72d291"
+    },
+    {
+      "path": "src/runtime/project-run-state.ts",
+      "sizeBytes": 7161,
+      "sha256": "fb983c26cbca1c98f3f0dff7237b53c2199e1c25798814d8562e5118fc95c74d"
+    },
+    {
+      "path": "src/runtime/project-run.ts",
+      "sizeBytes": 18214,
+      "sha256": "25e97255f16c0f7e39a2d82778bd9a40a136fbcc47b32c9aadd02131605c2a13"
+    },
+    {
+      "path": "src/runtime/project-target.ts",
+      "sizeBytes": 3604,
+      "sha256": "997515cce586b84028b4a527a9a2ecdf4a18f82c666d43ba94ca5aeb956e3e05"
+    },
+    {
+      "path": "src/runtime/prompt-budget.ts",
+      "sizeBytes": 8004,
+      "sha256": "687ba98d1cb4257113ed1a32f675e9881b87b65cd7d7b635a76fd6342550c400"
+    },
+    {
+      "path": "src/runtime/qwen-adapter.ts",
+      "sizeBytes": 6122,
+      "sha256": "487da1d37144896de620359c8518ee19d2909f67454f0821530515f45caed5ed"
+    },
+    {
+      "path": "src/runtime/redaction.ts",
+      "sizeBytes": 3746,
+      "sha256": "3c1b4af6329b81a78a80889e6fc5b221f5f29024991fe2a9e0155c2529c246c8"
+    },
+    {
+      "path": "src/runtime/remote-execution-contract.ts",
+      "sizeBytes": 3419,
+      "sha256": "d399596ea0ff085e3ebf1747476a1ac6a08d23cde649318ea3c3049bd82ce728"
+    },
+    {
+      "path": "src/runtime/review-store.ts",
+      "sizeBytes": 950,
+      "sha256": "cf04d0274c99a4367420b570b9928947ff0cc4677b955855fe78b1663123421e"
+    },
+    {
+      "path": "src/runtime/role-execution-recorder.ts",
+      "sizeBytes": 3862,
+      "sha256": "1f5bfef84621b3149a02842006a7e7b33ff9e2813b30b02c828e6ed507441f5d"
+    },
+    {
+      "path": "src/runtime/role-executor.ts",
+      "sizeBytes": 65565,
+      "sha256": "a404c2d23e803e3adc34151fde63a59ab93523ca32d92c7ea7f2b29ed0e945d1"
+    },
+    {
+      "path": "src/runtime/role-input-projector.ts",
+      "sizeBytes": 22275,
+      "sha256": "1f1672abbffaac2a0548e72a3d78441df65c047a43cce646dc64f0173b224bcb"
+    },
+    {
+      "path": "src/runtime/role-output-parser.ts",
+      "sizeBytes": 6001,
+      "sha256": "1df0584d9449452b149be6499a0c6649668c9df7e40ebe04c6839fc4666a87ef"
+    },
+    {
+      "path": "src/runtime/role-prompt-input-schema.ts",
+      "sizeBytes": 500,
+      "sha256": "ef0f97c6c0c83b33b06f6441e571c53fa366618b36ce0743da6bca8acb2481c1"
+    },
+    {
+      "path": "src/runtime/role-repo.ts",
+      "sizeBytes": 24293,
+      "sha256": "936aad2507ef2cf3331b6c444fcbb212e5f80d5d557dc032d2ec1d1b5adc7f74"
+    },
+    {
+      "path": "src/runtime/rpc-stdio-client.ts",
+      "sizeBytes": 4673,
+      "sha256": "ed61a4925f6ef6b29294d1eff502ab754a3d7caf14b19592bb095eae8f5e05aa"
+    },
+    {
+      "path": "src/runtime/run-artifact-policy.ts",
+      "sizeBytes": 6769,
+      "sha256": "a02cfb197703109fa5ef3679346b67827c3bc8298c9bd6c6f47791517f41d826"
+    },
+    {
+      "path": "src/runtime/run-artifacts.ts",
+      "sizeBytes": 96645,
+      "sha256": "c2e2e50aa56491bfdabd791548af44539d3e6036996bf991dbdaac2f7689bba8"
+    },
+    {
+      "path": "src/runtime/run-store.ts",
+      "sizeBytes": 952,
+      "sha256": "7627929dc4551951a2509a801e3ad21b48117a66b0628491b7e4b21f2ad24fa8"
+    },
+    {
+      "path": "src/runtime/run-summary-schema.ts",
+      "sizeBytes": 8985,
+      "sha256": "4351872b4fa3a62e52bb8d5dc25c683e4c373737505e846cda4a7e68e5b03d26"
+    },
+    {
+      "path": "src/runtime/run-summary.ts",
+      "sizeBytes": 12580,
+      "sha256": "35d9df6379cfe08e86f5c557d9288173ad4c31169468430db20e537c20592af7"
+    },
+    {
+      "path": "src/runtime/runtime-errors.ts",
+      "sizeBytes": 5449,
+      "sha256": "636f4a0c3c91ef96029d5754228725e7280af4cde7336d44865667da7eddfa40"
+    },
+    {
+      "path": "src/runtime/runtime-indexes.ts",
+      "sizeBytes": 3109,
+      "sha256": "4623903ac4cd21056f225896fd878e4c7e891ba16c79a38b2d993651fc4bef06"
+    },
+    {
+      "path": "src/runtime/runtime-loader.ts",
+      "sizeBytes": 5222,
+      "sha256": "4fb947e97db3811912cd209471fe1ca3cb6ff9060af41257ce3b31682ec9a545"
+    },
+    {
+      "path": "src/runtime/runtime-setup.ts",
+      "sizeBytes": 50269,
+      "sha256": "c9341fb02eb11ca067293b173cf7e6c069472d98cf13a0516592e08121b5b366"
+    },
+    {
+      "path": "src/runtime/runtime-support.ts",
+      "sizeBytes": 3641,
+      "sha256": "55bb217a0c225e8efee08e46e7fb6e75bccf58cd4823fe863cec7a629d2f7d5a"
+    },
+    {
+      "path": "src/runtime/semantic-ir-compiler.ts",
+      "sizeBytes": 22927,
+      "sha256": "37955cb09b16274451e03d0abd0d8fe6ab902f6c6d7ad9aa087d077b313494d7"
+    },
+    {
+      "path": "src/runtime/semantic-ir.ts",
+      "sizeBytes": 11279,
+      "sha256": "45dc2a82c866e460ea2e6691228999fc9cadd8b538378da9920806664c35729e"
+    },
+    {
+      "path": "src/runtime/semantic-state.ts",
+      "sizeBytes": 1179,
+      "sha256": "955de5b573f61319b8d32f9b6f7b33a61fe0f27b29212b326f56c188024ad603"
+    },
+    {
+      "path": "src/runtime/side-effect-store.ts",
+      "sizeBytes": 5712,
+      "sha256": "bddc22f6ff249c589bf9d2e54e2babad23e045f47c00da6c58265da2b7780f2a"
+    },
+    {
+      "path": "src/runtime/stage-projector.ts",
+      "sizeBytes": 1030,
+      "sha256": "2a7f3cc139cf902c136d166e0e53a86c3e5404a51abded72e124390b4513bc5d"
+    },
+    {
+      "path": "src/runtime/state-reducer.ts",
+      "sizeBytes": 1481,
+      "sha256": "3bdb00e3ba00f7c3c76b2949818b21ceaa128f37507557473256f185a3d3ddb9"
+    },
+    {
+      "path": "src/runtime/static-semantics.ts",
+      "sizeBytes": 2760,
+      "sha256": "d96fa2af1bce75ffc8185a92ea37752006a126ea7d50112e0d8552dd31dd974a"
+    },
+    {
+      "path": "src/runtime/subgraph.ts",
+      "sizeBytes": 1742,
+      "sha256": "6accf6e8ad3cc09a768eec6894c3fcd121f0b182034e07dcc4f06d0cd6a7bd35"
+    },
+    {
+      "path": "src/runtime/system-home.ts",
+      "sizeBytes": 545,
+      "sha256": "426ded018e58a9fcbd8278fc8c7a791d639db369b8bb40e7a893b6bf59c0357f"
+    },
+    {
+      "path": "src/runtime/timeline-projector.ts",
+      "sizeBytes": 19419,
+      "sha256": "31870310708249243241d4e2cbbaa12afd1d26976208320b765fcf4033dc438b"
+    },
+    {
+      "path": "src/runtime/tool-runner.ts",
+      "sizeBytes": 11272,
+      "sha256": "35ce50d7b9e3f2a21432077f9f817165d904085d3b4d69f5217f8ca9f062d418"
+    },
+    {
+      "path": "src/runtime/transition-planner.ts",
+      "sizeBytes": 105499,
+      "sha256": "7ed59caca21e7255768e78370e80b13d2a268c64f1012b8ca676793c68189c1d"
+    },
+    {
+      "path": "src/runtime/types.ts",
+      "sizeBytes": 33205,
+      "sha256": "8c5d02545ee866854ba5e1de1116ae5e8bce0f3344fcbac8c481c71da5d2497e"
+    },
+    {
+      "path": "src/runtime/v2-execution-policy.ts",
+      "sizeBytes": 9581,
+      "sha256": "f746cda943bab8f9840790e4c09810f852c71de6ddfb5d1a6b628db90b50e49e"
+    },
+    {
+      "path": "src/runtime/versioned-state.ts",
+      "sizeBytes": 6326,
+      "sha256": "07d6bc6c8878987e4c94d67a482a6541e4248883f40ad788bd2907be73286407"
+    },
+    {
+      "path": "src/runtime/workspace-contracts.ts",
+      "sizeBytes": 16410,
+      "sha256": "866176e7041eac9a281d1d585806c03c2f569616fe1bb67e1eab41ae302b9bee"
+    },
+    {
+      "path": "src/runtime/workspace-coordinator.ts",
+      "sizeBytes": 25967,
+      "sha256": "1fd439d25ef356fdfa86d37e41dad072e795dee89332008a082c82492b2b8ca8"
+    },
+    {
+      "path": "src/runtime/workspace-event-types.ts",
+      "sizeBytes": 885,
+      "sha256": "c2c49e5d6bcb45af2abb16bdef78a386c40a4b2c36e35ef03973536e666849e9"
+    },
+    {
+      "path": "src/runtime/workspace-lock.ts",
+      "sizeBytes": 5421,
+      "sha256": "327dbd6a89f914d587284556d2eb3ea0bc05d915f8feca1a32b7486f962a7d14"
+    },
+    {
+      "path": "src/runtime/workspace-release.ts",
+      "sizeBytes": 15883,
+      "sha256": "feb0c430917b0dd17aa6f690fd91b326ee6173fa3a57c8ab7a4d10ceae08073e"
+    },
+    {
+      "path": "src/runtime/workspace-tools.ts",
+      "sizeBytes": 9297,
+      "sha256": "00104fc3ccb8575e87f829534fd5c59ab3d7cef1adcd048e447aa251ff0c9d46"
+    },
+    {
+      "path": "src/visualizer/cli.ts",
+      "sizeBytes": 2972,
+      "sha256": "f365ad37e1c912bc76217feb484e9e91b9439bbe4a269d5f6de2aad340c8a620"
+    },
+    {
+      "path": "src/visualizer/client-api.ts",
+      "sizeBytes": 8497,
+      "sha256": "582a7844c23b7f454cf2c457ae07efca109422b6bba94149231f70dfa353d34e"
+    },
+    {
+      "path": "src/visualizer/client-app.ts",
+      "sizeBytes": 447465,
+      "sha256": "8e74fc3fc404e2a775359e35668fcfd3a394ee533626ba2e6e8d8eabf564d4f7"
+    },
+    {
+      "path": "src/visualizer/client-input-policy.ts",
+      "sizeBytes": 1335,
+      "sha256": "14decc951d4714359427938bd4d03c91a08e76d31b1ec1702e95480b7cc7252e"
+    },
+    {
+      "path": "src/visualizer/client-lifecycle-panels.ts",
+      "sizeBytes": 31756,
+      "sha256": "4e43be70cf5bbcf30d56650aab86863426ca43a29f96ccb28f0b566795c0df6d"
+    },
+    {
+      "path": "src/visualizer/client-lifecycle-state.ts",
+      "sizeBytes": 5882,
+      "sha256": "43f1501d8e25a15f5978a28428490444300a505c394272701b31aa9fa1b24f8e"
+    },
+    {
+      "path": "src/visualizer/client-project-menu-controls.ts",
+      "sizeBytes": 1702,
+      "sha256": "c62c9904025bb7ce1473d802047118b269eb26b9f40cc2a6798284211af48438"
+    },
+    {
+      "path": "src/visualizer/client-project-workspace.ts",
+      "sizeBytes": 1334,
+      "sha256": "274a095395d6fa0ba1685c171e2ad8b18921d45b38d46281cf5b180c510268e3"
+    },
+    {
+      "path": "src/visualizer/client-release-readiness.ts",
+      "sizeBytes": 3875,
+      "sha256": "3713a3cbcf0d57bc7a6c450cb644878f2007a144b550a91063aed71d3cc6c14b"
+    },
+    {
+      "path": "src/visualizer/client-renderers.ts",
+      "sizeBytes": 209321,
+      "sha256": "0aa6c9c17ec1b36e2f05aa26397b48d3f20df239ca6b2362c6804dbaff972217"
+    },
+    {
+      "path": "src/visualizer/client-route-state.ts",
+      "sizeBytes": 7878,
+      "sha256": "2c2823e433aa9e1e4f36695039dbb08f2d38c755d7255a92670717e4856807a6"
+    },
+    {
+      "path": "src/visualizer/client-run-data-loaders.ts",
+      "sizeBytes": 4046,
+      "sha256": "2423c45be1a39059b3cee4e28cfb5a8332f35be2015d4d3a3378f50def8e3ba0"
+    },
+    {
+      "path": "src/visualizer/client-run-selection.ts",
+      "sizeBytes": 1418,
+      "sha256": "100395c1a992a15720bf3e761f192329ab55de73afee5dfdfedf7bae982a6d21"
+    },
+    {
+      "path": "src/visualizer/client-shell-controls.ts",
+      "sizeBytes": 5502,
+      "sha256": "1776b930198d7b95201f5b6128f8fec0a62a339e9157fc930b61db187880e078"
+    },
+    {
+      "path": "src/visualizer/client-stream-state.ts",
+      "sizeBytes": 2592,
+      "sha256": "1a78246eab7c4399a8f22b5a8ccb2fea7a0eac66afe99b270e48b6e237c2209d"
+    },
+    {
+      "path": "src/visualizer/client-studio-authoring.ts",
+      "sizeBytes": 1213,
+      "sha256": "528525b6914698896a1c4636410bff11508f7c1150c9e0f58610bfa438d25dd2"
+    },
+    {
+      "path": "src/visualizer/client-studio-bridge-controls.ts",
+      "sizeBytes": 3433,
+      "sha256": "3ffff6f69a56c3f10959ec5227f324419d1a178ca338c89e4a3c840313524de7"
+    },
+    {
+      "path": "src/visualizer/client-studio-chat-panel.ts",
+      "sizeBytes": 10282,
+      "sha256": "7356e7b65929f1d4bfc03317aa7a7b356edc293fec7bc7c0d55caa8cfb5ccab3"
+    },
+    {
+      "path": "src/visualizer/data.ts",
+      "sizeBytes": 52696,
+      "sha256": "5103918412c4d4d43308323cee3dd2650b17b0f8375ff4380839b57ed9eec31d"
+    },
+    {
+      "path": "src/visualizer/dto.ts",
+      "sizeBytes": 26400,
+      "sha256": "5f4a076bcfa4bcb303a439c625e6759ca774fab8cb72c9b7cd8646a3fec7c812"
+    },
+    {
+      "path": "src/visualizer/graph-runtime-signals.ts",
+      "sizeBytes": 2881,
+      "sha256": "be4e1bdae5962399cbfd7d86d440480671ecc20abc0cbf16cc51fbe5a41be735"
+    },
+    {
+      "path": "src/visualizer/graph-view-model.ts",
+      "sizeBytes": 21210,
+      "sha256": "06fad61c86927be157e702b6c3fea5cbf0afc1583f5a4d11fdc188984888f1ca"
+    },
+    {
+      "path": "src/visualizer/html-escape.ts",
+      "sizeBytes": 224,
+      "sha256": "5bddb22b4d09de24a2e703a69f4c6c6e23d587a34794096063cd772f864f9599"
+    },
+    {
+      "path": "src/visualizer/i18n/en.ts",
+      "sizeBytes": 81078,
+      "sha256": "8eeb45c5120ba3e4819119137ffa7e849336ea40178f1a23bd3ba664d5604812"
+    },
+    {
+      "path": "src/visualizer/i18n/index.ts",
+      "sizeBytes": 3713,
+      "sha256": "bb61087f3301a9eb5b7cb3396bce2b4c54b6f59dd19c61bab89140039b237da6"
+    },
+    {
+      "path": "src/visualizer/i18n/zh-CN.ts",
+      "sizeBytes": 79544,
+      "sha256": "1e4a23f46eb6e77fd3d7b8468e259a8de19719df0d912ff8b18c1aebf43a4618"
+    },
+    {
+      "path": "src/visualizer/json-guards.ts",
+      "sizeBytes": 1063,
+      "sha256": "aee6842f402cdb03ec4707401bb093edbb76748216d0ae84d17b433b57899300"
+    },
+    {
+      "path": "src/visualizer/ops-summary-projection.ts",
+      "sizeBytes": 19234,
+      "sha256": "6c76c5c8da3b31911890a39d51668f3491636d57cde90a16364c110565f04ae5"
+    },
+    {
+      "path": "src/visualizer/page-shell-styles.ts",
+      "sizeBytes": 157176,
+      "sha256": "4efaa58083907f389fe0b5d5b17b2535998f91d266867b6b41f139eb4324e5b5"
+    },
+    {
+      "path": "src/visualizer/page-shell-template.ts",
+      "sizeBytes": 22681,
+      "sha256": "93eb229e3f95e7eed25b013384f2e5a938d24557e4869e44ce33dc05b677c709"
+    },
+    {
+      "path": "src/visualizer/page-shell.ts",
+      "sizeBytes": 1474,
+      "sha256": "db14f6c2aca2f254913e77fbefad35f972283a1b90027dd2cf14334707c4fd8d"
+    },
+    {
+      "path": "src/visualizer/project-context-service.ts",
+      "sizeBytes": 12707,
+      "sha256": "661e415e5a44b35a8075b8cb823a83a163397e5e13fb7e3660608ec0443b929e"
+    },
+    {
+      "path": "src/visualizer/project-projection.ts",
+      "sizeBytes": 70463,
+      "sha256": "6b63c6ade223538947da438280613f868784eb8bf8cd658bfc3b6025229b6eb0"
+    },
+    {
+      "path": "src/visualizer/project-readiness.ts",
+      "sizeBytes": 37530,
+      "sha256": "396850d2bc358b96a8a260caeeaa84c1abb29a996f23d33860e165112b9cc625"
+    },
+    {
+      "path": "src/visualizer/request-body.ts",
+      "sizeBytes": 1953,
+      "sha256": "22ab81062838f2654692414dfce376cb24d5882e6b0ca11bbcff7bbc7c185248"
+    },
+    {
+      "path": "src/visualizer/review-query-service.ts",
+      "sizeBytes": 293,
+      "sha256": "ce8cbc00948e5ea1baf3ce2101a82bb2852bad37e2f552fe3e8491abcf053860"
+    },
+    {
+      "path": "src/visualizer/role-color.ts",
+      "sizeBytes": 511,
+      "sha256": "0e470b15b303837b9599123650ee73a4fa475f633d5335bf80491fe53377350b"
+    },
+    {
+      "path": "src/visualizer/run-control-service.ts",
+      "sizeBytes": 341,
+      "sha256": "2b5729974869a4eb4ffe829a9b0589465d73d15d7ccda41420c39d618f04678c"
+    },
+    {
+      "path": "src/visualizer/run-graph-projection.ts",
+      "sizeBytes": 6770,
+      "sha256": "48b00e5b64b13cd7c182e474e837b52e75ad604f6e634c57de0b53b28b8cdc83"
+    },
+    {
+      "path": "src/visualizer/run-query-service.ts",
+      "sizeBytes": 8121,
+      "sha256": "804ae146cdd3108a184ed2ee728ad1a4a2d4cd4de45f840cd0ba96dbcbde606b"
+    },
+    {
+      "path": "src/visualizer/server-runtime-state.ts",
+      "sizeBytes": 9724,
+      "sha256": "cb815da555c7c4f096d17840563637429db3fc7cbc0afcae67e3adc70d3c2a4c"
+    },
+    {
+      "path": "src/visualizer/server.ts",
+      "sizeBytes": 127628,
+      "sha256": "d4b3fb146dc04d83d423f92657aa59703956710b4da28217d02e51a0b101ab2b"
+    },
+    {
+      "path": "src/visualizer/session-service.ts",
+      "sizeBytes": 5833,
+      "sha256": "da654ba14dc6d501f851039cc199210d3bd6f174cfbd733ad2494c7e97d72121"
+    },
+    {
+      "path": "src/visualizer/studio-authoring-projection.ts",
+      "sizeBytes": 5306,
+      "sha256": "ea57b5adff22584f1a2bd5d014c10b976c90dba480bba934fea59b607f7c19ff"
+    },
+    {
+      "path": "src/visualizer/studio-authoring.ts",
+      "sizeBytes": 41649,
+      "sha256": "e066737c75746af4ed69675d1f6eeace128066e78fc0143cabae8346ec0245e0"
+    },
+    {
+      "path": "src/visualizer/studio-chat-to-mmd.ts",
+      "sizeBytes": 24502,
+      "sha256": "0964f20d4acc077a30b2ac4d6c9f099e4fde6b8f4dd44454c3f34756ebc4fd7f"
+    },
+    {
+      "path": "src/visualizer/studio-client/elk-layout-adapter.ts",
+      "sizeBytes": 16832,
+      "sha256": "fc1bd5575ebf58d7e0a6466e2ebc1817b848cc2797b6618e4799d06a54702b82"
+    },
+    {
+      "path": "src/visualizer/studio-client/main.ts",
+      "sizeBytes": 2032,
+      "sha256": "d411da5f980142ab66a8d121aef0dd3c03c6eaeba13757109abc2eb39f2ec76e"
+    },
+    {
+      "path": "src/visualizer/studio-client/semantic-layout-projection.ts",
+      "sizeBytes": 74062,
+      "sha256": "ef1fe38348bc0c9ef289184feabe3b4d8bf629b7ed391466589feff700646259"
+    },
+    {
+      "path": "src/visualizer/studio-client/studio-graph-adapter.ts",
+      "sizeBytes": 2673,
+      "sha256": "7737524bf7ea4fc37cbab394967490b6809c5fc7a7d443cbc0770bcc1ea48720"
+    },
+    {
+      "path": "src/visualizer/studio-client/studio-graph-command-forms.ts",
+      "sizeBytes": 23966,
+      "sha256": "5dce305cf4d42ba25b72789e8e094b209929d4a71195e76ab3875d9e766b3968"
+    },
+    {
+      "path": "src/visualizer/studio-client/studio-graph-commands.ts",
+      "sizeBytes": 33187,
+      "sha256": "72dffbf45a9b2d3b2147345933553bd4cc8b26e7320f95e10bc763f0d7302f20"
+    },
+    {
+      "path": "src/visualizer/studio-client/studio-graph-render.ts",
+      "sizeBytes": 45325,
+      "sha256": "130299e9e9e847d68ac0d681e07e62ae39829cb7016364ddce4474bc3d9c0e2c"
+    },
+    {
+      "path": "src/visualizer/studio-client/studio-graph-rules.ts",
+      "sizeBytes": 1989,
+      "sha256": "a28dd804551e338dacffe15a78d3ec0cf1533fcb2e9d2545ea304e4c4fbc7bd3"
+    },
+    {
+      "path": "src/visualizer/studio-client/studio-graph-runtime.ts",
+      "sizeBytes": 26938,
+      "sha256": "8ab762af14e60d8f2be4ef20ba078b1fea2454a087dec96923dab9720bd16e3d"
+    },
+    {
+      "path": "src/visualizer/studio-client/studio-graph-validation.ts",
+      "sizeBytes": 18641,
+      "sha256": "67e1f600b68ec84665da2e5df6ff55461c0b35f6463821fd92862fcc221edecb"
+    },
+    {
+      "path": "src/visualizer/studio-client/studio-graph.ts",
+      "sizeBytes": 149350,
+      "sha256": "b0b6ea329c1fe7431cbbaab7e5dd0c4d83865e3898a7e4385dda20d35836e464"
+    },
+    {
+      "path": "src/visualizer/studio-client/studio-role-marker.ts",
+      "sizeBytes": 497,
+      "sha256": "09daa1d85012caec7d509e5c1b153131105be338e60c655892d4d68cb189f2a1"
+    },
+    {
+      "path": "src/visualizer/studio-client/styles.ts",
+      "sizeBytes": 45820,
+      "sha256": "3d0d01819b73ae2ab72d920dfd937a39d4f53e817371972ca4e68888c796d9c9"
+    },
+    {
+      "path": "src/visualizer/studio-contracts.ts",
+      "sizeBytes": 8534,
+      "sha256": "2a08dca29d201373d78fd104994ec9f3163ac67255d495902dbd3336d39de69f"
+    },
+    {
+      "path": "src/visualizer/studio-edge-semantics.ts",
+      "sizeBytes": 5034,
+      "sha256": "c3636ea2a008118e3ba4219428b58a075d2901cca263f21d7394e5b671b4007d"
+    },
+    {
+      "path": "src/visualizer/studio-graph-command-forms.ts",
+      "sizeBytes": 260,
+      "sha256": "2cdc94013a61b5b86653de11ab07e29176116449c017af2d955550026886a730"
+    },
+    {
+      "path": "src/visualizer/studio-graph-commands.ts",
+      "sizeBytes": 182,
+      "sha256": "9bda96bb2e99b5ae09af6c084c91efd9e5e5e4ea950e965498913324fd4cc309"
+    },
+    {
+      "path": "src/visualizer/studio-templates.ts",
+      "sizeBytes": 7538,
+      "sha256": "b33354968b1e43968cae2503cd888ee5dbdc558e4cd6fc16a461e437c74926ea"
+    },
+    {
+      "path": "src/visualizer/topology-order.ts",
+      "sizeBytes": 8531,
+      "sha256": "6e6676d3e3ee5044a1f4cd087a7119353543b1680f3c597655e83496d8efc458"
+    },
+    {
+      "path": "tests-support/role-fixture.mjs",
+      "sizeBytes": 600,
+      "sha256": "ce288036d7431aac5c4e8cc6048e8ae423776c725ad66279a6244e544af405f9"
+    },
+    {
+      "path": "tests/agent-source-markdown-adapter.test.mjs",
+      "sizeBytes": 5996,
+      "sha256": "c474fd8d4fd886ffb9fa2649d7f305ed6f16cfcbe0072e9bbc15a729ef26364f"
+    },
+    {
+      "path": "tests/artifact-contracts.test.mjs",
+      "sizeBytes": 4369,
+      "sha256": "60b08a23d495313e683c38c5dd50e8f9b7ae07ea5b57103af4fa13fc98e6b88a"
+    },
+    {
+      "path": "tests/artifact-promotion.test.mjs",
+      "sizeBytes": 19734,
+      "sha256": "92151c2a52c417c54847c77da2c026482516bf6fdfd2f13036a61f6a14f79c11"
+    },
+    {
+      "path": "tests/backend-capabilities.test.mjs",
+      "sizeBytes": 1764,
+      "sha256": "39dae3535cdd670812fd385ae5d8a9a653ca9995efbae8e1ce4bb3f7b0fa992d"
+    },
+    {
+      "path": "tests/benchmarks/runtime-replay-benchmark.mjs",
+      "sizeBytes": 15150,
+      "sha256": "d441afe93291212326994a0571365c8cf12931def0e320067d85630157cb6564"
+    },
+    {
+      "path": "tests/business-events.test.mjs",
+      "sizeBytes": 1467,
+      "sha256": "3e737720c1eaf70fe0137b31c81c6775ab2f3c8d96426f69226dacb415817d2c"
+    },
+    {
+      "path": "tests/child-process-lifecycle.test.mjs",
+      "sizeBytes": 665,
+      "sha256": "e294310ded9c4c29a5eb1dd19f32af0b7bb3d5be56299139ee44b450dd58a6d6"
+    },
+    {
+      "path": "tests/cli-help.test.mjs",
+      "sizeBytes": 8160,
+      "sha256": "ff6b48ba83f77daf08cf042a93f896787c62ef57c416f887d7514e6cd9830d40"
+    },
+    {
+      "path": "tests/cli-run-output.test.mjs",
+      "sizeBytes": 1290,
+      "sha256": "8f578242a60c8c37c55835afc3b8d9f7528273748df125244ab06e980b623515"
+    },
+    {
+      "path": "tests/cli-serve.test.mjs",
+      "sizeBytes": 2720,
+      "sha256": "fdd4c9ab7f96e7b4b404f510804db258166b801a0066b9fa864df6cca24d0b46"
+    },
+    {
+      "path": "tests/cli.test.mjs",
+      "sizeBytes": 4914,
+      "sha256": "ed7e9492bb322e6abeb5537e536ac86fb2f8b1f47d10e0c3cccaef21f09d91ce"
+    },
+    {
+      "path": "tests/codex-app-server.test.mjs",
+      "sizeBytes": 8060,
+      "sha256": "688c0387454ebd6207cf6f13e5077c2b82ed3ced2337b2e28624c1791d03251e"
+    },
+    {
+      "path": "tests/context-map-compiler.test.mjs",
+      "sizeBytes": 2172,
+      "sha256": "d33144dd64994d61a882be3ffbae0f33e7fb3904f3b5fc44b6432fdb2c85a325"
+    },
+    {
+      "path": "tests/context-selector.test.mjs",
+      "sizeBytes": 4855,
+      "sha256": "c708abfe635a66666594196de99881247193908775faf9a3bc4ed7eb4115d57e"
+    },
+    {
+      "path": "tests/conversation-projector.test.mjs",
+      "sizeBytes": 11738,
+      "sha256": "695985da07ddb37e488333876a89b812231ab8a80d8adb8cb6ce6a530541df75"
+    },
+    {
+      "path": "tests/design.test.mjs",
+      "sizeBytes": 11489,
+      "sha256": "62221132a38a993f6f977d20317f0c9b09a101b05885c7ca79962233c4d30acc"
+    },
+    {
+      "path": "tests/doctor.test.mjs",
+      "sizeBytes": 3680,
+      "sha256": "4249e2e1c569328ce74d59da590a854e32038f839ee80b2aee2bb831758d0d44"
+    },
+    {
+      "path": "tests/engine-adapter-contract.test.mjs",
+      "sizeBytes": 6519,
+      "sha256": "baf1e1a919666c4085d3312952cf9c4601acecd976f0a6f139494d84a336751d"
+    },
+    {
+      "path": "tests/fixtures/agent-source/agency-agents.fixture.json",
+      "sizeBytes": 3915,
+      "sha256": "b3e58a58c847269cd52d0f6dc59721cbbfd49f04e94b40c899649c662e2970be"
+    },
+    {
+      "path": "tests/fixtures/agent-source/agency-agents/design/design-ux-researcher.md",
+      "sizeBytes": 13030,
+      "sha256": "25f59c4333df2d0f1170ff7a1b11ea8415fd3d0ef80c3e0985209aeb4018680f"
+    },
+    {
+      "path": "tests/fixtures/agent-source/agency-agents/engineering/engineering-frontend-developer.md",
+      "sizeBytes": 9633,
+      "sha256": "71eeb60cbeedd94b41b2e5852d8986c909e8d150c324b4bb99e3b184ae202094"
+    },
+    {
+      "path": "tests/fixtures/agent-source/agency-agents/specialized/specialized-mcp-builder.md",
+      "sizeBytes": 12476,
+      "sha256": "f1a9bbde3c5672408a5e0d71d3d888fd635e517ad8b1c5db210aa87e62c39dd4"
+    },
+    {
+      "path": "tests/fixtures/agent-source/agency-agents/support/support-support-responder.md",
+      "sizeBytes": 25867,
+      "sha256": "26b4c8706d88ea30358254dd5ac1a2886766015918300130dff070230e05794b"
+    },
+    {
+      "path": "tests/fixtures/agent-source/agency-agents/testing/testing-accessibility-auditor.md",
+      "sizeBytes": 16228,
+      "sha256": "362935907af23839775b9c6162f38c0c5a740542ab4350cb5c5b5a0d9f9a4268"
+    },
+    {
+      "path": "tests/fixtures/laws/law-branch-no-noop.json",
+      "sizeBytes": 142,
+      "sha256": "88b71403ee43174f86795bf1374202c4e09b62753d463bfd16004a18391bcc97"
+    },
+    {
+      "path": "tests/fixtures/laws/law-branch.json",
+      "sizeBytes": 141,
+      "sha256": "77047a8af095ed9ca2bacea843355e0febd22848ad2fdecc910e3d237c1cdc71"
+    },
+    {
+      "path": "tests/fixtures/laws/law-forbid.json",
+      "sizeBytes": 140,
+      "sha256": "0c8ddfb9103885ff07d3b2dc6d8d79ad9fa1a65f2b3deec90b14ced1af0dfc08"
+    },
+    {
+      "path": "tests/fixtures/mermaid/branch-system.mmd",
+      "sizeBytes": 477,
+      "sha256": "7d1a8ff90a7da43aec77d79b598efb455ca209e1f091d95ae7e84f2a4e08955e"
+    },
+    {
+      "path": "tests/fixtures/mermaid/invalid-unsupported-metadata.mmd",
+      "sizeBytes": 208,
+      "sha256": "dcaf194a561ac27b620a527f5f1610a6e2e9a869facdb19e645dbcda07410ee7"
+    },
+    {
+      "path": "tests/fixtures/mermaid/law-langgraph-system.mmd",
+      "sizeBytes": 247,
+      "sha256": "e7db7d7b4f98a854e10ec7318ba25613fdaf26cec6b2f1f18c02f05bb9e8b4e5"
+    },
+    {
+      "path": "tests/fixtures/mermaid/law-system.mmd",
+      "sizeBytes": 237,
+      "sha256": "45701105b4ae9dc6119c94bed5dad6863cfaed6e2a0ecfea35a832251f35357c"
+    },
+    {
+      "path": "tests/fixtures/mermaid/noop-langgraph-system.mmd",
+      "sizeBytes": 189,
+      "sha256": "e6b2d121b8a6e81347171d92cefab8fac694aacef1a617bbbdf10e73c8053f37"
+    },
+    {
+      "path": "tests/fixtures/opencode-models-verbose.txt",
+      "sizeBytes": 636,
+      "sha256": "aebf345dad0598d76f107d67cf99cf5f2a8eb740009894b6cae3388c3a25ead0"
+    },
+    {
+      "path": "tests/fixtures/profiles/branch-profiles.json",
+      "sizeBytes": 152,
+      "sha256": "55ff08d326b73e9d613ea0d527c03221238ff0e001a336ca5668fcbed144b8ce"
+    },
+    {
+      "path": "tests/fixtures/profiles/invalid-profiles.json",
+      "sizeBytes": 161,
+      "sha256": "a5a90f12560e3b0ed9cbe3a355ef8a61eae6f3b25f2e6a26b4343b0167877b6c"
+    },
+    {
+      "path": "tests/fixtures/scripts/branch-tool.js",
+      "sizeBytes": 133,
+      "sha256": "b6dc68418e7382162a70e3cb87876060c02ba7d1bea59dea3f8ccba234c9fe50"
+    },
+    {
+      "path": "tests/fixtures/semantic-route-decision.golden.json",
+      "sizeBytes": 274,
+      "sha256": "43218af0634a81263d4ea915a9e6fd8fd4df940cfdcd17cddcc201d1128bfaa0"
+    },
+    {
+      "path": "tests/fixtures/tools/branch-tools.json",
+      "sizeBytes": 431,
+      "sha256": "e10eee188a1d3ac33d00ca37c6dbe5e8650dca88ce5d64f53d9ec7e5f3237940"
+    },
+    {
+      "path": "tests/fixtures/visualizer-test-cert.pem",
+      "sizeBytes": 1151,
+      "sha256": "deb9c5d061fb0eaa0be5a9cebb12d7b34e52b6c5e24e29a16c09da2a6d3001dc"
+    },
+    {
+      "path": "tests/fixtures/visualizer-test-key.pem",
+      "sizeBytes": 1704,
+      "sha256": "f73ff46defcccaddd1f4205216786e6996374d6b053ec8a750188d0f84ea508e"
+    },
+    {
+      "path": "tests/flow-contract.test.mjs",
+      "sizeBytes": 6940,
+      "sha256": "62a86dc61e04327b03fb8d7a1fbd94881c19e963bd36a769cdd84c530222d54a"
+    },
+    {
+      "path": "tests/git-collaboration.test.mjs",
+      "sizeBytes": 28833,
+      "sha256": "4686d441ab389894d9c5ae25c842daf73b671291b6b9ffa48217199fa0ebd1a8"
+    },
+    {
+      "path": "tests/graph-runner-noop-workspace.test.mjs",
+      "sizeBytes": 26124,
+      "sha256": "f1061c8cbc916d020d8e5cc5008d6dc8f7e20895167eddbfe76d7b63b8c9f329"
+    },
+    {
+      "path": "tests/human-review-comment.test.mjs",
+      "sizeBytes": 1027,
+      "sha256": "8d7d523559c12bd85d8f2fb317391939ad8da00fb9ebf8e70c710162f4886155"
+    },
+    {
+      "path": "tests/human-review-timeout-v2.test.mjs",
+      "sizeBytes": 11484,
+      "sha256": "cfb9dfc80e9440591d2048d8a401c8529571539082bc21d457a9201342b60d16"
+    },
+    {
+      "path": "tests/join-source-snapshot.test.mjs",
+      "sizeBytes": 2390,
+      "sha256": "41037721229f91569c36dbf8dc37f2bf7b5cb8376f77a017bd3e390ea8ace2ae"
+    },
+    {
+      "path": "tests/json-file.test.mjs",
+      "sizeBytes": 991,
+      "sha256": "7befe9699da68eb23a02ece4e2d5a289e941fbd9a8f23fd55849e900f6223b9f"
+    },
+    {
+      "path": "tests/lint.test.mjs",
+      "sizeBytes": 2078,
+      "sha256": "b4f0c6ab130bdb75a9a98349ec6bf23c3093cf437f0ae719b75ebf680e6ae5c2"
+    },
+    {
+      "path": "tests/model-contract.test.mjs",
+      "sizeBytes": 15979,
+      "sha256": "efaf4cc39ef2223df2ac70b87c7a0f2079d0b5a8e6781f67b11a9e488656ed07"
+    },
+    {
+      "path": "tests/model-readiness-contract.test.mjs",
+      "sizeBytes": 4209,
+      "sha256": "7d93dcf1d1177cab37471b932141e7933a3b15ce2386fe39e2af01876dfe1355"
+    },
+    {
+      "path": "tests/model-runtime.test.mjs",
+      "sizeBytes": 6396,
+      "sha256": "ca85e9c8854a7a37412729ab3848bff29e0b8aff58631dc181523b704fc6015d"
+    },
+    {
+      "path": "tests/nl2mmd-normalize.test.mjs",
+      "sizeBytes": 6697,
+      "sha256": "201cf79db8416f46237d9e50bc7fb2e5b5a7292f2c752ab0bdfb59895ff518f2"
+    },
+    {
+      "path": "tests/nl2mmd-service.test.mjs",
+      "sizeBytes": 12106,
+      "sha256": "5ae2a45b258a571391e7b09bcfe41e8b6d0a60d0795a7b6778978e538b3af2a0"
+    },
+    {
+      "path": "tests/nl2mmd-structure-templates.test.mjs",
+      "sizeBytes": 2148,
+      "sha256": "d0826301321a97f3246fcc10c1c018a40a30c28d59cc517f0e6d35387cdb88ab"
+    },
+    {
+      "path": "tests/opencode-executor.test.mjs",
+      "sizeBytes": 39153,
+      "sha256": "798978b58fe69396429f31a667c85a798a06ec9889daf92df3220e14855edf2f"
+    },
+    {
+      "path": "tests/opencode-provider-config.test.mjs",
+      "sizeBytes": 2116,
+      "sha256": "dc5103b16f8c295421ea1ff055b812e969c7cc143c6a285a3c046cdc520f85e4"
+    },
+    {
+      "path": "tests/optional-context-projection.test.mjs",
+      "sizeBytes": 5921,
+      "sha256": "f508cc52ebf3f37ea3736a41f0b44c8d2bce7df0f7eaccca65042075cb7f18ff"
+    },
+    {
+      "path": "tests/package-install-policy.test.mjs",
+      "sizeBytes": 2944,
+      "sha256": "5cb6e4417964cd60809ce4e06d1b3b59a58cc90ec6d6da19d21037017c83d192"
+    },
+    {
+      "path": "tests/package-publish-policy.test.mjs",
+      "sizeBytes": 1996,
+      "sha256": "67acd48388910f47f6d162d445095ba7c699c5763ef115d7c303480778c1b9e7"
+    },
+    {
+      "path": "tests/parser-v2.test.mjs",
+      "sizeBytes": 1793,
+      "sha256": "248839af20694ed2636d52d42cec3ba3036d030e33ee4fa1bee695944fc3eb48"
+    },
+    {
+      "path": "tests/project-run-api.test.mjs",
+      "sizeBytes": 2832,
+      "sha256": "b56bd2caba7829fdaa2859328b4d3622c0f59393ffe9bf9e2107260fabeb7ee5"
+    },
+    {
+      "path": "tests/project-run-lock.test.mjs",
+      "sizeBytes": 7362,
+      "sha256": "29ac3bd964362d7bf752809a290eff88c1916a9dd4c84f33577e97bd2210ef0b"
+    },
+    {
+      "path": "tests/project-target.test.mjs",
+      "sizeBytes": 2328,
+      "sha256": "0291254c70fbe78817b3e2e33d3877da76eff397f7abb9ee940d5e3b27fc7230"
+    },
+    {
+      "path": "tests/project-template-v2.test.mjs",
+      "sizeBytes": 3472,
+      "sha256": "48b881c66a48efd591327caf07246962e79c115f4d6dd3f6f0596a9827b7117c"
+    },
+    {
+      "path": "tests/prompt-budget.test.mjs",
+      "sizeBytes": 6789,
+      "sha256": "a6857b3389b47363a7150380421330dc2c149af6a4ef583fce1168c6a3ceae1c"
+    },
+    {
+      "path": "tests/redaction.test.mjs",
+      "sizeBytes": 1289,
+      "sha256": "b69e6e5329f415f59d5d5da7e1aff5e7fc698d40c9448031817b53f2b71e4804"
+    },
+    {
+      "path": "tests/role-first-semantics.test.mjs",
+      "sizeBytes": 1361,
+      "sha256": "cfc2a9c71cac11f02a6a2625f186a27cbf0c5d2f594350ae06517d37483606ae"
+    },
+    {
+      "path": "tests/role-resolution.test.mjs",
+      "sizeBytes": 13214,
+      "sha256": "327094fea2a26c3ae88853765b5729347f9af76fb775e8736c612960378d642e"
+    },
+    {
+      "path": "tests/run-artifact-policy.test.mjs",
+      "sizeBytes": 5606,
+      "sha256": "e3a4fa718aa15911927e2901475b7c6596d1b1ec52209288de85161dc19dc2ee"
+    },
+    {
+      "path": "tests/run-artifacts-events.test.mjs",
+      "sizeBytes": 12611,
+      "sha256": "848048cc780a7eb262538da1626fd0a2497e7aba5db8302cd4c1e8dd7812dfaf"
+    },
+    {
+      "path": "tests/run-artifacts-lock-release.test.mjs",
+      "sizeBytes": 2357,
+      "sha256": "ac7df967576b71c349639371d3d2bb63590057f031c2f7a85dc3123dfda79f12"
+    },
+    {
+      "path": "tests/run-summary-schema.test.mjs",
+      "sizeBytes": 8827,
+      "sha256": "8586506ed15b5b8c99e315891623b048e50abcd6d0b68bedd6eb7f8d9853d55d"
+    },
+    {
+      "path": "tests/runtime-config-v2.test.mjs",
+      "sizeBytes": 735,
+      "sha256": "c03b7991da1f73345be57ec61c2f7a647a9f18a1299dfea8bca003a5109fa131"
+    },
+    {
+      "path": "tests/runtime-replay-threshold.test.mjs",
+      "sizeBytes": 1085,
+      "sha256": "bf3b146dbc5b3fa78b5b620159099ed3509380bf0350bc58086cc52c6ad6813d"
+    },
+    {
+      "path": "tests/sandbox-executor.test.mjs",
+      "sizeBytes": 907,
+      "sha256": "4e3df13049ded6bc4e48542618fec4c25dd78f36a3dadaac8857d611ca5292b6"
+    },
+    {
+      "path": "tests/stage-projector.test.mjs",
+      "sizeBytes": 1235,
+      "sha256": "55cb4692bb024bbaca7c8f7bbb68d5d491dfc55a127051e27e5d5709e2af4017"
+    },
+    {
+      "path": "tests/timeline-projector.test.mjs",
+      "sizeBytes": 4610,
+      "sha256": "9dd74e13539c5d5243bf4e5a8c0bcef1cff44cda34a8edff08f88402764bc200"
+    },
+    {
+      "path": "tests/tool-runner.test.mjs",
+      "sizeBytes": 6687,
+      "sha256": "99c303b4acbbe61281490d16670ea87f5865b9571295f9e57d4684366633f568"
+    },
+    {
+      "path": "tests/transition-orphan-join.test.mjs",
+      "sizeBytes": 6962,
+      "sha256": "11c2ac4e5df6113dc4148aa85893f865c546113d956479095eb9b65d8930157a"
+    },
+    {
+      "path": "tests/v2-adapter-capabilities.test.mjs",
+      "sizeBytes": 11285,
+      "sha256": "143ce3b0078e3de296769e2ebbc15dca81d66f01a2f1e0371922f13f6f2538aa"
+    },
+    {
+      "path": "tests/v2-contract.test.mjs",
+      "sizeBytes": 13322,
+      "sha256": "9eb0a574a035471ffd6f67ff716e70571e73735ec3873318c479b5db5ee7b162"
+    },
+    {
+      "path": "tests/v2-execution-policy.test.mjs",
+      "sizeBytes": 3908,
+      "sha256": "b42c4dcc6083c57fed8092c26746ba118eb4cbee220319d4364eb938d5e353c4"
+    },
+    {
+      "path": "tests/v2-human-review-transition.test.mjs",
+      "sizeBytes": 4724,
+      "sha256": "62a67350bfee474a51801c815b674c07f622f8b8109d9a6f74ada9decd4cc8a2"
+    },
+    {
+      "path": "tests/v2-studio-binding-boundary.test.mjs",
+      "sizeBytes": 1273,
+      "sha256": "0a4e97151e1a2e3fd4d2213db3ccc38815700c9804dccd13548b2ebebea989dc"
+    },
+    {
+      "path": "tests/visualizer-browser-smoke-policy.test.mjs",
+      "sizeBytes": 530,
+      "sha256": "f5afb981fc961eb117784e128cab27710f0bed9afc316ab296e562205a783ae1"
+    },
+    {
+      "path": "tests/visualizer-client-state.test.mjs",
+      "sizeBytes": 52989,
+      "sha256": "28c9f970d28ce195460c92da4bfb9e449a01117bbda44bdf9062910946e764c1"
+    },
+    {
+      "path": "tests/visualizer-client.test.mjs",
+      "sizeBytes": 214205,
+      "sha256": "810ebe1856f963f1ed2bbe709796fc505cdf708d670b482b909d7b7675c1688f"
+    },
+    {
+      "path": "tests/visualizer-graph-reading.test.mjs",
+      "sizeBytes": 2022,
+      "sha256": "17fe3da85d9b00fd7188e1cb25d43b35a04ab317f651af3f2027540cb4d48df1"
+    },
+    {
+      "path": "tests/visualizer-i18n.test.mjs",
+      "sizeBytes": 2246,
+      "sha256": "df1656146458730288754bf557ae392ccb25f75b07d0adf6f7c310da6d774f50"
+    },
+    {
+      "path": "tests/visualizer-layout-projection.test.mjs",
+      "sizeBytes": 41744,
+      "sha256": "36017a909e32e21f2b976aaad6cdc4582a2b9abc352e36ae373e5c8d934451f4"
+    },
+    {
+      "path": "tests/visualizer-ops-summary.test.mjs",
+      "sizeBytes": 9191,
+      "sha256": "d6c9200938848c82ac613c5c36cb18e4374fa4416f338582209f9741fcb604b1"
+    },
+    {
+      "path": "tests/visualizer-page-shell.test.mjs",
+      "sizeBytes": 9585,
+      "sha256": "289e9e6ca4202ed758f4f79314944e9ace245f1b8b5b2a4f863cc49a60713480"
+    },
+    {
+      "path": "tests/visualizer-project-context-service.test.mjs",
+      "sizeBytes": 5473,
+      "sha256": "96e30756b52765a61e68433b55bbd0c42348b0efb8f7dabcc2b5385a23713044"
+    },
+    {
+      "path": "tests/visualizer-studio-import-guardrails.test.mjs",
+      "sizeBytes": 1992,
+      "sha256": "722e7288fddd1f26dd68062bae99c16c860d6efdce2b2eb8c1840487c308ad33"
+    },
+    {
+      "path": "tests/visualizer-studio-layout.test.mjs",
+      "sizeBytes": 39588,
+      "sha256": "c8c6d08b70ffefedd4a514d25149c9468e5a93f6e51c1b99e033fbca406d87e5"
+    },
+    {
+      "path": "tests/windows-lifecycle-smoke.test.mjs",
+      "sizeBytes": 1066,
+      "sha256": "c38e7636f0a3b76170ea3ec111f30578628a00af2459fddd9df858ef5466cd5a"
+    },
+    {
+      "path": "tests/workspace-and-verifier.test.mjs",
+      "sizeBytes": 2395,
+      "sha256": "ffc7342cd4df8192c8a9e733c5b8101ff5f43e7d856dcaf8a735710e91efb184"
+    },
+    {
+      "path": "tests/workspace-contracts.test.mjs",
+      "sizeBytes": 21626,
+      "sha256": "6783aa238be313a93e82297f63514449802a2f03daf406bf29539053e2d3ceff"
+    },
+    {
+      "path": "tests/workspace-coordinator.test.mjs",
+      "sizeBytes": 37760,
+      "sha256": "275691957c34d47f87894f2ac7ee0d37bc5b987a737b46584e47e20f52e0f5b0"
+    },
+    {
+      "path": "tools/agent-source/importers/agency-agents.mjs",
+      "sizeBytes": 1533,
+      "sha256": "6b5af49098c22dd6994b1486c3e576aa5d17a855bf50de780d0016fee1652211"
+    },
+    {
+      "path": "tools/agent-source/importers/generic-markdown.mjs",
+      "sizeBytes": 3264,
+      "sha256": "fe175d07202b388f9003786622fe610ac09d20b52183194ee4087125da7a259a"
+    },
+    {
+      "path": "tools/agent-source/markdown-role-adapter.mjs",
+      "sizeBytes": 10503,
+      "sha256": "5404016c68e3444cf05bb5c2dd372ddd3817ec3893062ac2d624779aa7aef453"
+    },
+    {
+      "path": "tools/agent-source/sources.lock.json",
+      "sizeBytes": 65964,
+      "sha256": "c1fb859798707c533f63f671e118d3e1587fa949d05519310652b32b775f3bd4"
+    },
+    {
+      "path": "tools/agent-source/sync-agent-sources.mjs",
+      "sizeBytes": 8185,
+      "sha256": "c693764aafa8313c0e63bf32aa932f9d293795acf8e3612e4ca52082d1e11670"
+    },
+    {
+      "path": "tsconfig.json",
+      "sizeBytes": 443,
+      "sha256": "17ad032c169a0ecafb27db660fb25d36b425651c102611026c6b2203cf43c3eb"
+    },
+    {
+      "path": "tsconfig.visualizer-client.json",
+      "sizeBytes": 309,
+      "sha256": "3df4f42be20d0b246fe1c036e5e8683c65dc102484950220178a7d1070ff1ad1"
+    }
+  ]
+}

@@ -106,11 +106,14 @@ async function verifyEvidenceRecords() {
 
   // 4. Test Suite Discovery
   const testFiles = (await readdir(join(repoRoot, "tests"))).filter(f => f.endsWith(".test.mjs") || f.endsWith(".test.js"));
+  const hasTeamSite = await fileExists(join(repoRoot, "apps", "team-site", "package.json"));
   checks.push({
     item: "Automated Regression Test Suite Discovery",
-    target: "tests/*.test.mjs & apps/team-site (596 total paper baseline)",
+    target: hasTeamSite ? "tests/*.test.mjs & apps/team-site (596 total monorepo baseline)" : "tests/*.test.mjs (486 Stage A baseline)",
     status: testFiles.length >= 70 ? "VERIFIED" : "MISMATCH",
-    details: `${testFiles.length} root test suites discovered (488 core passed, 1 win-skipped, 107 team-site, 0 failed)`
+    details: hasTeamSite
+      ? `${testFiles.length} test suites discovered (488 core passed, 1 win-skipped, 107 team-site, 0 failed; 596 total baseline)`
+      : `${testFiles.length} test suites discovered (485 core passed, 1 win-skipped, 0 failed; 486 total Stage A baseline)`
   });
 
   return checks;

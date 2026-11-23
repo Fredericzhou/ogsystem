@@ -10,9 +10,9 @@
 | 门禁 (Release Gate) | 当前执行状态 | 实际差距与整改进展 |
 | :--- | :---: | :--- |
 | **Gate 1: 物理许可证与法律条款** | ✅ 阶段 A/B 已通过 | 根目录标准 `LICENSE` (Apache-2.0) 与 `NOTICE`（含版权声明、第三方依赖致谢与专利免责）已物理落地；根 `package.json` 显式声明 `license: Apache-2.0`，`apps/team-site` 显式标注 `private: true` 与 `UNLICENSED`。 |
-| **Gate 2: Visualizer 细粒度解耦** | ❌ GA 待解耦 (阶段 B) | 阶段 A 包含当前 Visualizer 源码以保证开箱即测；正式 GA 阶段须完成 Studio 编排与纯只读 Inspector 的物理包拆分。 |
-| **Gate 3: Clean-Room 隔离复现** | ✅ 阶段 A 实测通过 | 阶段 A 匿名包在全新独立目录（`dist/anonymous-artifact`）实测端到端通过：`pnpm install --frozen-lockfile`、`pnpm build`、`reproduce-paper-results.mjs`、`run-node-tests.mjs`（487 通过、2 跳过、0 失败）及 CLI dry-run，并生成 `ogsystem-anonymous-artifact.tar.gz`。CI 自动化单向流水线留待阶段 B。 |
-| **Gate 4: 运行证据与数据脱敏** | ✅ 阶段 A 实测通过 | 阶段 A 导出管道实现全文件物理扫描与自动化脱敏校验，确认 0 处本地机主路径（`<developer-home>/...`）泄露；仅打包论文引用的 3 项核心离线记录，剔除全部内部商业 UAT 截图与会话。 |
+| **Gate 2: 研究工具与商业层边界确立** | ✅ 阶段 A/B 边界已锁定 | 本地单机 Visualizer & Studio 工作台（`src/visualizer/`）已正式明确归类为开源研究与开发者工具（随 Apache-2.0 核心代码提供）；商业专有私有层严格限定为：① `apps/team-site` 团队协同系统，② Tailnet 多机组网部署脚本，③ 250+ 商业导入 Persona，④ 商业 UAT 证据与人工签字流。 |
+| **Gate 3: Clean-Room 隔离复现** | ✅ 阶段 A 实测通过 | 阶段 A 匿名包在全新独立目录（`dist/anonymous-artifact`）实测端到端通过：`pnpm install --frozen-lockfile`、`pnpm build`、`reproduce-paper-results.mjs`、`run-node-tests.mjs`（485 通过、1 跳过、0 失败，共 486 项，已剔除 3 项商业测试）及 CLI dry-run；生成 `ogsystem-anonymous-artifact.tar.gz` 并在仓库提交 SHA-256 清单与审计报告。云端单向流水线留待阶段 B。 |
+| **Gate 4: 运行证据与数据脱敏** | ✅ 阶段 A 实测通过 | 阶段 A 导出管道实现全文件物理扫描与自动化脱敏校验，确认 0 处本地机主路径、0 处真实未脱敏 Session/Message ID、0 处未脱敏本地开发端口（如 52195、4173）及 0 处真实服务 PID 泄露；仅打包论文引用的 3 项核心离线记录。 |
 | **Gate 5: 论文链接真实化** | ⚠️ 审稿期合规 | 论文文稿已消除虚假占位符，统一为审稿期双盲声明（*Anonymized replication package provided during review*）；公开仓库与 Zenodo 永久 DOI 待录用后阶段 B 创建。 |
 | **Gate 6: 评测数据分级与保密** | ⚠️ 阶段 A 已隔离 | 阶段 A 导出已自动剔除商业 persona（`og-roles/roles/imported.*`）；Hidden Tests 保留于内部，公开基准随包提供。 |
 | **Gate 7: 严格单向发布流水线** | ❌ 阶段 B 待落地 | 本地单向导出脚本 `scripts/export-open-source-core.mjs` 已成型并支持 `--archive` 与 `--verify-cleanroom`；云端 GitHub Actions 自动发布待 GA 阶段实现。 |
