@@ -1,11 +1,19 @@
 #!/usr/bin/env node
 
 /**
- * @fileoverview Export and boundary verification tool for the OGSystem Open-Source Core.
+ * @fileoverview [INTERNAL DRAFT SPECIFICATION] Architectural boundary verifier for Open-Core.
  *
- * Ensures clean separation between:
- * - Open-Source Core (Apache-2.0): src/runtime, src/visualizer, src/design, bin, docs/paper, tests, examples
- * - Proprietary Commercial Layer: apps/team-site, non-benchmark roles in og-roles
+ * NOTE: This script is an internal boundary validation prototype, NOT a production
+ * release tool. A production release requires satisfying all 8 release gates documented in
+ * docs/development/open-core-release-gate-checklist.md:
+ *   1. Physical LICENSE & NOTICE files landed
+ *   2. Fine-grained Visualizer decomposition (only read-only inspection; studio authoring stays private)
+ *   3. Clean-room isolated build & test verification
+ *   4. Sensitive evidence & path redaction
+ *   5. Valid non-placeholder repository & Zenodo metadata upon publication
+ *   6. Hidden Test Oracles kept strictly private
+ *   7. Strict one-way automated CI release pipeline
+ *   8. Third-party dependency SBOM & license compliance audit
  *
  * Usage:
  *   node scripts/export-open-source-core.mjs [--dry-run] [--out-dir <target_path>]
