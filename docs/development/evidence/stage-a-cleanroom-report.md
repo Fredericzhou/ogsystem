@@ -1,13 +1,13 @@
 # OGSystem Stage A (Candidate Replication Package) 导出包独立目录隔离复现审计报告
 
-> **报告时间 / Timestamp:** 2026-11-23T17:40:00.230Z  
-> **验证类型 / Verification Type:** 导出包独立目录隔离复现 (Local Darwin Isolated Directory Verification; 真实容器 Clean-Room / CI 无缓存验证留待阶段 B)  
-> **验证环境 / Environment:** macOS Darwin (Node.js v22.21.1, pnpm 10.33.2)  
-> **产物压缩包 / Tarball:** `dist/ogsystem-anonymous-artifact.tar.gz`  
-> **压缩包大小 / Size:** 117.62 MB (123329778 bytes)  
-> **压缩包 SHA-256:** `3f0de38fc57a98364cd4093ad1ac92393abb1014217e6afab2c6cc2b5c2a9e7d`  
-> **包含文件总数 / Total Files:** 804 个文件  
-> **清单记录 / Manifest File:** [`stage-a-artifact-manifest.json`](./stage-a-artifact-manifest.json)  
+> **报告时间 / Timestamp:** 2026-11-23T17:59:09.789Z
+> **验证类型 / Verification Type:** 导出包独立目录隔离复现 (Local Darwin Isolated Directory Verification; 真实容器 Clean-Room / CI 无缓存验证留待阶段 B)
+> **验证环境 / Environment:** macOS Darwin (Node.js v22.21.1, pnpm 10.33.2)
+> **产物压缩包 / Tarball:** `dist/ogsystem-anonymous-artifact.tar.gz`
+> **压缩包大小 / Size:** 117.60 MB (123307677 bytes)
+> **压缩包 SHA-256:** `2ad9a92c7af58db0a7e5fdcb080f17e539e83343bf037f9426cc4119325ec9bc`
+> **包含文件总数 / Total Files:** 803 个文件
+> **清单记录 / Manifest File:** [`stage-a-artifact-manifest.json`](./stage-a-artifact-manifest.json)
 
 ---
 
@@ -58,4 +58,4 @@
 - `pnpm run build`: ~4 秒
 - `reproduce-paper-results.mjs`: < 1 秒
 - `run-node-tests.mjs` (486 项): ~45 秒
-- **总端到端验证耗时**: 47.5 秒
+- **总端到端验证耗时**: 47.3 秒

@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-11-23T17:39:09.838Z",
-  "totalFiles": 804,
+  "generatedAt": "2026-11-23T17:58:19.726Z",
+  "totalFiles": 803,
   "files": [
     {
       "path": ".ogs/README.md",
@@ -54,8 +54,8 @@
     },
     {
       "path": "REPRODUCE.md",
-      "sizeBytes": 4856,
-      "sha256": "34f935d7e61335986e8b193746b6b7d3ea0e3b123e75bc9991bac85829e6de0f"
+      "sizeBytes": 4825,
+      "sha256": "2d44a3efc149ef4f22146a16cd8db1a069a71d7e1b160456a868a9ebaafd44ed"
     },
     {
       "path": "bin/ogs.mjs",
@@ -64,8 +64,8 @@
     },
     {
       "path": "docs/README.md",
-      "sizeBytes": 7736,
-      "sha256": "53629fe6e2db7b787026d840a8b26bf39db765dd5374b76e98b501c59355da61"
+      "sizeBytes": 7714,
+      "sha256": "688e17f28b3f20b93f65368af25832bf8387b3d17a540ad1b570167a51f94268"
     },
     {
       "path": "docs/development/DECISIONS.md",
@@ -74,8 +74,8 @@
     },
     {
       "path": "docs/development/README.md",
-      "sizeBytes": 10889,
-      "sha256": "a919c3602bd060acd6e1bda3539681969a4d190440ba76f92a4211414d7b0430"
+      "sizeBytes": 10891,
+      "sha256": "11ca65f4eeec67ef675e9af3f9876ca6aa00401c7bb120ba59ddd5c9bc771eda"
     },
     {
       "path": "docs/development/backend-native-tools-standardization.md",
@@ -148,24 +148,19 @@
       "sha256": "36a6c2a36479a8da31a53505373e2a584369b7a791a1231afcb2226e962dc4ae"
     },
     {
-      "path": "docs/development/release-uat-checklist.md",
-      "sizeBytes": 64788,
-      "sha256": "57524b11265f38c314d0d00497aef81a98aba07edcc71f5621a6917fcf2970c8"
-    },
-    {
       "path": "docs/development/role-execution-architecture.md",
-      "sizeBytes": 97430,
-      "sha256": "414d529f3d9c827520ebc2d5e0a7dd17a86693c389f5145d5624f4efc15ed173"
+      "sizeBytes": 97435,
+      "sha256": "698948698472f7e5d2ad9c6ea9ebe29e2f4f0709a730d9d69a109484aec495a7"
     },
     {
       "path": "docs/development/v2-validation-and-acceptance.md",
-      "sizeBytes": 26055,
-      "sha256": "df168151b0a174da22e7644eb8a8307ca743551bd7ddb7c450261eb9c1e7fbf4"
+      "sizeBytes": 26060,
+      "sha256": "fac2507453118c47f6b772aa5e16e2a377a1d3f342b1d8020828ec37da0b6a55"
     },
     {
       "path": "docs/development/v2-workspace-collaboration-design-and-acceptance.md",
-      "sizeBytes": 32995,
-      "sha256": "73c25924cd19a9458a2ad44a63a8998b51a11d97462631e528767413280acac7"
+      "sizeBytes": 33000,
+      "sha256": "4db93884dabf2f3dc0db008433785d2af1d0a84e0959c6b2a6988f41d52ff55c"
     },
     {
       "path": "docs/development/v2-workspace-contracts.md",
@@ -174,8 +169,8 @@
     },
     {
       "path": "docs/development/v2-workspace-implementation-runbook.md",
-      "sizeBytes": 8203,
-      "sha256": "3cd9070c05e3fadeed70551e12a59e7852235d578b63703b7c18e9ddf2ab4169"
+      "sizeBytes": 8236,
+      "sha256": "0adde1c78106269cff8d81452ab3efca8527c3b471d76fc046e8ec349888ec41"
     },
     {
       "path": "docs/paper/README.md",

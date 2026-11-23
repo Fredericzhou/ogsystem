@@ -191,7 +191,7 @@ node scripts/reproduce-paper-results.mjs
   - Tailnet multi-host deployment scripts (\`scripts/team-site-service.mjs\`, \`scripts/start-team-site-tailnet.ps1\`).
   - Author-side export pipeline script (\`scripts/export-open-source-core.mjs\`).
   - Commercial agent persona catalog (\`og-roles/roles/imported.*\`: 250+ enterprise roles).
-  - Internal browser acceptance recordings, internal UAT checklists (\`release-uat-checklist.md\`), and screenshots.
+- Internal browser acceptance recordings, internal UAT checklists, and screenshots.
 
 *Note on Visualizer/Studio Boundary:* In this Stage A candidate review package, the local single-node Visualizer & Studio workbench is provided to allow double-blind reviewers to inspect topological graphs and state machines. In the formal Stage B GA release, Studio authoring tools will be physically separated into the commercial proprietary layer per Gate 2 requirements.
 
@@ -261,6 +261,37 @@ async function copyCleanDirectory(srcDir, destDir, options = {}) {
     } else if (entry.isFile()) {
       await cp(srcPath, destPath);
     }
+  }
+}
+
+async function rewriteOmittedInternalReferences(docsDir) {
+  const allFiles = await listFilesRecursive(docsDir);
+  for (const file of allFiles) {
+    if (!file.endsWith(".md")) continue;
+
+    const content = await readFile(file, "utf8");
+    const rewritten = content
+      .replace(/\[([^\]]+)\]\([^)]*release-uat-checklist\.md\)/gi, (_, label) => {
+        const cleanLabel = label.replace(/`release-uat-checklist\.md`/gi, "the internal release checklist");
+        return `${cleanLabel} (omitted from this artifact)`;
+      })
+      .replace(/`release-uat-checklist\.md`/gi, "the internal release checklist (omitted from this artifact)");
+
+    if (rewritten !== content) {
+      await writeFile(file, rewritten, "utf8");
+    }
+  }
+}
+
+async function verifyExcludedPathsAbsent(targetDir) {
+  const allFiles = await listFilesRecursive(targetDir);
+  const violations = allFiles.filter(file => {
+    const rel = relative(targetDir, file);
+    return EXCLUDED_PATHS.some(path => rel === path || rel.startsWith(`${path}/`) || rel.startsWith(path));
+  });
+
+  if (violations.length > 0) {
+    throw new Error(`Excluded paths found in artifact: ${violations.map(file => relative(targetDir, file)).join(", ")}`);
   }
 }
 
@@ -462,8 +493,10 @@ async function main() {
   const docsSrc = join(repoRoot, "docs");
   const docsDest = join(outDir, "docs");
   await copyCleanDirectory(docsSrc, docsDest, {
-    excludeNames: [...GENERAL_EXCLUDED_NAMES, "evidence", "archive"]
+    excludeNames: [...GENERAL_EXCLUDED_NAMES, "evidence", "archive"],
+    excludePaths: ["docs/development/release-uat-checklist.md"]
   });
+  await rewriteOmittedInternalReferences(docsDest);
 
   // Re-create clean evidence dir and copy ONLY cited files
   const evidenceDest = join(docsDest, "development", "evidence");
@@ -507,7 +540,11 @@ async function main() {
     }
   }
 
-  // 9. Copy root configuration files
+  // 9. Enforce the declared proprietary and internal exclusions on the actual tree.
+  console.log("[-] Verifying excluded proprietary and internal paths are absent...");
+  await verifyExcludedPathsAbsent(outDir);
+
+  // 10. Copy root configuration files
   for (const f of CORE_FILES) {
     const srcFile = join(repoRoot, f);
     const destFile = join(outDir, f);
@@ -518,15 +555,15 @@ async function main() {
     }
   }
 
-  // 10. Write REPRODUCE.md
+  // 11. Write REPRODUCE.md
   console.log("[-] Landing double-blind reviewer REPRODUCE.md with calibrated baseline...");
   await writeFile(join(outDir, "REPRODUCE.md"), REPRODUCE_GUIDE_CONTENT, "utf8");
 
-  // 11. Sanitize package.json
+  // 12. Sanitize package.json
   console.log("[-] Sanitizing package.json for standalone core execution...");
   await sanitizePackageJson(outDir);
 
-  // 12. Auditing for sensitive machine paths and operational identifiers (Gate 4)
+  // 13. Auditing for sensitive machine paths and operational identifiers (Gate 4)
   console.log("[-] Executing comprehensive redaction audit (Paths, SessionIDs, MessageIDs, PIDs, Ports)...");
   const leaks = await scanComprehensiveRedaction(outDir);
   if (leaks.length > 0) {
@@ -538,7 +575,7 @@ async function main() {
   }
   console.log("✓ Gate 4 Audit Passed: 0 local machine paths, 0 unredacted session/message IDs, 0 unredacted development/service ports (52195/4173/4174/4177) detected (100% full scan, 0 exclusions).\n");
 
-  // 13. Generate SHA-256 Manifest
+  // 14. Generate SHA-256 Manifest
   console.log("[-] Generating SHA-256 digest manifest for all exported files...");
   const manifest = await generateArtifactManifest(outDir);
   await writeFile(join(outDir, "MANIFEST.json"), JSON.stringify(manifest, null, 2) + "\n", "utf8");
@@ -552,7 +589,7 @@ async function main() {
   }, null, 2) + "\n", "utf8");
   console.log(`✓ Manifest recorded: ${manifest.length} files hashed (saved to docs/development/evidence/stage-a-artifact-manifest.json)`);
 
-  // 14. Archive generation
+  // 15. Archive generation
   let archivePath = join(repoRoot, "dist", "ogsystem-anonymous-artifact.tar.gz");
   let archiveSha256 = "";
   let archiveSizeBytes = 0;
@@ -568,7 +605,7 @@ async function main() {
     console.log(`  Tarball SHA-256: ${archiveSha256}\n`);
   }
 
-  // 15. Standalone isolated directory reproduction
+  // 16. Standalone isolated directory reproduction
   if (values["verify-cleanroom"]) {
     console.log("================================================================================");
     console.log("   ISOLATED DIRECTORY VERIFICATION (Stage A Candidate Reproduction)");
@@ -609,14 +646,14 @@ async function main() {
     const reportPath = join(repoRoot, "docs", "development", "evidence", "stage-a-cleanroom-report.md");
     const cleanRoomReportContent = `# OGSystem Stage A (Candidate Replication Package) 导出包独立目录隔离复现审计报告
 
-> **报告时间 / Timestamp:** ${new Date().toISOString()}  
-> **验证类型 / Verification Type:** 导出包独立目录隔离复现 (Local Darwin Isolated Directory Verification; 真实容器 Clean-Room / CI 无缓存验证留待阶段 B)  
-> **验证环境 / Environment:** macOS Darwin (Node.js ${process.version}, pnpm ${execFileSync("pnpm", ["--version"], { encoding: "utf8" }).trim()})  
-> **产物压缩包 / Tarball:** \`dist/ogsystem-anonymous-artifact.tar.gz\`  
-> **压缩包大小 / Size:** ${(archiveSizeBytes / (1024 * 1024)).toFixed(2)} MB (${archiveSizeBytes} bytes)  
-> **压缩包 SHA-256:** \`${archiveSha256}\`  
-> **包含文件总数 / Total Files:** ${manifest.length} 个文件  
-> **清单记录 / Manifest File:** [\`stage-a-artifact-manifest.json\`](./stage-a-artifact-manifest.json)  
+> **报告时间 / Timestamp:** ${new Date().toISOString()}
+> **验证类型 / Verification Type:** 导出包独立目录隔离复现 (Local Darwin Isolated Directory Verification; 真实容器 Clean-Room / CI 无缓存验证留待阶段 B)
+> **验证环境 / Environment:** macOS Darwin (Node.js ${process.version}, pnpm ${execFileSync("pnpm", ["--version"], { encoding: "utf8" }).trim()})
+> **产物压缩包 / Tarball:** \`dist/ogsystem-anonymous-artifact.tar.gz\`
+> **压缩包大小 / Size:** ${(archiveSizeBytes / (1024 * 1024)).toFixed(2)} MB (${archiveSizeBytes} bytes)
+> **压缩包 SHA-256:** \`${archiveSha256}\`
+> **包含文件总数 / Total Files:** ${manifest.length} 个文件
+> **清单记录 / Manifest File:** [\`stage-a-artifact-manifest.json\`](./stage-a-artifact-manifest.json)
 
 ---
 
