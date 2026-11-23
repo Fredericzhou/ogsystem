@@ -11,7 +11,7 @@
 ### 摘要
 多角色 AI 协作可用于软件开发、办公文档、咨询分析和结构化讨论等项目任务。无论交付物是源代码还是其他文件，运行时都需要显式处理职责、授权、并发修改、状态一致性、恢复与交付。DAG 表达有向无环依赖；带有返工边的协作需使用支持循环的图或其他控制结构，不同工作流产品对相关能力的实现各异。
 
-本文报告 **OGSystem（简称 OGS）**，一个面向有界多角色协作项目的持久化 EFSM Runtime 工程实现。其应用范围不限于软件开发，而是面向办公及更广泛的文件型协作任务；软件开发、管理咨询和结构化辩论是当前已有工程运行记录的场景。从组织管理视角，OGS 将职责分化、执行授权、协作协调和运行问责映射为 Role 合同、Harness 策略、事件/Join 控制与 Evidence/Release 记录；这一映射是运行时工程化，不是完整组织治理方案，最终责任仍属于部署组织和人类决策者。OGS 组合既有状态机、工作流、持久化执行、最小授权和 Git 版本控制思想，形成责任 Role 合同、离散业务事件、Context Map、状态感知 Join 与共享 Workspace/Release 状态协议。V2 中每个 Project 使用一个文件型 Git + LFS Workspace，内容可包括代码、文档及其他项目文件；Role 从固定 `baseCommit` 在隔离 Worktree 中工作，以提交快照和 Framework 管理的状态更新维持内容一致性并支持恢复与回退。Framework 管理 canonical lock、expected-head CAS、只读 `WorkspaceRef`、Evidence 和 Release Materialization。工程验证包括当前全量 587 项自动化测试（核心套件 486 通过、1 项按 Windows 平台跳过、Team Site 100 通过，0 失败；早期 819 项为旧版 v1 测试归档前的历史计数）、基于 `gpt-6-luna` 的 Python 计算器团队运行记录（2026-11-15 8 项 unittest 与 2026-11-16 10 项测试通过），以及 Codex Planner 到 OpenCode Implementer、管理咨询和结构化辩论等 Project Run/Release 记录。Codex 到 OpenCode 的一次运行中 Implementer 没有产生文件改动，且现有证据未证明跨模型泛化、双向互操作或图执行引擎可替换。本文的贡献主张限于上述语义与协议的系统组合及其工程实现；跨场景治理效益和学术新颖性仍需受控实验及更广泛先行工作比较。
+本文报告 **OGSystem（简称 OGS）**，一个面向有界多角色协作项目的持久化 EFSM Runtime 工程实现。其应用范围不限于软件开发，而是面向办公及更广泛的文件型协作任务；软件开发、管理咨询和结构化辩论是当前已有工程运行记录的场景。从组织管理视角，OGS 将职责分化、执行授权、协作协调和运行问责映射为 Role 合同、Harness 策略、事件/Join 控制与 Evidence/Release 记录；这一映射是运行时工程化，不是完整组织治理方案，最终责任仍属于部署组织和人类决策者。OGS 组合既有状态机、工作流、持久化执行、最小授权和 Git 版本控制思想，形成责任 Role 合同、离散业务事件、Context Map、状态感知 Join 与共享 Workspace/Release 状态协议。V2 中每个 Project 使用一个文件型 Git + LFS Workspace，内容可包括代码、文档及其他项目文件；Role 从固定 `baseCommit` 在隔离 Worktree 中工作，以提交快照和 Framework 管理的状态更新维持内容一致性并支持恢复与回退。Framework 管理 canonical lock、expected-head CAS、只读 `WorkspaceRef`、Evidence 和 Release Materialization。工程验证包括当前全量 596 项自动化测试（核心套件 488 通过、1 项按 Windows 平台跳过、Team Site 107 通过，0 失败；此前 2026-11-19 记录为 587 项，更早期 819 项为旧版 v1 测试归档前的历史计数），基于 `gpt-6-luna` 的 Python 计算器团队运行记录（2026-11-15 8 项 unittest 与 2026-11-16 10 项测试通过），以及 Codex Planner 到 OpenCode Implementer、管理咨询和结构化辩论等 Project Run/Release 记录。Codex 到 OpenCode 的一次运行中 Implementer 没有产生文件改动，且现有证据未证明跨模型泛化、双向互操作或图执行引擎可替换。本文的贡献主张限于上述语义与协议的系统组合及其工程实现；跨场景治理效益和学术新颖性仍需受控实验及更广泛先行工作比较。
 
 **关键词：** 多角色 AI 协作；AI 运行治理；职责与授权；扩展有限状态机（EFSM）；共享 Workspace；状态恢复；可审计交付
 
@@ -237,7 +237,7 @@ Anthropic 的 *Building Effective Agents* 总结了 routing、orchestrator-worke
 | --- | --- | --- |
 | **RQ1：** V2 如何表达并执行责任、技术绑定、执行与证据之间的边界？ | 四层职责、Role 合同、Backend/Harness 绑定、工具授权和环境策略解析。 | V2 合同、运行时实现与自动化回归测试；不据此推断相对其他产品的安全优势。 |
 | **RQ2：** 多 Role 并发工作如何共享 Workspace 内容事实，并把 Join、Evidence 与 Release 状态连接起来？ | 单 Project Workspace、固定 `baseCommit`、只读 `WorkspaceRef`、四值 Join 源状态及 Release 状态。 | 合同、实现与故障注入记录用于核对协议关系和指定失败路径；端到端运行只证明各记录中列明的具体链路，不代表完整状态协议均已端到端验证。 |
-| **RQ3：** 现有工程证据支持哪些运行能力，哪些泛化主张仍未验证？ | 指定不变量、真实模型任务及一次跨 Agent Backend 流程的可运行性和边界。 | 当前 587 项自动化测试记录、Python 计算器运行记录、一次 Codex 到 OpenCode Project Run；Implementer 未产生文件变更，不证明下游实际消费 `WorkspaceRef`，也不证明跨模型泛化、双向互操作或图引擎可替换。 |
+| **RQ3：** 现有工程证据支持哪些运行能力，哪些泛化主张仍未验证？ | 指定不变量、真实模型任务及一次跨 Agent Backend 流程的可运行性和边界。 | 当前 596 项自动化测试记录、Python 计算器运行记录、一次 Codex 到 OpenCode Project Run；Implementer 未产生文件变更，不证明下游实际消费 `WorkspaceRef`，也不证明跨模型泛化、双向互操作或图引擎可替换。 |
 
 这些问题描述设计及其工程验证范围，不预设方案具有学术新颖性或优于相关系统。
 
@@ -275,7 +275,7 @@ Anthropic 的 *Building Effective Agents* 总结了 routing、orchestrator-worke
 | 语义合同边界与四层责任划分 | RQ1 | V2 设计合同、运行时配置解析和回归测试 | 已实现的领域建模与工程边界；不是独立学术创新，也未证明优于其他系统或可移植到另一图执行引擎。 |
 | 单一 Workspace 状态模型 | RQ2 | Workspace 合同、commit/WorkspaceRef/Evidence/Release 实现、故障注入记录 | 已实现的 V2 工程集成；OpenHands、Orca 等直接参照尚未完成同条件协议比较。 |
 | 四值 Join 源状态与 Join/Release 状态连接 | RQ2 | Join policy 实现、Workspace/Release 合同及指定失败路径测试 | 源码实现了 `failed` 粘滞不变量，但未找到专门断言 failed 不会被后续 skipped 覆盖的测试；一般 Join 和四值枚举本身不主张新颖，学术新颖性未确认。 |
-| 工程可运行性与后端边界 | RQ3 | 当前 587 项测试记录、Python 计算器运行记录、一次跨 Agent Backend Project Run | 支持有限工程可行性，不支持性能、安全效果、跨模型泛化或图引擎可替换结论。 |
+| 工程可运行性与后端边界 | RQ3 | 当前 596 项测试记录、Python 计算器运行记录、一次跨 Agent Backend Project Run | 支持有限工程可行性，不支持性能、安全效果、跨模型泛化或图引擎可替换结论。 |
 
 四层产品架构、适配器接线、测试数量和 Python 计算器运行属于工程实现证据；它们不能单独证明学术新颖性、跨系统优越性、长期稳定性或国家标准合规性。
 
@@ -396,14 +396,14 @@ OGS Studio、Team Site 与 CLI 是这些层的配置和运行投影，不构成�
 为如实检验系统的设计不变量与稳定性，系统构建了基于 Node.js 原生测试框架（`node:test`）的自动化测试体系。确定性 local-shell/fixture 测试用于回归运行时不变量；真实模型运行单独记录，不能用回归测试替代。
 
 #### 7.1 自动化测试覆盖与架构断言
-当前仓库最新全量 `pnpm test` 发现 **587 项测试（核心套件 486 项通过、1 项按 Windows 环境跳过，Team Site 100 项通过，0 项失败）**（早期记录的 819 项为将旧版 v1 测试移入 `tests/archive/v1/` 之前的历史计数）。测试覆盖底层状态机、编译管道、存储层、Workspace 内容与 Release 物化、Git 协作和跨层投影（表 3）：
+当前仓库最新全量 `pnpm test` 发现 **596 项测试（核心套件 488 项通过、1 项按 Windows 环境跳过，Team Site 107 项通过，0 项失败）**（此前 2026-11-19 记录为 587 项，更早期记录的 819 项为将旧版 v1 测试移入 `tests/archive/v1/` 之前的历史计数）。测试覆盖底层状态机、编译管道、存储层、Workspace 内容与 Release 物化、Git 协作和跨层投影（表 3）：
 
 | 验证模块 / 测试套件 | 测试用例数 | 核心验证的不变量与工程行为 | 实测通过情况 |
 | :--- | :--- | :--- | :--- |
-| **状态机与编译运行时** | 纳入核心套件（487 项含 1 跳过） | 包含 LTS、Context Map、Join、Loop、WAL/CAS 等核心回归 | 全部通过（Windows 专测按平台跳过） |
+| **状态机与编译运行时** | 纳入核心套件（489 项含 1 跳过） | 包含 LTS、Context Map、Join、Loop、WAL/CAS 等核心回归 | 全部通过（Windows 专测按平台跳过） |
 | **Workspace 与 Release 交付** | 纳入核心套件 | 包含 WorkspaceRef、路径/符号链接门禁、worktree、commit provenance、Join merge、canonical lock/CAS、冲突和 Release 失败路径 | 全部通过 |
-| **平台与跨层投影（含 Team Site）** | 含 Team Site 100 项及核心 CLI/Studio 回归 | 包含 Workspace capability 投影、Studio、Team Site、CLI 与 Evidence/Release 相关回归 | 全部通过 |
-| **全系统总计** | **587 项** | **586 通过，1 跳过，0 失败** | **99.8% 通过率（按测试发现数计算，0 失败）** |
+| **平台与跨层投影（含 Team Site）** | 含 Team Site 107 项及核心 CLI/Studio 回归 | 包含 Workspace capability 投影、Studio、Team Site、CLI 与 Evidence/Release 相关回归 | 全部通过 |
+| **全系统总计** | **596 项** | **595 通过，1 跳过，0 失败** | **99.8% 通过率（按测试发现数计算，0 失败）** |
 
 *表 3：OGSystem 自动化工程测试套件与不变量实测统计*
 

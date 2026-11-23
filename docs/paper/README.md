@@ -85,7 +85,7 @@ worktree，Framework 创建并记录 Role commit，Join 在独立 merge worktree
 manifest 和 Release record 形成双向审计链；Release 从 `releaseCommit` 生成 Materialization
 manifest 和 output digest，只有 published Release 暴露 download reference。
 
-真实模型证据包括 2026-11-15 与 2026-11-16 的 Python 计算器团队运行（基于 `gpt-6-luna`，仓库证据分别记录了 8 项 unittest 通过与 10 项测试通过的端到端 `dispatch -> implementation/tests -> join`、Role commit、Join/final merge 与 fast-forward publish）。该样本证明端到端可用性，不证明跨模型或长期稳定性；并行同路径冲突、陈旧 canonical head 的 CAS 拒绝和 whitespace 拒绝也已作为边界证据记录。确定性 `local_shell` 回归测试与真实模型运行在论文中分开统计。当前仓库最新全量 `pnpm test` 共发现 587 项测试（核心套件 486 项通过、1 项按 Windows 环境跳过，Team Site 100 项通过，0 失败；早期文档中的 819 项为将旧版 v1 测试移入 `tests/archive/v1/` 之前的历史计数）。
+真实模型证据包括 2026-11-15 与 2026-11-16 的 Python 计算器团队运行（基于 `gpt-6-luna`，仓库证据分别记录了 8 项 unittest 通过与 10 项测试通过的端到端 `dispatch -> implementation/tests -> join`、Role commit、Join/final merge 与 fast-forward publish）。该样本证明端到端可用性，不证明跨模型或长期稳定性；并行同路径冲突、陈旧 canonical head 的 CAS 拒绝和 whitespace 拒绝也已作为边界证据记录。确定性 `local_shell` 回归测试与真实模型运行在论文中分开统计。当前仓库最新全量 `pnpm test` 共发现 596 项测试（核心套件 488 项通过、1 项按 Windows 环境跳过，Team Site 107 项通过，0 失败；此前 2026-11-19 基线记录为 587 项，更早期文档中的 819 项为将旧版 v1 测试移入 `tests/archive/v1/` 之前的历史计数）。
 
 当前限制包括：没有 AI resolver；外部系统的发布补偿、自动质量门禁和跨系统事务仍由调用方负责。
 Framework 管理 canonical ref、Worktree、Git LFS、锁、checkpoint、merge、restore 和 Release；
