@@ -4,7 +4,7 @@
 **Affiliation:** Independent Researcher, [City], China  
 **Contact:** [your-email@domain.com]  
 **ORCID:** [https://orcid.org/0009-XXXX-XXXX-XXXX]  
-**Repository & Benchmark Artifacts:** [https://github.com/your-username/ogsystem-core] (Open-source core runtime and replication suite under Apache-2.0; enterprise application suite proprietary)
+**Repository & Benchmark Artifacts:** Anonymized replication package provided during peer review; permanent public repository and Zenodo archive DOI will be assigned upon formal publication (Open-source core runtime under Apache-2.0; enterprise application suite proprietary)
 
 ---
 
@@ -451,7 +451,7 @@ OGSystem applies established state-machine, contract, durable-execution, and ver
 
 ### Software and Data Availability Statement
 
-The formal responsibility contracts, EFSM execution runtime, Context Map projections, Git/LFS WorkspaceRef and Join/CAS protocols, and the complete academic replication package reported in this paper are open-sourced under the Apache-2.0 license at `https://github.com/your-username/ogsystem-core` and permanently archived on Zenodo (DOI: `10.5281/zenodo.xxxxxx`).
+The formal responsibility contracts, EFSM execution runtime, Context Map projections, Git/LFS WorkspaceRef and Join/CAS protocols, and the academic replication package reported in this paper are prepared for open-source release under the Apache-2.0 license. During peer review, an anonymized replication package is provided. Upon formal publication, the open-core repository and raw run traces will be permanently archived on Zenodo with an assigned DOI.
 
 The replication suite includes the offline evidence verification script (`pnpm run reproduce:paper-evidence`), raw event traces (`events.ndjson`), and verification rubrics, allowing independent reviewers to verify all reported tables (Table 1, Table 2, Table 3) and cryptographic SHA-256 digests without requiring external commercial API keys. End-user enterprise application suites (e.g., the Team Site web collaboration shell) and proprietary domain roles are maintained under commercial licenses and are omitted; their omission does not affect the formal verification or reproducible findings of the core runtime protocol.
 

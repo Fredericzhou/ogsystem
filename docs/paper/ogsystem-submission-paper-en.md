@@ -324,7 +324,7 @@ The next evaluation should implement the controlled protocol in Section 6.4, inc
 | Nr. | Code metadata description | Please fill in this column |
 | --- | --- | --- |
 | C1 | Current code version | v2.0.0-rc |
-| C2 | Permanent link to code/repository used of this code version | Open-source core available at https://github.com/your-username/ogsystem-core; archived on Zenodo (DOI: 10.5281/zenodo.xxxxxx) |
+| C2 | Permanent link to code/repository used of this code version | Peer review replication package under evaluation; permanent public repository and Zenodo archive DOI will be assigned upon formal publication |
 | C3 | Permanent link to Reproducible Capsule | N/A (local execution environment) |
 | C4 | Legal Code License | Apache License 2.0 |
 | C5 | Code versioning system used | Git (with Git LFS support) |
@@ -337,8 +337,8 @@ The next evaluation should implement the controlled protocol in Section 6.4, inc
 
 * **Funding:** This research did not receive any specific grant from funding agencies in the public, commercial, or not-for-profit sectors.
 * **Conflict of interest / Competing interests:** The author declares no known competing financial interests or personal relationships that could have appeared to influence the work reported in this paper.
-* **Availability of data and materials:** The test suites, configuration templates, benchmark protocols, raw run traces, and offline verification script (`pnpm run reproduce:paper-evidence`) are contained in the open-source repository and Zenodo archive. Supplementary execution logs and digests are available in [`traceable-references.md`](traceable-references.md).
-* **Code availability:** The formal contracts, EFSM runtime, Context Map, Git WorkspaceRef/Join/Release protocol, Visualizer trace inspector, and replication harness are open-sourced under the Apache 2.0 license. The commercial Team Site collaboration suite and proprietary domain roles are maintained under proprietary commercial licenses and are omitted as they do not affect formal protocol verification or empirical replication.
+* **Availability of data and materials:** The test suites, configuration templates, benchmark protocols, raw run traces, and offline verification script (`pnpm run reproduce:paper-evidence`) are provided in the peer-review replication package and will be permanently archived on Zenodo upon formal publication. Supplementary execution logs and digests are available in [`traceable-references.md`](traceable-references.md).
+* **Code availability:** The formal contracts, EFSM runtime, Context Map, Git WorkspaceRef/Join/Release protocol, and replication harness are prepared for open-source release under the Apache 2.0 license. The commercial Team Site collaboration suite and proprietary domain roles are maintained under proprietary commercial licenses and are omitted as they do not affect formal protocol verification or empirical replication.
 
 ## Downloaded Literature
 

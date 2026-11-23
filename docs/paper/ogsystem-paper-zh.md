@@ -4,7 +4,7 @@
 **作者身份/单位：** 独立研究者（Independent Researcher），[省份/城市]，中国  
 **联系邮箱：** [your-email@domain.com]  
 **ORCID:** [https://orcid.org/0009-XXXX-XXXX-XXXX]  
-**开源代码库与基准测试:** [https://github.com/your-username/ogsystem-core]（内核与可复现套件遵循 Apache-2.0 许可证开源；上层商业协作工作台与专有角色资产保持私有）
+**开源代码库与基准测试:** 同行评审阶段提供匿名复现包；正式录用后将在公开仓库与 Zenodo 永久归档发布（内核与可复现套件遵循 Apache-2.0 许可证；上层商业协作工作台与专有角色资产保持私有）
 
 ---
 
@@ -446,7 +446,7 @@ OGSystem 将既有状态机、契约、持久化执行和版本控制机制用�
 
 ### 软件与数据可用性声明 (Software and Data Availability)
 
-本文报告的形式化责任契约、EFSM 运行时执行引擎、Context Map 投影规范、Git/LFS WorkspaceRef 与 Join/CAS 状态协议，以及完整的学术可复现性套件（包括离线证据验算脚本、原始 `events.ndjson` 轨迹、任务验收评测套件和 Docker 镜像定义）均基于 Apache-2.0 许可证在公开开源仓库开放（代码库：`https://github.com/your-username/ogsystem-core`，Zenodo 永久归档 DOI: `10.5281/zenodo.xxxxxx`）。
+本文报告的形式化责任契约、EFSM 运行时执行引擎、Context Map 投影规范、Git/LFS WorkspaceRef 与 Join/CAS 状态协议，以及学术可复现性套件（包括离线证据验算脚本、原始 `events.ndjson` 轨迹、公开基准任务与 Docker 镜像定义）按 Apache-2.0 开源核心规划。在同行评审阶段提供匿名复现包；论文正式录用后将同步建立公开代码仓库并在 Zenodo 永久归档分配正式 DOI。
 
 任何研究人员均可通过仓库内置的 `pnpm run reproduce:paper-evidence` 脚本，在**无需任何外部商业大模型 API 凭据与成本**的前提下，离线校验并复算本文所有表格（Table 1, Table 2, Table 3）与真实运行凭据指纹（SHA-256 Digest）。面向终端团队的商业化协作工作台（Team Site）与专有行业角色资产属于企业应用层投影，按独立商业协议保留；该部分的闭源不影响本文核心协议与实证结果的独立复现与验证。
 

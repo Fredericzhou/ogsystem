@@ -39,23 +39,23 @@ LangGraph / 多角色 Agent / Git Worktree   V2 单 Project Workspace 状态协�
 
 ## 分层开源架构与可复现性边界 (Tiered Open-Source Architecture & Reproducibility)
 
-为平衡学术严谨性（顶级期刊 SoftwareX 与会议可复现性要求）与商业工程壁垒，本项目采用 **Open-Core 分层开源体系**：
+为平衡学术严谨性（顶级期刊与会议可复现性要求）与商业工程壁垒，本项目采用 **Open-Core 分层开源战略**。以下规划为目标架构规范；正式对外发布代码、创建公开仓库与生成 Zenodo DOI 需满足全部八项发布门禁（见 [`docs/development/open-core-release-gate-checklist.md`](../development/open-core-release-gate-checklist.md)）：
 
-### 1. 公开开源核心（Open-Source Core: Apache-2.0）
+### 1. 公开开源核心（Open-Source Core 目标范围: Apache-2.0）
 涵盖支撑论文核心学术主张与全部形式化证明的运行时与复现包：
 - **形式化契约与核心状态机引擎 (`src/runtime/`)**：责任席位 EFSM/LTS 转移代数、Context Map 字段级投影、单一 Git+LFS Workspace 隔离 Worktree 管理器、4 值 Join 语义演算、expected-head CAS 状态协议与 WAL 记录器。
-- **轻量可观测性审计工具 (`src/visualizer/`)**：用于审稿人与审计员对单个 Run 轨迹、Mermaid/X6 拓扑图、业务事件流与决策点进行只读深度审查。
-- **论文评测与可复现套件 (`benchmarks/`, `scripts/reproduce-paper-results.mjs`)**：提供零 API 消耗的一键离线数据验算脚本、代表性运行记录、隐藏测试沙箱与 Docker 容器定义。
+- **轻量只读可观测性审计工具 (`src/visualizer/` 只读审阅面)**：供审稿人与审计员对单个 Run 轨迹、Mermaid/X6 拓扑图、业务事件流与决策点进行只读深度审查（注：Studio 可视化拖拽编排与商业设计能力保持私有）。
+- **论文评测与可复现套件 (`benchmarks/`, `scripts/reproduce-paper-results.mjs`)**：提供零 API 消耗的一键离线数据验算脚本、代表性脱敏运行记录与公开基准测试套件（注：独立评测隐藏测试 Hidden Tests 保留为内部门禁）。
 - **论文基础案例集 (`examples/`)**：包含计算器、辩论、咨询等论文引用基准。
 
 ### 2. 商业与企业应用层（Proprietary Commercial Layer: 保留所有权利）
 以下组件属于上层商业协作与特定领域资产，不属于论文核心协议依赖，保持私有：
-- **Team Site 协同工作台 (`apps/team-site/`)**：多项目协作、任务分配面板、局域网 (LAN) 共享服务、可视化团队编排 Studio 前端。
+- **Team Site 协同工作台 (`apps/team-site/`)**：多项目协作、任务分配面板、局域网 (LAN) 共享服务、Studio 前端可视化编排与工作流管理。
 - **商业专有角色包 (`og-roles/` 中绝大多数非基准角色)**：特定行业垂直领域的 Agent 模板与专有资产。
 - **企业级中间件与私有连接器**：企业 IAM/SSO 鉴权、专有私有模型安全网关。
 
 ### 3. 审稿人离线一键复现指令
-审稿人无需商业大模型 API Key，亦无需安装 Team Site，仅需运行以下命令即可完成数据验算与轨迹探查：
+在同行评审阶段，审稿人无需商业大模型 API Key，亦无需安装 Team Site，运行以下命令即可完成数据验算与轨迹探查：
 - **复算论文全部表格与提交凭据（耗时 < 5 秒）**：
   ```bash
   pnpm run reproduce:paper-evidence
@@ -64,7 +64,7 @@ LangGraph / 多角色 Agent / Git Worktree   V2 单 Project Workspace 状态协�
   ```bash
   pnpm run run:visualizer -- --ogs-dir .
   ```
-- **验证公开开源核心导出边界（零 Team Site 依赖）**：
+- **验证公开开源核心导出草案规范（内部门禁检查）**：
   ```bash
   pnpm run export:open-core -- --dry-run
   ```
