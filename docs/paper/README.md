@@ -13,6 +13,7 @@
 | **[`ogsystem-submission-paper-en.md`](ogsystem-submission-paper-en.md)** | **英文投稿稿（V2）** | 按 RQ 组织的系统设计与工程验证论文；含先行工作归属、四层架构、共享 Workspace/Join/Release 状态、证据边界和研究限制。 |
 | **[`formal-model-and-proofs.md`](formal-model-and-proofs.md)** | **形式化模型与协议安全证明附录** | 责任席位 EFSM 代数、Context Map 字段封闭性、四值 Join 粘滞失败单调性、Expected-Head CAS 无覆盖一致性与有界循环终止性证明。 |
 | **[`experiment-benchmark-design.md`](experiment-benchmark-design.md)** | **前沿文献对标实验设计与评测脚手架** | 直接对标 STORM、Executable-FSM、TraceDev、Auditable Agents、Sustainable Agents 的实验组（A/B1/B2/C + 3 项消融）、指标矩阵与 `benchmarks/` 可运行脚本说明。 |
+| **[`paper-experiment-master-plan.md`](paper-experiment-master-plan.md)** | **论文完整实验执行方案（独立 Worktree）** | 统一模型 `gpt-6-luna`、两层对照（内层 A/B1/B2/C + 外层 STORM 真实源码）、Commit0-Lite 主考卷 + 并发冲突专项、4 组正交指标与 Phase 0–4 执行路线图。 |
 | **[`experimental-validation-plan-bilingual.md`](experimental-validation-plan-bilingual.md)** | **中英双语实验设计** | 预注册导向的单 Agent / 通用多 Agent / OGS V2 对照方案；定义交付成功、Evidence 支持陈述、幻觉测量边界、故障恢复、样本量规划、统计方法和论文直达地址。 |
 | **[`multi-agent-collaboration-models-and-tech-stacks.md`](multi-agent-collaboration-models-and-tech-stacks.md)** | **多智能体编排与协作模型专题调研报告** (深度对照) | 深度解构 9 种编排范式、通信工具、底层技术栈（Herdr, Orca, OMP, Codex v2, Claude Code 等）及 EFSM/DAG 模型包含关系，**方便快速参考与横向对照**。 |
 | **[`traceable-references.md`](traceable-references.md)** | **可溯源文献与标准研究线索** | 包含经典理论与 2024–2026 MAS 研究的 DOI、代码库、公开地址，以及待官方核验的 GB/Z 候选条目。 |
