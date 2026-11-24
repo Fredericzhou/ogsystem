@@ -7,13 +7,18 @@ info:
     listeners use HTTPS and the configured Basic Auth operator identity. Audit principals are
     never accepted from request bodies.
 servers:
-  - url: /api/v2
+  - url: /
     description: Relative API root on current host
   - url: http://localhost:{port}
     description: Local control plane listener
     variables:
       port:
         default: "3337"
+  - url: https://{host}:3337
+    description: Non-loopback control plane listener
+    variables:
+      host:
+        default: localhost
 security:
   - basicAuth: []
 x-ogs-control-plane:

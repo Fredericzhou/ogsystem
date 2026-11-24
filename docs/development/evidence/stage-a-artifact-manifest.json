@@ -1,12 +1,6 @@
 {
-  "generatedAt": "2026-11-23T17:58:19.726Z",
-  "totalFiles": 803,
+  "totalFiles": 630,
   "files": [
-    {
-      "path": ".ogs/README.md",
-      "sizeBytes": 3506,
-      "sha256": "25c4ebaa0b5a72b7a852d0e22884a9c65a4b1a8c2b8dd6a24a2f0d147fea781f"
-    },
     {
       "path": ".ogs/execution-bindings.json",
       "sizeBytes": 730,
@@ -21,11 +15,6 @@
       "path": ".ogs/model-catalog.json",
       "sizeBytes": 84679,
       "sha256": "b3a6c64fc82724e381428ee280e65976782705f06ec1c5ac407d1f2ebc4f84e7"
-    },
-    {
-      "path": ".ogs/project.json",
-      "sizeBytes": 107,
-      "sha256": "7c7711264369aaf464da8b3f716263f193ba4aea369a4801e2e36589d3ab2df4"
     },
     {
       "path": ".ogs/runtime.json",
@@ -74,8 +63,8 @@
     },
     {
       "path": "docs/development/README.md",
-      "sizeBytes": 10891,
-      "sha256": "11ca65f4eeec67ef675e9af3f9876ca6aa00401c7bb120ba59ddd5c9bc771eda"
+      "sizeBytes": 11116,
+      "sha256": "0feef8cffa1e6caa00a49239c0b304fe5d74be2ee443accd22b948ee06bd101c"
     },
     {
       "path": "docs/development/backend-native-tools-standardization.md",
@@ -144,8 +133,8 @@
     },
     {
       "path": "docs/development/open-core-release-gate-checklist.md",
-      "sizeBytes": 11212,
-      "sha256": "36a6c2a36479a8da31a53505373e2a584369b7a791a1231afcb2226e962dc4ae"
+      "sizeBytes": 13311,
+      "sha256": "56a349889ca6f30529d3986e7e3daa1f8ab9d0d365a1ce76e1ede587dd7da64b"
     },
     {
       "path": "docs/development/role-execution-architecture.md",
@@ -174,8 +163,8 @@
     },
     {
       "path": "docs/paper/README.md",
-      "sizeBytes": 21859,
-      "sha256": "a4b834e2e2a21615df348d9abfc0627ba5a2ac0f2d442a3b6fa36574101701a6"
+      "sizeBytes": 22640,
+      "sha256": "2dc2a771aa8b1b9d5ce80b2d0addb1605c1a7bdaed13316d777eb5ac0459f263"
     },
     {
       "path": "docs/paper/experimental-validation-plan-bilingual.md",
@@ -199,8 +188,8 @@
     },
     {
       "path": "docs/paper/ogsystem-submission-paper-en.md",
-      "sizeBytes": 58288,
-      "sha256": "7c5aa2bdd54f777310dcb0752575f99f80701cb8052cce0771cccc967c15311f"
+      "sizeBytes": 58413,
+      "sha256": "2451a107af879504506de4fbaf20c50e156cb7fe244bcff49f4771c7a339342a"
     },
     {
       "path": "docs/paper/references/README.md",
@@ -378,804 +367,9 @@
       "sha256": "c42543d30dad5216628b6a21269464554ed734331f1ef8de3273f44eb69c6507"
     },
     {
-      "path": "examples/archive/v1/README.md",
-      "sizeBytes": 207,
-      "sha256": "8c910b4e8331dbc1b102bfc56b1a3e5f7568ff68cfb135ce1576974f3c27dcf1"
-    },
-    {
-      "path": "examples/archive/v1/console-laws.json",
-      "sizeBytes": 400,
-      "sha256": "4020941d22f20f6e5e6e28382d48fea2581bcbe77594f15464d031ad1d768cda"
-    },
-    {
-      "path": "examples/archive/v1/console-profiles.json",
-      "sizeBytes": 144,
-      "sha256": "1fd1424c4ad88ac86b82f0af6205794cfee9b99dcd0e44f2a40ec355a8657037"
-    },
-    {
-      "path": "examples/archive/v1/console-system.mmd",
-      "sizeBytes": 245,
-      "sha256": "5b1a56d995ef4a8848db2d337cf5e93852f420a8e95aa9fc079844b9bd330202"
-    },
-    {
-      "path": "examples/archive/v1/console-tools.json",
-      "sizeBytes": 295,
-      "sha256": "0df03d3e84ac09f7186d51a1a51228611824b9e17ef016cafa449600370357c1"
-    },
-    {
-      "path": "examples/archive/v1/error-flow-compensation/.ogs/.gitignore",
-      "sizeBytes": 14,
-      "sha256": "240a3e0d37d2e86b614063f5347eb02d4f99ca6c254de6b82871ff8d95532a7d"
-    },
-    {
-      "path": "examples/archive/v1/error-flow-compensation/README.md",
-      "sizeBytes": 627,
-      "sha256": "637ba2fc2620e3b7d2634a193d9f651117345089a2be5c2ae4d2a00cf94a3abb"
-    },
-    {
-      "path": "examples/archive/v1/error-flow-compensation/laws.json",
-      "sizeBytes": 217,
-      "sha256": "4eb3116788e072acfc01325290a059da7f7e0c172faa723493df29c6472e04d6"
-    },
-    {
-      "path": "examples/archive/v1/error-flow-compensation/profiles.json",
-      "sizeBytes": 242,
-      "sha256": "d72a453942cfdc22494a7f1f22081822701f35ff2d933c08347f184de16a5f04"
-    },
-    {
-      "path": "examples/archive/v1/error-flow-compensation/runtime.json",
-      "sizeBytes": 175,
-      "sha256": "f5a6a707616d021f2e1aefbe341ef05399935258019da0bd613e0d17070b664a"
-    },
-    {
-      "path": "examples/archive/v1/error-flow-compensation/scripts/console-print.mjs",
-      "sizeBytes": 1217,
-      "sha256": "dec83ce776c782a03eff295997473af97b1d0765cf3e6a836bc5ab23433f9275"
-    },
-    {
-      "path": "examples/archive/v1/error-flow-compensation/scripts/error-handler.mjs",
-      "sizeBytes": 208,
-      "sha256": "dbbca81e363f106764fa3eeca8de3cea0031007275eae652ce39b16b45c05c83"
-    },
-    {
-      "path": "examples/archive/v1/error-flow-compensation/scripts/finalizer.mjs",
-      "sizeBytes": 103,
-      "sha256": "5112d8b6a71b552f3fbe5c7cc436aebd590d873a5ca2b1184c6abca03e75a7f9"
-    },
-    {
-      "path": "examples/archive/v1/error-flow-compensation/scripts/worker.mjs",
-      "sizeBytes": 95,
-      "sha256": "4eef2537dcf4aad9dc43c0d460b94d1947850bbc31858349cfc8249688a6457b"
-    },
-    {
-      "path": "examples/archive/v1/error-flow-compensation/system.mmd",
-      "sizeBytes": 906,
-      "sha256": "465295a3e00c87fd80ee13a66ebb5aa3b5c57d77fe8a6a85d9d14595551e65df"
-    },
-    {
-      "path": "examples/archive/v1/error-flow-compensation/tools.json",
-      "sizeBytes": 559,
-      "sha256": "5ce95178994f489d0b3408ed9c4b81d6495cfbeec0d520a0bb0e728e5dad7410"
-    },
-    {
-      "path": "examples/archive/v1/minimal-system.mmd",
-      "sizeBytes": 193,
-      "sha256": "72af6c5a73b0de7b11acff1d49ddb672786faccb5927edf89d4bc619bbf81be8"
-    },
-    {
-      "path": "examples/archive/v1/mulit-debate-ogs/.gitignore",
-      "sizeBytes": 56,
-      "sha256": "801df944169a9e49c9fde569cedc02add60b5fd7287de51b757c4a3811231d8b"
-    },
-    {
-      "path": "examples/archive/v1/mulit-debate-ogs/.ogs/README.md",
-      "sizeBytes": 2906,
-      "sha256": "b7e96d2f885ec54a02caa57ff391bdaf9ce51444997819334d372beba395230f"
-    },
-    {
-      "path": "examples/archive/v1/mulit-debate-ogs/.ogs/laws.json",
-      "sizeBytes": 210,
-      "sha256": "9697341e15256d19d709ff9ea9c8180f5bb1e2ebfbb47cf9da3fbcef77c9e754"
-    },
-    {
-      "path": "examples/archive/v1/mulit-debate-ogs/.ogs/model-selection.json",
-      "sizeBytes": 171,
-      "sha256": "f5cdf0acb587181f84c2dc87cb9a93a6205a7973dba497986f3daf3d9b257b28"
-    },
-    {
-      "path": "examples/archive/v1/mulit-debate-ogs/.ogs/project.json",
-      "sizeBytes": 130,
-      "sha256": "d382bd1a0184c7366c906693f96106dbdbe53a88704879889283ee1ea6ddbaf0"
-    },
-    {
-      "path": "examples/archive/v1/mulit-debate-ogs/.ogs/runtime.json",
-      "sizeBytes": 384,
-      "sha256": "a051856498c22f33a7eb08707b51a6ee8225905106a22a07b1d104259a2830ad"
-    },
-    {
-      "path": "examples/archive/v1/mulit-debate-ogs/.ogs/studio/system.authoring.json",
-      "sizeBytes": 4528,
-      "sha256": "ac1cf308cbe879e4a92e04601fae8afc919dddac793d0df5567581b6dba63e34"
-    },
-    {
-      "path": "examples/archive/v1/mulit-debate-ogs/.ogs/user-profile.json",
-      "sizeBytes": 203,
-      "sha256": "b71e80109b51cd72aa142c4a6593da5903ef25b15de38719de79453b0478a3db"
-    },
-    {
-      "path": "examples/archive/v1/mulit-debate-ogs/README.md",
-      "sizeBytes": 1633,
-      "sha256": "f13c5d9d0aae827300039dad59e41714a85920feb5245443260df7d0ff891203"
-    },
-    {
-      "path": "examples/archive/v1/mulit-debate-ogs/og-roles/README.md",
-      "sizeBytes": 1663,
-      "sha256": "acfc8948d91000f280193719c8f975a439e3fcf00c093aeca56251850b56e4ec"
-    },
-    {
-      "path": "examples/archive/v1/mulit-debate-ogs/og-roles/roles/debate-judge/agent.md",
-      "sizeBytes": 554,
-      "sha256": "097443d4328e2a7fe26660cc60a83e5b13c37907b05601e92f7f42a6fe2eb104"
-    },
-    {
-      "path": "examples/archive/v1/mulit-debate-ogs/og-roles/roles/debate-judge/output.schema.json",
-      "sizeBytes": 1360,
-      "sha256": "1c06b51cf1bc2cd8bfd461501a087b5c4f6022a7ac2718f1cc4f8c98fca531cb"
-    },
-    {
-      "path": "examples/archive/v1/mulit-debate-ogs/og-roles/roles/debate-judge/prompt.md",
-      "sizeBytes": 1068,
-      "sha256": "0a39bd600d4eb29a9839fa1c6000137bbd71c19aaefa7df4157ba6d7a919ddb6"
-    },
-    {
-      "path": "examples/archive/v1/mulit-debate-ogs/og-roles/roles/debate-judge/role.json",
-      "sizeBytes": 1071,
-      "sha256": "88f1e30bd73a4b85192f3a9a233404b47fbf70f20925a0e41dddceac1748b652"
-    },
-    {
-      "path": "examples/archive/v1/mulit-debate-ogs/og-roles/roles/debate-summary/agent.md",
-      "sizeBytes": 506,
-      "sha256": "af304543896df09bf06243d40d81f48ce704104fd89898b51dd1b26c7845a7d6"
-    },
-    {
-      "path": "examples/archive/v1/mulit-debate-ogs/og-roles/roles/debate-summary/output.schema.json",
-      "sizeBytes": 414,
-      "sha256": "4e89c0b63c873a5db2390cb77ce1fc9a2f3c768ec9ed318e798284504bf87fab"
-    },
-    {
-      "path": "examples/archive/v1/mulit-debate-ogs/og-roles/roles/debate-summary/prompt.md",
-      "sizeBytes": 719,
-      "sha256": "ac2f1cdc34a1491600f3fccb5592995d37a92d73088c3f88f9591facd8d1e850"
-    },
-    {
-      "path": "examples/archive/v1/mulit-debate-ogs/og-roles/roles/debate-summary/role.json",
-      "sizeBytes": 1024,
-      "sha256": "0189b77e7e3d8fbf431f3168d44ede3d0d014a4f33f2660ed330eba3e224366f"
-    },
-    {
-      "path": "examples/archive/v1/mulit-debate-ogs/og-roles/roles/demo-analyst/agent.md",
-      "sizeBytes": 427,
-      "sha256": "b89e0f565f7793bab6e04e1bf6d63a6ee147ab9e1d44409f175720da996fe4ee"
-    },
-    {
-      "path": "examples/archive/v1/mulit-debate-ogs/og-roles/roles/demo-analyst/output.schema.json",
-      "sizeBytes": 255,
-      "sha256": "106883596b92a62599ec3d4322a5079d9c1afffc4c32dbe8e22572151ce399dc"
-    },
-    {
-      "path": "examples/archive/v1/mulit-debate-ogs/og-roles/roles/demo-analyst/prompt.md",
-      "sizeBytes": 406,
-      "sha256": "31258d0ff9a373805dc1335b95dc8197f119a09933070519faa53be71d05d5f5"
-    },
-    {
-      "path": "examples/archive/v1/mulit-debate-ogs/og-roles/roles/demo-analyst/role.json",
-      "sizeBytes": 987,
-      "sha256": "fd5cf52e862de556647c5d4b874349e06ce5f8a9768861270f71097b2564683d"
-    },
-    {
-      "path": "examples/archive/v1/mulit-debate-ogs/og-roles/roles/investment-critic/agent.md",
-      "sizeBytes": 600,
-      "sha256": "2ab8233e5e09b6af62234ccd99bf510d6fe686cb888cd2fe21623964a2ccbf6a"
-    },
-    {
-      "path": "examples/archive/v1/mulit-debate-ogs/og-roles/roles/investment-critic/output.schema.json",
-      "sizeBytes": 886,
-      "sha256": "d0f368d774ddb5be24614570aefa8395ba9a52fe1d7d7a048ed9865fa6b699dc"
-    },
-    {
-      "path": "examples/archive/v1/mulit-debate-ogs/og-roles/roles/investment-critic/prompt.md",
-      "sizeBytes": 870,
-      "sha256": "eedc81d9cef05955a86710b7b63e94f8e918006d63c153d0d41607d6ba1132b7"
-    },
-    {
-      "path": "examples/archive/v1/mulit-debate-ogs/og-roles/roles/investment-critic/role.json",
-      "sizeBytes": 1028,
-      "sha256": "2c0c79c7a8d9efccc7d999b4b1de386244a43c207b1f06f23decc7d85d4523b9"
-    },
-    {
-      "path": "examples/archive/v1/mulit-debate-ogs/og-roles/roles/investment-optimizer/agent.md",
-      "sizeBytes": 627,
-      "sha256": "e62ec97b6ea60ff2f43f030ca72d4794d290c58e20bf04994efed6d6eecb0b13"
-    },
-    {
-      "path": "examples/archive/v1/mulit-debate-ogs/og-roles/roles/investment-optimizer/output.schema.json",
-      "sizeBytes": 951,
-      "sha256": "c6394ab3cd7b98bf1ba54db9f1821064ad6806e6381f11e443c5fc55e23e4765"
-    },
-    {
-      "path": "examples/archive/v1/mulit-debate-ogs/og-roles/roles/investment-optimizer/prompt.md",
-      "sizeBytes": 893,
-      "sha256": "ae7919395b8a3607125da55e4d693528ca15fdef15e3cccfdeff3d6ad6fa860c"
-    },
-    {
-      "path": "examples/archive/v1/mulit-debate-ogs/og-roles/roles/investment-optimizer/role.json",
-      "sizeBytes": 1029,
-      "sha256": "bea2f64dfd8ac796132ac953b168fef4c3585f27524ad7cd4edb9dbfbdebdc7c"
-    },
-    {
-      "path": "examples/archive/v1/mulit-debate-ogs/og-roles/roles/investment-proposer/agent.md",
-      "sizeBytes": 741,
-      "sha256": "e85d7bad95306d78036d5f1a15c331f3a1249828c4dcf1358f2b055c85289aa9"
-    },
-    {
-      "path": "examples/archive/v1/mulit-debate-ogs/og-roles/roles/investment-proposer/output.schema.json",
-      "sizeBytes": 510,
-      "sha256": "2e9408c168b8109cf2d99eb9dc63794153942743c1b2ff6b9df9a0ad9ba30eaf"
-    },
-    {
-      "path": "examples/archive/v1/mulit-debate-ogs/og-roles/roles/investment-proposer/prompt.md",
-      "sizeBytes": 942,
-      "sha256": "a44e17e68e93fab7591e11c849a8fd365e189ee3492d0cedf7d63444ba54bb03"
-    },
-    {
-      "path": "examples/archive/v1/mulit-debate-ogs/og-roles/roles/investment-proposer/role.json",
-      "sizeBytes": 1048,
-      "sha256": "03d195c65aac37f3ce23f898fbd253359eaa85109e28d1a7c3294770f144cf79"
-    },
-    {
-      "path": "examples/archive/v1/mulit-debate-ogs/profiles.json",
-      "sizeBytes": 143,
-      "sha256": "c4ef39c8294060cb53340c860afaa339f2b6f47112e08485ee8401de3f9130a9"
-    },
-    {
-      "path": "examples/archive/v1/mulit-debate-ogs/scripts/console-print.mjs",
-      "sizeBytes": 1218,
-      "sha256": "433a39088b14cdb207ebdaaf825b7db8c073741b29b62b99d44fbbf0681da458"
-    },
-    {
-      "path": "examples/archive/v1/mulit-debate-ogs/system.example.mmd",
-      "sizeBytes": 209,
-      "sha256": "12b72dc2aad0a912bb6b98dd917978d17b277ce95f8dcecded3971488c08713e"
-    },
-    {
-      "path": "examples/archive/v1/mulit-debate-ogs/system.mmd",
-      "sizeBytes": 775,
-      "sha256": "adee4159662e20140413f81ebf5457bed38ef1d6ab61a02be05da417d086fc9d"
-    },
-    {
-      "path": "examples/archive/v1/mulit-debate-ogs/tools.json",
-      "sizeBytes": 223,
-      "sha256": "9c1eae19dc7ac5625e1c980d4b31e9a3586f9bdc4de2e5be2073a94028b0db1d"
-    },
-    {
-      "path": "examples/archive/v1/ogs-gstacklike/.ogs/.gitignore",
-      "sizeBytes": 46,
-      "sha256": "2e78f5e265de215db501fcb02f7db8e783bac501e8da2e09bbd436620710acd6"
-    },
-    {
-      "path": "examples/archive/v1/ogs-gstacklike/.ogs/README.md",
-      "sizeBytes": 1728,
-      "sha256": "ef24f4e1de551ac4af865f978e5e459fe0fb9330b7aa7b4b0f807cea869078af"
-    },
-    {
-      "path": "examples/archive/v1/ogs-gstacklike/.ogs/laws.json",
-      "sizeBytes": 214,
-      "sha256": "80e0e5f61836803313745c79b4cf62fb8d1a71199ebcb173dc95702e39f3749f"
-    },
-    {
-      "path": "examples/archive/v1/ogs-gstacklike/.ogs/model-selection.json",
-      "sizeBytes": 42,
-      "sha256": "0533e75cadb69852cf629c700e7108569f9286bd05831ed350ac0098ab2d1591"
-    },
-    {
-      "path": "examples/archive/v1/ogs-gstacklike/.ogs/runtime.json",
-      "sizeBytes": 385,
-      "sha256": "3e75c276cf0951f4891b34552a164b3851e9e7b64f62b7319bc5f11bb5ca96ef"
-    },
-    {
-      "path": "examples/archive/v1/ogs-gstacklike/.ogs/studio/system.authoring.json",
-      "sizeBytes": 7203,
-      "sha256": "1bc94d8143cdb28a66cf7014abf67a76ba128f086d5d357489ea89b34af328cb"
-    },
-    {
-      "path": "examples/archive/v1/ogs-gstacklike/.ogs/user-profile.json",
-      "sizeBytes": 203,
-      "sha256": "b71e80109b51cd72aa142c4a6593da5903ef25b15de38719de79453b0478a3db"
-    },
-    {
-      "path": "examples/archive/v1/ogs-gstacklike/README.md",
-      "sizeBytes": 6029,
-      "sha256": "7c3c8920ab9231ff48395802c9662969275326b707eb99fe5e48af496c821298"
-    },
-    {
-      "path": "examples/archive/v1/ogs-gstacklike/og-roles/README.md",
-      "sizeBytes": 989,
-      "sha256": "fe3e934f062374055a0cb63aba91e44053c1b9f6d7bb105808b731db7ec3c1ae"
-    },
-    {
-      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/error-handler-base/agent.md",
-      "sizeBytes": 977,
-      "sha256": "67b3848c0ace9d22c31af4ec71d7107d8ed1c27cead687224e30f82dc67f6fd0"
-    },
-    {
-      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/error-handler-base/output.schema.json",
-      "sizeBytes": 829,
-      "sha256": "b338b5002621594ef2275143a86865f286f4a5a4be431539f1cb9c025a1e982c"
-    },
-    {
-      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/error-handler-base/prompt.md",
-      "sizeBytes": 698,
-      "sha256": "9fe78d4bc0f215d10067d01fe630a83661e0d0cf95dddd69ec6af4dc0f50803c"
-    },
-    {
-      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/error-handler-base/role.json",
-      "sizeBytes": 976,
-      "sha256": "54170e59c0c2eceb05ed511ff010bfab54c1d5b168070cc52c83257c1f5b2ca9"
-    },
-    {
-      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/learn/agent.md",
-      "sizeBytes": 503,
-      "sha256": "ecb2fd2828ef66d1811c3971a43d1b8f3eeb58aca270fc70bb6867d79d903439"
-    },
-    {
-      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/learn/output.schema.json",
-      "sizeBytes": 255,
-      "sha256": "106883596b92a62599ec3d4322a5079d9c1afffc4c32dbe8e22572151ce399dc"
-    },
-    {
-      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/learn/prompt.md",
-      "sizeBytes": 446,
-      "sha256": "ed13f36770941eeea3de007cb46e9a2bdf40ad0ef70b7e51a7471b6e47836a7a"
-    },
-    {
-      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/learn/role.json",
-      "sizeBytes": 840,
-      "sha256": "0ad0ed9ef95a74a9496e3e28c2c2201b0d1b90a07129ff2ec83a020ffd253962"
-    },
-    {
-      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/office-hours/agent.md",
-      "sizeBytes": 383,
-      "sha256": "bc161298cb62a1e9c9c682cab988e4239878f8e7869653cbb0b798ecc1d16efb"
-    },
-    {
-      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/office-hours/output.schema.json",
-      "sizeBytes": 278,
-      "sha256": "05c122a5efe9c950390de3a806ea5a2754489a12e50ecf088633d2dd01a8ca61"
-    },
-    {
-      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/office-hours/prompt.md",
-      "sizeBytes": 467,
-      "sha256": "732df3d180066cc552e023568273613783b1dea0c2aff744540df0f8d7a5211c"
-    },
-    {
-      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/office-hours/role.json",
-      "sizeBytes": 906,
-      "sha256": "1571e2c7f2a89b7740cba5ea2a57983c3704e632726fd4ae555e5705d117694f"
-    },
-    {
-      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/qa/agent.md",
-      "sizeBytes": 524,
-      "sha256": "5b116728713f57a55c20def40cff36efd1530208dff1e6f89f382e038c7012ff"
-    },
-    {
-      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/qa/output.schema.json",
-      "sizeBytes": 278,
-      "sha256": "c6ee86953b419afc9dbfc8a0d92ce863ebd35ad08b92d6eb9d250220ffc0414f"
-    },
-    {
-      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/qa/prompt.md",
-      "sizeBytes": 471,
-      "sha256": "019076183ffa80a46d25715d580bae63a28132f14408fb2ea191590c4d36282e"
-    },
-    {
-      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/qa/role.json",
-      "sizeBytes": 888,
-      "sha256": "d6dede25eb6bc9f2c4900d8e473b4eded07b4ab4a43a80d6b53e79656b1287c6"
-    },
-    {
-      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/retro/agent.md",
-      "sizeBytes": 527,
-      "sha256": "f2d855e3f0f8a3388112df21e8c67656b7d1a9ac7b6dfdc5c00020d160409737"
-    },
-    {
-      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/retro/output.schema.json",
-      "sizeBytes": 255,
-      "sha256": "106883596b92a62599ec3d4322a5079d9c1afffc4c32dbe8e22572151ce399dc"
-    },
-    {
-      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/retro/prompt.md",
-      "sizeBytes": 468,
-      "sha256": "9aec5f8292ebaf6503110ef378ee71527081667253e6ea751b3f694260f5727e"
-    },
-    {
-      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/retro/role.json",
-      "sizeBytes": 802,
-      "sha256": "5bc7b77075b6969c411e6fd08aa63177887f484df711f543496be797081dae9e"
-    },
-    {
-      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/review/agent.md",
-      "sizeBytes": 543,
-      "sha256": "fb599cc7c73728ca30f7e7c3f0fa07aa68bb85aadc856a38afadfc70007d5c5c"
-    },
-    {
-      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/review/output.schema.json",
-      "sizeBytes": 285,
-      "sha256": "b27160573191d7aff8f9f23037b5de6164fba73479b6bfa9b9a812635dd3951c"
-    },
-    {
-      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/review/prompt.md",
-      "sizeBytes": 463,
-      "sha256": "1532bc3f92805819e69a2165def5a335116f92c5b030880be75402685f0c4211"
-    },
-    {
-      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/review/role.json",
-      "sizeBytes": 899,
-      "sha256": "42744965fc77434718a14c3cb47060e06dd730ae4051881ebe9ee83b89930d39"
-    },
-    {
-      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/ship-deploy/agent.md",
-      "sizeBytes": 538,
-      "sha256": "9ec09b4c1b739387c34fdc0086934d550e345431a81a53871c50f38c25b091c7"
-    },
-    {
-      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/ship-deploy/output.schema.json",
-      "sizeBytes": 255,
-      "sha256": "106883596b92a62599ec3d4322a5079d9c1afffc4c32dbe8e22572151ce399dc"
-    },
-    {
-      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/ship-deploy/prompt.md",
-      "sizeBytes": 450,
-      "sha256": "fa005af47640aef76af16ece12ae38628f20efcbab993030a7a975c5f0a79891"
-    },
-    {
-      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/ship-deploy/role.json",
-      "sizeBytes": 949,
-      "sha256": "fb8c15c84e4f4b698a758ecad220a3346171be36d2be31b0331fd42e72f39897"
-    },
-    {
-      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/ship/agent.md",
-      "sizeBytes": 844,
-      "sha256": "3284c57be72b1edd592d993d7db6290bebbf50d7175074c74a683d4c219d0caf"
-    },
-    {
-      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/ship/output.schema.json",
-      "sizeBytes": 266,
-      "sha256": "42a4eda65f530a8fb8f9b8da185126e786b4009fabf9fef539cd1c1420885b57"
-    },
-    {
-      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/ship/prompt.md",
-      "sizeBytes": 591,
-      "sha256": "896967b13dd15338d66b89da106657da3e43c65307e93ecc306a7d74528815a4"
-    },
-    {
-      "path": "examples/archive/v1/ogs-gstacklike/og-roles/roles/ship/role.json",
-      "sizeBytes": 987,
-      "sha256": "ae709b810ef6e5f405f47a4253e59dce67857f66c3d3612c21576c0c2163b51d"
-    },
-    {
-      "path": "examples/archive/v1/ogs-gstacklike/profiles.json",
-      "sizeBytes": 631,
-      "sha256": "e4c2f03a8e697e16791092c6e37a6ba60a7477e740701006fa9afecacb4e110f"
-    },
-    {
-      "path": "examples/archive/v1/ogs-gstacklike/scenarios/approval-rework.mmd",
-      "sizeBytes": 1311,
-      "sha256": "e1ec94eafa8092dd3b8d9439b0da7bc7b0b5df31e9bf2e382f45c27ca0716425"
-    },
-    {
-      "path": "examples/archive/v1/ogs-gstacklike/scenarios/deploy-failure.mmd",
-      "sizeBytes": 1773,
-      "sha256": "ee0e306a33b6a5fc6bf2bec19b87bd8cc23c8384a6b4b6f783180bd01f023160"
-    },
-    {
-      "path": "examples/archive/v1/ogs-gstacklike/scenarios/review-pause.mmd",
-      "sizeBytes": 1308,
-      "sha256": "d74cd5f7eff7ed6a119e8fd50839ec0f7778d8ae234bec73bac44599f2f67925"
-    },
-    {
-      "path": "examples/archive/v1/ogs-gstacklike/scenarios/review-terminate.mmd",
-      "sizeBytes": 1312,
-      "sha256": "1daa281dbedd2a7bf14eb6ed3def294949ea2609cfa19d869904b7ff81419624"
-    },
-    {
-      "path": "examples/archive/v1/ogs-gstacklike/scripts/console-print.mjs",
-      "sizeBytes": 1217,
-      "sha256": "dec83ce776c782a03eff295997473af97b1d0765cf3e6a836bc5ab23433f9275"
-    },
-    {
-      "path": "examples/archive/v1/ogs-gstacklike/scripts/emit-review-result.mjs",
-      "sizeBytes": 2142,
-      "sha256": "6e584caf70afb99e1a48c9de1f163e5ae49e7827a5ce4bd90d31f58941f8776a"
-    },
-    {
-      "path": "examples/archive/v1/ogs-gstacklike/scripts/emit-role-result.mjs",
-      "sizeBytes": 9595,
-      "sha256": "83882d083435688494ec81e4b7d4df369c0ba2ad0accd0a4659de7652e469d82"
-    },
-    {
-      "path": "examples/archive/v1/ogs-gstacklike/scripts/ship-deploy.mjs",
-      "sizeBytes": 6681,
-      "sha256": "4c6ebab092333603c5afb7dbf7a16f5a7acb1af3c8e91c1f2c9d262704ea927c"
-    },
-    {
-      "path": "examples/archive/v1/ogs-gstacklike/scripts/validate-scenarios.sh",
-      "sizeBytes": 13593,
-      "sha256": "b3f5b3cb1fd8a28b3c494d982cbb6815b4c150303d8d7605f08299c9d523d004"
-    },
-    {
-      "path": "examples/archive/v1/ogs-gstacklike/system.mmd",
-      "sizeBytes": 2118,
-      "sha256": "af9d565247db7919552d7877a80175e7b355e2b2b076ca0c119efeebd3acda94"
-    },
-    {
-      "path": "examples/archive/v1/ogs-gstacklike/tools.json",
-      "sizeBytes": 1716,
-      "sha256": "28e1d66dd441ae01208337e3c726e2f0d9d1b72a5d96f32945d43e0f42775213"
-    },
-    {
-      "path": "examples/archive/v1/runtime-native-human-review/README.md",
-      "sizeBytes": 1468,
-      "sha256": "fdd6e2addf281b5c27b49a718d1b5c4edd1bf90944f7b8be557b1dd620097617"
-    },
-    {
-      "path": "examples/archive/v1/runtime-native-human-review/system.mmd",
-      "sizeBytes": 481,
-      "sha256": "e7673a9d155844ef5b83374a6c1f95e28dcfd51d517a284134b620b97b60a5c9"
-    },
-    {
-      "path": "examples/archive/v1/rust-hello-pipeline/README.md",
-      "sizeBytes": 503,
-      "sha256": "71c721030980462c59293a47899d91daad0a8dd710a8d5c34de134c5997bbb1c"
-    },
-    {
-      "path": "examples/archive/v1/rust-hello-pipeline/profiles.json",
-      "sizeBytes": 418,
-      "sha256": "153ad15ff08ddae25cbbcde2abc3944185b93da33718746afa024d814615f1b8"
-    },
-    {
-      "path": "examples/archive/v1/rust-hello-pipeline/scripts/compiler.mjs",
-      "sizeBytes": 1243,
-      "sha256": "11470dda6c1a0dd6c9a607fe5124ddd88ef9d1823f6bd6524791785fbe316038"
-    },
-    {
-      "path": "examples/archive/v1/rust-hello-pipeline/scripts/developer.mjs",
-      "sizeBytes": 943,
-      "sha256": "905bd281d05650e433349afd3acd0e8910be764a81450b4b69d7c3b884bf476d"
-    },
-    {
-      "path": "examples/archive/v1/rust-hello-pipeline/scripts/packager.mjs",
-      "sizeBytes": 1709,
-      "sha256": "0065239f7687f89b9e3f48040bfd9e3aedd26a5853983af1474c625071d2dc75"
-    },
-    {
-      "path": "examples/archive/v1/rust-hello-pipeline/system.mmd",
-      "sizeBytes": 525,
-      "sha256": "8c99b121162512721f0fc4cf84594a287f16dda177015f40dff04cf1a109dab0"
-    },
-    {
-      "path": "examples/archive/v1/rust-hello-pipeline/tools.json",
-      "sizeBytes": 703,
-      "sha256": "cb29dfd459b8ae6efeb398da2f3e95b9a71ad5fb421d4b0ca4caf2d14f95a182"
-    },
-    {
-      "path": "examples/archive/v1/wechat-miniprogram-factory/.ogs/README.md",
-      "sizeBytes": 2906,
-      "sha256": "b7e96d2f885ec54a02caa57ff391bdaf9ce51444997819334d372beba395230f"
-    },
-    {
-      "path": "examples/archive/v1/wechat-miniprogram-factory/.ogs/laws.json",
-      "sizeBytes": 211,
-      "sha256": "c924a76eea95e6cea65981e28623e9552375bf24ad96cd58a499ae270716f550"
-    },
-    {
-      "path": "examples/archive/v1/wechat-miniprogram-factory/.ogs/model-catalog.json",
-      "sizeBytes": 106,
-      "sha256": "17a930a895d81cf3e80e4b3c89074f051cabb583faf9fd83b41a4590a6a483bd"
-    },
-    {
-      "path": "examples/archive/v1/wechat-miniprogram-factory/.ogs/model-selection.json",
-      "sizeBytes": 42,
-      "sha256": "0533e75cadb69852cf629c700e7108569f9286bd05831ed350ac0098ab2d1591"
-    },
-    {
-      "path": "examples/archive/v1/wechat-miniprogram-factory/.ogs/project.json",
-      "sizeBytes": 164,
-      "sha256": "03b6a4d62652d20dc67e2a4bbde92a4fa8bd119167caf376880b70144d5a9641"
-    },
-    {
-      "path": "examples/archive/v1/wechat-miniprogram-factory/.ogs/runtime.json",
-      "sizeBytes": 384,
-      "sha256": "a051856498c22f33a7eb08707b51a6ee8225905106a22a07b1d104259a2830ad"
-    },
-    {
-      "path": "examples/archive/v1/wechat-miniprogram-factory/.ogs/studio/system.authoring.json",
-      "sizeBytes": 3070,
-      "sha256": "b2bb3febeb8d77711deea84a021b117c46e91cea1090e80382fa43a212dfbeeb"
-    },
-    {
-      "path": "examples/archive/v1/wechat-miniprogram-factory/.ogs/user-profile.json",
-      "sizeBytes": 203,
-      "sha256": "b71e80109b51cd72aa142c4a6593da5903ef25b15de38719de79453b0478a3db"
-    },
-    {
-      "path": "examples/archive/v1/wechat-miniprogram-factory/README.md",
-      "sizeBytes": 1877,
-      "sha256": "e6d58ae553ed2f58d231a73c2f77a1cbf3bc71b2557e938d0911d821f64d9d3c"
-    },
-    {
-      "path": "examples/archive/v1/wechat-miniprogram-factory/og-roles/README.md",
-      "sizeBytes": 1663,
-      "sha256": "acfc8948d91000f280193719c8f975a439e3fcf00c093aeca56251850b56e4ec"
-    },
-    {
-      "path": "examples/archive/v1/wechat-miniprogram-factory/og-roles/roles/coding/agent.md",
-      "sizeBytes": 137,
-      "sha256": "8c39e0763c525745a639e359cadb5814e2d50a7ec63c5741795c7ad8080e7131"
-    },
-    {
-      "path": "examples/archive/v1/wechat-miniprogram-factory/og-roles/roles/coding/output.schema.json",
-      "sizeBytes": 474,
-      "sha256": "8035e601b67012a0b961879f16c478a59f4b12d02973e384c5f6dc83d8ca861e"
-    },
-    {
-      "path": "examples/archive/v1/wechat-miniprogram-factory/og-roles/roles/coding/prompt.md",
-      "sizeBytes": 306,
-      "sha256": "9b35a89f0ff5e5ed6f59bf5718736a4bb7893301e9d6ae09c815f1e344d95d0b"
-    },
-    {
-      "path": "examples/archive/v1/wechat-miniprogram-factory/og-roles/roles/coding/role.json",
-      "sizeBytes": 910,
-      "sha256": "198bd8f6a0454a2d6b2cca58e58733f97e52b083f48d9eeabdf8e937649c6f51"
-    },
-    {
-      "path": "examples/archive/v1/wechat-miniprogram-factory/og-roles/roles/design/agent.md",
-      "sizeBytes": 128,
-      "sha256": "b4fa677a09e2e6b09117d998b69f09d7fcad1698a56c9eab955dc22e819b0aa6"
-    },
-    {
-      "path": "examples/archive/v1/wechat-miniprogram-factory/og-roles/roles/design/output.schema.json",
-      "sizeBytes": 332,
-      "sha256": "68ecf087117e8daf8a3b0f4f869c7172ffb873a3edc1b25221b8186e183d3ff3"
-    },
-    {
-      "path": "examples/archive/v1/wechat-miniprogram-factory/og-roles/roles/design/prompt.md",
-      "sizeBytes": 241,
-      "sha256": "f442505b1deec19930ddbfaed6af0f64fe5fc3eac395fc330b245f2a5be85c98"
-    },
-    {
-      "path": "examples/archive/v1/wechat-miniprogram-factory/og-roles/roles/design/role.json",
-      "sizeBytes": 871,
-      "sha256": "11c752b809984c57ddd04d9590833edd0761edf03ecd70d2e82aadf38c0d2107"
-    },
-    {
-      "path": "examples/archive/v1/wechat-miniprogram-factory/og-roles/roles/hello-ogsystem/agent.md",
-      "sizeBytes": 331,
-      "sha256": "683db19381eeb40a25f02a4d7cba606795a90a4385f09fe8670095eac2004d9e"
-    },
-    {
-      "path": "examples/archive/v1/wechat-miniprogram-factory/og-roles/roles/hello-ogsystem/output.schema.json",
-      "sizeBytes": 275,
-      "sha256": "098e6b3cad61c7c3ed95246f3972f72e14225436c6df43efaa0da4b9dc13cff1"
-    },
-    {
-      "path": "examples/archive/v1/wechat-miniprogram-factory/og-roles/roles/hello-ogsystem/prompt.md",
-      "sizeBytes": 386,
-      "sha256": "f095ac8793fcf17811f5bd822edcd146bda43182d72c557af3450a8300e701ec"
-    },
-    {
-      "path": "examples/archive/v1/wechat-miniprogram-factory/og-roles/roles/hello-ogsystem/role.json",
-      "sizeBytes": 949,
-      "sha256": "922f3b47ab4b679df95e9fd28628c587b8fb0a300b7dfcdf98a7f12fea6f3443"
-    },
-    {
-      "path": "examples/archive/v1/wechat-miniprogram-factory/og-roles/roles/requirements/agent.md",
-      "sizeBytes": 149,
-      "sha256": "f9a2f158b04ad2833c0ca948056e5ce4e3011ada132706f031574b7b939a18c5"
-    },
-    {
-      "path": "examples/archive/v1/wechat-miniprogram-factory/og-roles/roles/requirements/output.schema.json",
-      "sizeBytes": 344,
-      "sha256": "76d52d76b2dfd51a80ef4cff4b89230361e403f5a9c44213413638179b8fdd40"
-    },
-    {
-      "path": "examples/archive/v1/wechat-miniprogram-factory/og-roles/roles/requirements/prompt.md",
-      "sizeBytes": 257,
-      "sha256": "3b2e7e3e47cfe63e9ab8e5ec9b883f27325821da5529c7d2dad621251c044f3a"
-    },
-    {
-      "path": "examples/archive/v1/wechat-miniprogram-factory/og-roles/roles/requirements/role.json",
-      "sizeBytes": 903,
-      "sha256": "c1a31cc2fce5b76a66ab7f37296222d42264d366fa58ce6f6979db11ba3ab00d"
-    },
-    {
-      "path": "examples/archive/v1/wechat-miniprogram-factory/og-roles/roles/seal/agent.md",
-      "sizeBytes": 115,
-      "sha256": "9d9dceec4b92e054bf697cb06615fb4cd5746bde8b4902fd303c253ec0818953"
-    },
-    {
-      "path": "examples/archive/v1/wechat-miniprogram-factory/og-roles/roles/seal/output.schema.json",
-      "sizeBytes": 450,
-      "sha256": "e3e33885cb45ac1eecb1e6cd04a34917615abb9123f1648181c892024d917dca"
-    },
-    {
-      "path": "examples/archive/v1/wechat-miniprogram-factory/og-roles/roles/seal/prompt.md",
-      "sizeBytes": 298,
-      "sha256": "9256c0c18eba67782b52d193042f27f66d1d167e1bbffa7d696cc26fe76120f8"
-    },
-    {
-      "path": "examples/archive/v1/wechat-miniprogram-factory/og-roles/roles/seal/role.json",
-      "sizeBytes": 890,
-      "sha256": "c2a502eb2b0258bab2d9b9798172cf7ead3bb9e6fa0a9ac0739fec75724b9958"
-    },
-    {
-      "path": "examples/archive/v1/wechat-miniprogram-factory/og-roles/roles/testing/agent.md",
-      "sizeBytes": 108,
-      "sha256": "b6824fc10fa6bcb8faed229c52ddc8db146fce683b2ef8799b02529468ac9b17"
-    },
-    {
-      "path": "examples/archive/v1/wechat-miniprogram-factory/og-roles/roles/testing/output.schema.json",
-      "sizeBytes": 390,
-      "sha256": "fe42f971684faa57fcb5766ec3f8259f4599fe306d8ad06bb7488c910afe92c5"
-    },
-    {
-      "path": "examples/archive/v1/wechat-miniprogram-factory/og-roles/roles/testing/prompt.md",
-      "sizeBytes": 322,
-      "sha256": "e0baab29ce95461af1c6df52faef0eeeb60631ee24ba09ecd7a6e1fa079e2b65"
-    },
-    {
-      "path": "examples/archive/v1/wechat-miniprogram-factory/og-roles/roles/testing/role.json",
-      "sizeBytes": 930,
-      "sha256": "504892ef895cbdc5958eda4073400b9e92c57913b1ebd353c22ed51ca92c6974"
-    },
-    {
-      "path": "examples/archive/v1/wechat-miniprogram-factory/profiles.json",
-      "sizeBytes": 145,
-      "sha256": "e4df08997b44d391c5a06ee825f081c55c9e8bf0e3da6e95b01a6b0285540d4e"
-    },
-    {
-      "path": "examples/archive/v1/wechat-miniprogram-factory/scripts/console-print.mjs",
-      "sizeBytes": 1217,
-      "sha256": "dec83ce776c782a03eff295997473af97b1d0765cf3e6a836bc5ab23433f9275"
-    },
-    {
-      "path": "examples/archive/v1/wechat-miniprogram-factory/scripts/hello-ogsystem.mjs",
-      "sizeBytes": 312,
-      "sha256": "6017f73177dd164b8773f076cc2ebc904275012e046e3cc9a0521c5c4e9a233d"
-    },
-    {
-      "path": "examples/archive/v1/wechat-miniprogram-factory/scripts/workflow-stage.mjs",
-      "sizeBytes": 13343,
-      "sha256": "c7757fd2b663fff0595a1a0e28222f72a8d8cdfc05aac6da51ae5166718b625e"
-    },
-    {
-      "path": "examples/archive/v1/wechat-miniprogram-factory/system.mmd",
-      "sizeBytes": 768,
-      "sha256": "397c559f4359e0f0e44be9a4ecccc3a837de85358c435d1c20f59f80c8e5faaa"
-    },
-    {
-      "path": "examples/archive/v1/wechat-miniprogram-factory/tools.json",
-      "sizeBytes": 209,
-      "sha256": "1cf6c6bbd96b6b29e150f29a186b8d2c00bcbac5be935c07edf07801a583761e"
-    },
-    {
       "path": "examples/gate-c-docs/.gitignore",
       "sizeBytes": 32,
       "sha256": "3faa07814c7bc6ff258ab87ad129c610b61812f2ead76d5b6f74cc41728baf5b"
-    },
-    {
-      "path": "examples/gate-c-docs/.ogs/README.md",
-      "sizeBytes": 3176,
-      "sha256": "c406413ebb1c97f86173b868e53e916dc47437d840b70c0afd34ed20739e09fb"
     },
     {
       "path": "examples/gate-c-docs/.ogs/execution-bindings.json",
@@ -1186,11 +380,6 @@
       "path": "examples/gate-c-docs/.ogs/laws.json",
       "sizeBytes": 204,
       "sha256": "be1b34c76d2b497cf21d914daab71729535ab29925be65bff12a7a6aa86f3998"
-    },
-    {
-      "path": "examples/gate-c-docs/.ogs/project.json",
-      "sizeBytes": 92,
-      "sha256": "102fdb05f6b511df1a2d3e39a827fad3e8b15bba038ec7c7d4359aef12f46643"
     },
     {
       "path": "examples/gate-c-docs/.ogs/runtime.json",
@@ -1293,11 +482,6 @@
       "sha256": "3faa07814c7bc6ff258ab87ad129c610b61812f2ead76d5b6f74cc41728baf5b"
     },
     {
-      "path": "examples/gate-c-software/.ogs/README.md",
-      "sizeBytes": 3176,
-      "sha256": "c406413ebb1c97f86173b868e53e916dc47437d840b70c0afd34ed20739e09fb"
-    },
-    {
       "path": "examples/gate-c-software/.ogs/execution-bindings.json",
       "sizeBytes": 1210,
       "sha256": "226871d9d36cdcff15d646a722ea9f58c35d0a3ca36038482e6df99512e8fab6"
@@ -1306,11 +490,6 @@
       "path": "examples/gate-c-software/.ogs/laws.json",
       "sizeBytes": 204,
       "sha256": "be1b34c76d2b497cf21d914daab71729535ab29925be65bff12a7a6aa86f3998"
-    },
-    {
-      "path": "examples/gate-c-software/.ogs/project.json",
-      "sizeBytes": 96,
-      "sha256": "e2050ba43255ff079fe40cae5788b1bfaea4c8917a87e3a8b0b67d8a2fb81c42"
     },
     {
       "path": "examples/gate-c-software/.ogs/runtime.json",
@@ -1428,11 +607,6 @@
       "sha256": "95490584a6f54d202461ee5a0aafc25e53b54ab7bb833cf143f84a2ce8b49171"
     },
     {
-      "path": "examples/langgraph-debate-current/.ogs/README.md",
-      "sizeBytes": 3506,
-      "sha256": "25c4ebaa0b5a72b7a852d0e22884a9c65a4b1a8c2b8dd6a24a2f0d147fea781f"
-    },
-    {
       "path": "examples/langgraph-debate-current/.ogs/contracts/alignmentist-done.schema.json",
       "sizeBytes": 660,
       "sha256": "ca322b8b106330260159baf4399ea26ac56b9c2b85e5e5a65d6bfcf22e0d212a"
@@ -1481,11 +655,6 @@
       "path": "examples/langgraph-debate-current/.ogs/execution-bindings.json",
       "sizeBytes": 992,
       "sha256": "d1d903f7edf0f421d31d0e6752ac83254ee576731ae1b86e22cf624f3a5a578a"
-    },
-    {
-      "path": "examples/langgraph-debate-current/.ogs/project.json",
-      "sizeBytes": 105,
-      "sha256": "63e43ee48ca442a3e8942a4b3cb84ba715955ed02fb0b02994856eb614b2fca3"
     },
     {
       "path": "examples/langgraph-debate-current/.ogs/runtime.json",
@@ -1538,11 +707,6 @@
       "sha256": "3faa07814c7bc6ff258ab87ad129c610b61812f2ead76d5b6f74cc41728baf5b"
     },
     {
-      "path": "examples/legal-rag-dev-team/.ogs/README.md",
-      "sizeBytes": 2934,
-      "sha256": "5c9d2d2030e56e7088236314e7fb9e13456b6716f9fb981f368332e7070263ef"
-    },
-    {
       "path": "examples/legal-rag-dev-team/.ogs/laws.json",
       "sizeBytes": 217,
       "sha256": "26fd6eac2e1c935423e7cd143cc2c1c0870d87d60449480841c571d8835c5bb4"
@@ -1556,16 +720,6 @@
       "path": "examples/legal-rag-dev-team/.ogs/model-selection.json",
       "sizeBytes": 159,
       "sha256": "da1e84c80c25343d9d6097394401529a32ec48fd25aa539dcf42745b730cce8d"
-    },
-    {
-      "path": "examples/legal-rag-dev-team/.ogs/project.json",
-      "sizeBytes": 99,
-      "sha256": "f446ef6326bc5524c892c0cb27b84e8f105a45b61d73fba81f7318f8f01bb101"
-    },
-    {
-      "path": "examples/legal-rag-dev-team/.ogs/providers/opencode.json",
-      "sizeBytes": 676,
-      "sha256": "10ee3eadb0cec4047bede728d81f6436506342b695c27d52d13690a9ed42a464"
     },
     {
       "path": "examples/legal-rag-dev-team/.ogs/runtime.json",
@@ -1768,19 +922,9 @@
       "sha256": "01e5f835c47c048a9affdcc3dc5092a301aa044d336112703a49b0fbdc056600"
     },
     {
-      "path": "examples/medical-quorum-consultation/.ogs/README.md",
-      "sizeBytes": 3175,
-      "sha256": "9b403a938268782d806be6fb9613e33a6a32d437b63b188773c51774c71e824c"
-    },
-    {
       "path": "examples/medical-quorum-consultation/.ogs/execution-bindings.json",
       "sizeBytes": 1010,
       "sha256": "9be8bf01b55191ee2949182b77c4c0aa02f49833c8e14b4e0bbd76cc9d972f9c"
-    },
-    {
-      "path": "examples/medical-quorum-consultation/.ogs/project.json",
-      "sizeBytes": 108,
-      "sha256": "9f532fc6514826715b33b707b35875f2a95205b1dda29797a5cb7c5338eccb54"
     },
     {
       "path": "examples/medical-quorum-consultation/.ogs/runtime.json",
@@ -1833,19 +977,9 @@
       "sha256": "80926fb2d2c6442b803c68538608e501ee66c9b3eac4edf16e6853b5437404fa"
     },
     {
-      "path": "examples/target-model-binding/.ogs/README.md",
-      "sizeBytes": 3175,
-      "sha256": "9b403a938268782d806be6fb9613e33a6a32d437b63b188773c51774c71e824c"
-    },
-    {
       "path": "examples/target-model-binding/.ogs/execution-bindings.json",
       "sizeBytes": 709,
       "sha256": "da9fa64cb6d7b85b1df601ec66fb5f37e6e8df2526ab47700d8cd5bc9d58393f"
-    },
-    {
-      "path": "examples/target-model-binding/.ogs/project.json",
-      "sizeBytes": 101,
-      "sha256": "daacc0cff4ad468f89bf594205add822de57380e76a9dfbb1184ac73c4eeda27"
     },
     {
       "path": "examples/target-model-binding/.ogs/runtime.json",
@@ -2359,8 +1493,8 @@
     },
     {
       "path": "package.json",
-      "sizeBytes": 6006,
-      "sha256": "4131d0d21bb9f6edfedfc8507676c153ab02b2bcc0594a9fc2e5741468f820dc"
+      "sizeBytes": 5386,
+      "sha256": "1d7c40c2e4b1da24f36a2ed0daeeb97a24d344acaacf2380f1d1be3bcfdeb9d5"
     },
     {
       "path": "pnpm-lock.yaml",
@@ -2389,8 +1523,8 @@
     },
     {
       "path": "schemas/openapi.yaml",
-      "sizeBytes": 15240,
-      "sha256": "23b98e1851c3a5ebcb543ae93d4298270bb23be9ee3d381058bb90b60ae43770"
+      "sizeBytes": 15370,
+      "sha256": "b3c18bc05367321521173a90653b6531ebe65283831f626afe2ac34564e241e2"
     },
     {
       "path": "schemas/runtime-config.schema.json",
@@ -3714,8 +2848,8 @@
     },
     {
       "path": "tests/join-source-snapshot.test.mjs",
-      "sizeBytes": 2390,
-      "sha256": "41037721229f91569c36dbf8dc37f2bf7b5cb8376f77a017bd3e390ea8ace2ae"
+      "sizeBytes": 4240,
+      "sha256": "a4a61204b58f15e343a4449089336df4a5d4e3c4fb0e1f19c6d6afaf630f51df"
     },
     {
       "path": "tests/json-file.test.mjs",

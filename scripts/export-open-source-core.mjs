@@ -19,7 +19,7 @@
  */
 
 import { readdir, readFile, writeFile, stat, mkdir, cp, rm } from "node:fs/promises";
-import { resolve, join, relative, basename } from "node:path";
+import { resolve, join, relative, basename, sep } from "node:path";
 import { parseArgs } from "node:util";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -93,6 +93,7 @@ const EXCLUDED_PATHS = [
   "tests/team-site-service.test.mjs",
   "tests/team-site-service-lan.test.mjs",
   "tests/archive",
+  "examples/archive",
   "og-roles/roles/imported.",
   "docs/development/archive",
   "docs/development/release-uat-checklist.md",
@@ -108,7 +109,9 @@ const GENERAL_EXCLUDED_NAMES = [
   "runs-index.json"
 ];
 
-const FORBIDDEN_USER_PATTERN = ["/Users", "/fred"].join("");
+const LOCAL_OGS_STATE_NAMES = new Set(["README.md", "project.json", "providers"]);
+
+const LOCAL_PATH_PATTERN = /(?:^|[\s"'`=(,:])(?!(?:\/Users\/maple\/private\/workspace\/data\.txt|\/home\/operator)(?:[\s"'`<>]|$))(?:\/(?:Users|home)\/[^\s"'`<>]+|\/(?:root|var|srv|mnt|Volumes|private\/Users|private\/var|opt)\/(?!homebrew(?:[\/\s"'`<>]|$)|production-app(?:[\/\s"'`<>]|$))[^\s"'`<>]+|[A-Za-z]:[\\/]Users[\\/][^\s"'<>]*)/m;
 
 const REPRODUCE_GUIDE_CONTENT = `# Reproducibility Guide for Double-Blind Peer Review
 
@@ -243,7 +246,7 @@ async function verifyCoreIndependence() {
 }
 
 async function copyCleanDirectory(srcDir, destDir, options = {}) {
-  const { excludeNames = [], excludePaths = [] } = options;
+  const { excludeNames = [], excludePaths = [], excludeIgnored = true, excludeUntracked = true } = options;
   await mkdir(destDir, { recursive: true });
   const entries = await readdir(srcDir, { withFileTypes: true });
 
@@ -255,6 +258,9 @@ async function copyCleanDirectory(srcDir, destDir, options = {}) {
     if (excludeNames.includes(entry.name)) continue;
     if (entry.name.endsWith(".tmp")) continue;
     if (excludePaths.some(p => rel === p || rel.startsWith(p + "/") || rel.startsWith(p))) continue;
+    if (isLocalOgsStatePath(rel, entry.name)) continue;
+    if (excludeUntracked && entry.isFile() && !isTrackedByGit(rel)) continue;
+    if (excludeIgnored && isIgnoredByGit(rel)) continue;
 
     if (entry.isDirectory()) {
       await copyCleanDirectory(srcPath, destPath, options);
@@ -262,6 +268,40 @@ async function copyCleanDirectory(srcDir, destDir, options = {}) {
       await cp(srcPath, destPath);
     }
   }
+}
+
+function isIgnoredByGit(relPath) {
+  try {
+    execFileSync("git", ["check-ignore", "--quiet", "--no-index", "--", gitRelativePath(relPath)], {
+      cwd: repoRoot,
+      stdio: "ignore"
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+let trackedRepoFiles;
+
+function isTrackedByGit(relPath) {
+  if (!trackedRepoFiles) {
+    trackedRepoFiles = new Set(
+      execFileSync("git", ["ls-files", "-z"], { cwd: repoRoot, encoding: "utf8" })
+        .split("\0")
+        .filter(Boolean)
+    );
+  }
+  return trackedRepoFiles.has(gitRelativePath(relPath));
+}
+
+function gitRelativePath(relPath) {
+  return relPath.split(sep).join("/");
+}
+
+function isLocalOgsStatePath(relPath, entryName) {
+  const parts = relPath.split(sep);
+  return parts.includes(".ogs") && LOCAL_OGS_STATE_NAMES.has(entryName);
 }
 
 async function rewriteOmittedInternalReferences(docsDir) {
@@ -352,7 +392,15 @@ async function sanitizePackageJson(targetDir) {
     if (pkg.scripts.test) {
       pkg.scripts.test = "pnpm build && node scripts/run-node-tests.mjs";
     }
-    delete pkg.scripts["test:team-site"];
+    for (const [name, command] of Object.entries(pkg.scripts)) {
+      if (
+        name === "export:open-core" ||
+        name.includes("team-site") ||
+        /(?:apps\/team-site|export-open-source-core|start-team-site-tailnet)/.test(command)
+      ) {
+        delete pkg.scripts[name];
+      }
+    }
   }
 
   await writeFile(pkgPath, JSON.stringify(pkg, null, 2) + "\n", "utf8");
@@ -363,7 +411,7 @@ async function scanComprehensiveRedaction(targetDir) {
   const leaks = [];
 
   const SENSITIVE_PATTERNS = [
-    { name: "Machine Local Path", regex: new RegExp(FORBIDDEN_USER_PATTERN) },
+    { name: "Machine Local Path", regex: LOCAL_PATH_PATTERN },
     { name: "Unredacted Raw Session ID", regex: /ses_e1af[a-zA-Z0-9]+/ },
     { name: "Unredacted Raw Message ID", regex: /msg_093c[a-zA-Z0-9]+/ },
     { name: "Raw Ephemeral Backend Port 52195", regex: /:52195\b/ },
@@ -372,7 +420,7 @@ async function scanComprehensiveRedaction(targetDir) {
   ];
 
   for (const file of allFiles) {
-    if (file.endsWith(".png") || file.endsWith(".jpg") || file.endsWith(".tgz") || file.endsWith(".tar.gz")) continue;
+    if (file.endsWith(".png") || file.endsWith(".jpg") || file.endsWith(".pdf") || file.endsWith(".tgz") || file.endsWith(".tar.gz")) continue;
     const rel = relative(targetDir, file);
 
     try {
@@ -434,7 +482,7 @@ async function main() {
     console.log("    + scripts/ (filtered: excluded team-site-service.mjs, start-team-site-tailnet.ps1)");
     console.log("    + tests/ (filtered: excluded team-site-* tests, archive/)");
     console.log("    + docs/paper/ & docs/development/ (filtered: 3 cited evidence records only, no archive/screenshots)");
-    console.log("    + examples/ (filtered: no runs/ or runs-index.json)");
+    console.log("    + examples/ (filtered: archive/, runs/, runs-index.json, and ignored local state)");
     console.log("    + og-roles/roles/ (filtered: open benchmark roles only, no imported.*)");
     console.log("    + .ogs/ (static config files only)");
     console.log("  Individual Core Files:");
@@ -448,6 +496,9 @@ async function main() {
   }
 
   const outDir = resolve(values["out-dir"] || join(repoRoot, "dist", "anonymous-artifact"));
+  if (outDir === repoRoot || repoRoot.startsWith(`${outDir}${sep}`)) {
+    throw new Error(`Refusing to remove repository or its ancestor as export directory: ${outDir}`);
+  }
   console.log(`[-] Preparing clean export directory: ${outDir}`);
   await rm(outDir, { recursive: true, force: true });
   await mkdir(outDir, { recursive: true });
@@ -516,7 +567,7 @@ async function main() {
   const examplesSrc = join(repoRoot, "examples");
   const examplesDest = join(outDir, "examples");
   await copyCleanDirectory(examplesSrc, examplesDest, {
-    excludeNames: GENERAL_EXCLUDED_NAMES
+    excludeNames: [...GENERAL_EXCLUDED_NAMES, "archive"]
   });
 
   // 7. Copy og-roles without imported agency roles
@@ -535,7 +586,8 @@ async function main() {
   const ogsEntries = await readdir(join(repoRoot, ".ogs"), { withFileTypes: true });
   for (const entry of ogsEntries) {
     if (entry.isFile() && (entry.name.endsWith(".json") || entry.name.endsWith(".md"))) {
-      if (entry.name === "runs-index.json") continue;
+      const rel = join(".ogs", entry.name);
+      if (entry.name === "runs-index.json" || isLocalOgsStatePath(rel, entry.name) || !isTrackedByGit(rel) || isIgnoredByGit(rel)) continue;
       await cp(join(repoRoot, ".ogs", entry.name), join(ogsConfigDest, entry.name));
     }
   }
@@ -583,7 +635,6 @@ async function main() {
   // Also save manifest to docs/development/evidence/ in main repo for git commit history
   const mainRepoManifestPath = join(repoRoot, "docs", "development", "evidence", "stage-a-artifact-manifest.json");
   await writeFile(mainRepoManifestPath, JSON.stringify({
-    generatedAt: new Date().toISOString(),
     totalFiles: manifest.length,
     files: manifest
   }, null, 2) + "\n", "utf8");
