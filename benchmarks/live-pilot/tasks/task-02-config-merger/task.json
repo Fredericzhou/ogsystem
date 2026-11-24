@@ -1,0 +1,18 @@
+{
+  "taskId": "task-02-config-merger",
+  "title": "Concurrent Same-File Config Deep Merger & Env Interpolator",
+  "category": "concurrent_same_file_conflict",
+  "promptSingle": "Implement both `merge_dicts` (deep recursive merge with list_strategy='replace' or 'append', without mutating inputs) and `resolve_env_vars` (recursively resolve `${VAR}` and `${VAR:default}` in string values, raising KeyError if missing without default) inside `config_pkg/merger.py`.",
+  "roles": [
+    {
+      "roleId": "merge_dev",
+      "prompt": "You are merge_dev. Implement ONLY `merge_dicts(base, override, list_strategy='replace')` in `config_pkg/merger.py`: deep recursive dict merge without mutating inputs; when both values are lists, replace if list_strategy=='replace' else concatenate if list_strategy=='append'. Keep `resolve_env_vars` untouched."
+    },
+    {
+      "roleId": "env_dev",
+      "prompt": "You are env_dev. Implement ONLY `resolve_env_vars(config, env)` in `config_pkg/merger.py`: recursively resolve `${VAR}` and `${VAR:default}` placeholders in all string values (inside nested dicts and lists) using the `env` mapping; raise KeyError if a variable is missing and has no default. Keep `merge_dicts` untouched."
+    }
+  ],
+  "reconcilerPrompt": "Two parallel roles edited `config_pkg/merger.py` and caused a merge conflict. Reconcile BOTH `merge_dicts` and `resolve_env_vars` cleanly in `config_pkg/merger.py` so both features work together without losing either role's implementation.",
+  "hiddenTestFile": "hidden_tests/test_merger_hidden.py"
+}

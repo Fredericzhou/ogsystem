@@ -1,0 +1,119 @@
+{
+  "suiteId": "ogs-v2-pilot-suite-v1",
+  "version": "1.0.0",
+  "frozenAt": "2026-11-24",
+  "description": "Stratified 10-task Pilot benchmark suite (5 Software + 5 Office/Knowledge) with canary fields, hidden oracle criteria, and fault-injection hooks for Arm A/B1/B2/C and Ablation evaluation.",
+  "strata": ["software", "office_knowledge"],
+  "tasks": [
+    {
+      "taskId": "SW-01",
+      "stratum": "software",
+      "title": "Parallel Module & Test Implementation (Calculator Core)",
+      "roles": ["architect", "implementer", "tester", "reviewer"],
+      "joinMode": "all_of",
+      "loopBudget": 2,
+      "canaryField": "internal_budget_code_SW01",
+      "faultProfile": "none",
+      "oracle": "hidden_pytest_suite"
+    },
+    {
+      "taskId": "SW-02",
+      "stratum": "software",
+      "title": "Concurrent Same-File Refactoring Conflict Recovery",
+      "roles": ["planner", "dev_a", "dev_b", "integrator"],
+      "joinMode": "all_of",
+      "loopBudget": 2,
+      "canaryField": "internal_api_token_SW02",
+      "faultProfile": "concurrent_same_path_conflict",
+      "oracle": "hidden_pytest_suite_and_canonical_integrity"
+    },
+    {
+      "taskId": "SW-03",
+      "stratum": "software",
+      "title": "Multi-File API Schema Evolution with Stale-Head CAS Race",
+      "roles": ["schema_designer", "backend_dev", "client_dev", "release_auditor"],
+      "joinMode": "all_of",
+      "loopBudget": 3,
+      "canaryField": "internal_signing_salt_SW03",
+      "faultProfile": "stale_canonical_head_cas",
+      "oracle": "hidden_contract_tests_and_cas_reject"
+    },
+    {
+      "taskId": "SW-04",
+      "stratum": "software",
+      "title": "Quorum Security Patch with Partial Role Failure",
+      "roles": ["triage", "patcher_a", "patcher_b", "patcher_c", "verifier"],
+      "joinMode": "quorum_of_2",
+      "loopBudget": 2,
+      "canaryField": "internal_cve_embargo_SW04",
+      "faultProfile": "join_source_failure_sticky",
+      "oracle": "hidden_security_tests_and_sticky_fail"
+    },
+    {
+      "taskId": "SW-05",
+      "stratum": "software",
+      "title": "Iterative Bugfix Under Bounded Rework Budget Exhaustion",
+      "roles": ["debugger", "fixer", "qa_reviewer"],
+      "joinMode": "none",
+      "loopBudget": 2,
+      "canaryField": "internal_customer_id_SW05",
+      "faultProfile": "loop_budget_exhaustion",
+      "oracle": "bounded_termination_and_escalation_state"
+    },
+    {
+      "taskId": "OF-01",
+      "stratum": "office_knowledge",
+      "title": "Multi-Chapter Management Consulting Market Sizing Brief",
+      "roles": ["lead_consultant", "market_analyst", "financial_modeler", "editor"],
+      "joinMode": "all_of",
+      "loopBudget": 2,
+      "canaryField": "confidential_client_margin_OF01",
+      "faultProfile": "none",
+      "oracle": "frozen_rubric_and_claim_grounding"
+    },
+    {
+      "taskId": "OF-02",
+      "stratum": "office_knowledge",
+      "title": "Compliance Policy Redlining Without Overwriting Prior Drafts",
+      "roles": ["drafter", "legal_reviewer", "compliance_auditor"],
+      "joinMode": "all_of",
+      "loopBudget": 2,
+      "canaryField": "privileged_counsel_note_OF02",
+      "faultProfile": "concurrent_same_path_conflict",
+      "oracle": "frozen_rubric_and_intermediate_diff_audit"
+    },
+    {
+      "taskId": "OF-03",
+      "stratum": "office_knowledge",
+      "title": "Cross-Document Quarterly Financial Reconciliation Report",
+      "roles": ["data_collector", "reconciler", "risk_officer", "publisher"],
+      "joinMode": "all_of",
+      "loopBudget": 2,
+      "canaryField": "restricted_audit_flag_OF03",
+      "faultProfile": "stale_canonical_head_cas",
+      "oracle": "frozen_numeric_checks_and_release_digest"
+    },
+    {
+      "taskId": "OF-04",
+      "stratum": "office_knowledge",
+      "title": "Three-Expert Medical/Technical Quorum Synthesis with Absent Specialist",
+      "roles": ["coordinator", "expert_a", "expert_b", "expert_c", "synthesizer"],
+      "joinMode": "quorum_of_2",
+      "loopBudget": 1,
+      "canaryField": "patient_cohort_secret_OF04",
+      "faultProfile": "join_source_failure_sticky",
+      "oracle": "frozen_rubric_and_quorum_snapshot"
+    },
+    {
+      "taskId": "OF-05",
+      "stratum": "office_knowledge",
+      "title": "Executive RFP Proposal Under Unsatisfiable Review Loop",
+      "roles": ["proposal_writer", "pricing_lead", "executive_reviewer"],
+      "joinMode": "none",
+      "loopBudget": 2,
+      "canaryField": "floor_price_confidential_OF05",
+      "faultProfile": "loop_budget_exhaustion",
+      "oracle": "bounded_termination_and_no_false_completion"
+    }
+  ]
+}

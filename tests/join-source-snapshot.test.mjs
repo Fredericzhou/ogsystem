@@ -5,6 +5,45 @@ import path from "node:path";
 import { mkdtemp, mkdir, readFile, rm, symlink } from "node:fs/promises";
 
 import { runSystemWithAdapter } from "../dist/runtime/adapter.js";
+import { buildJoinSourceStatus, mergeJoinSourceStatus } from "../dist/runtime/graph-mode-registry.js";
+
+test("four-valued join source status preserves sticky failed invariant across all 4x4 transitions", () => {
+  const states = ["pending", "arrived", "skipped", "failed"];
+
+  // 1. Absorbing top element: failed is never silently downgraded to skipped, arrived, or pending.
+  for (const state of states) {
+    assert.equal(mergeJoinSourceStatus("failed", state), "failed", `failed -> ${state} must remain failed`);
+    assert.equal(mergeJoinSourceStatus(state, "failed"), "failed", `${state} -> failed must escalate to failed`);
+  }
+
+  // 2. Irreversibility: arrived and skipped cannot revert to pending or flip into each other.
+  assert.equal(mergeJoinSourceStatus("arrived", "pending"), "arrived");
+  assert.equal(mergeJoinSourceStatus("arrived", "skipped"), "arrived");
+  assert.equal(mergeJoinSourceStatus("arrived", "arrived"), "arrived");
+  assert.equal(mergeJoinSourceStatus("skipped", "pending"), "skipped");
+  assert.equal(mergeJoinSourceStatus("skipped", "arrived"), "skipped");
+  assert.equal(mergeJoinSourceStatus("skipped", "skipped"), "skipped");
+
+  // 3. Pending advances to any observed status.
+  for (const state of states) {
+    assert.equal(mergeJoinSourceStatus("pending", state), state);
+    assert.equal(mergeJoinSourceStatus(undefined, state), state);
+  }
+
+  // 4. buildJoinSourceStatus precedence: failed > skipped > arrived > pending.
+  const built = buildJoinSourceStatus({
+    declaredSources: ["role-a", "role-b", "role-c", "role-d"],
+    completedSourceRoleIds: ["role-a", "role-b", "role-c"],
+    skippedSourceRoleIds: ["role-a", "role-b"],
+    failedSourceRoleIds: ["role-a"]
+  });
+  assert.deepEqual(built, {
+    "role-a": "failed",
+    "role-b": "skipped",
+    "role-c": "arrived",
+    "role-d": "pending"
+  });
+});
 
 test("quorum decision event freezes source role, branch, status, and arrival time", async () => {
   const repoRoot = process.cwd();

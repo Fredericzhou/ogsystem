@@ -129,3 +129,21 @@ Open-Core 分层架构旨在同时满足**学术严谨可复现（Academic Repro
 
 1. **红线规则**：任何团队成员或自动化脚本，在未获得上述 8 项门禁的全部确认前，不得修改论文将其声明为“已在公共网络公开”。
 2. **审计归档**：每项门禁的通过记录必须附带对应的 CI 运行日志链接或校验报告，归档于 `docs/development/evidence/release-gates/`。
+
+---
+
+## 四、 双轨并行执行边界与纪律 (Dual-Track Execution Boundaries)
+
+在完成代码物理隔离、`verifyExcludedPathsAbsent` 白名单硬性断言与阶段 A 匿名包基线化之后，**论文轨道（Academic Track）**与**商业化轨道（Commercial Track）**完全独立并行推进，并遵守以下四条硬性边界：
+
+1. **审稿包基线与受控升版规则**：
+   - 已锁定的阶段 A 匿名包（当前基线 SHA-256 `2ad9a92c...`，803 文件）免疫商业层（`apps/team-site` 等）日常改动；
+   - 当论文轨道新增形式化证明、补齐核心协议断言或完成新的实证对照实验并写入论文正文时，**必须受控重新打包升版（如 Stage A-v2）并更新清单与哈希**，严禁出现“正文声称新数据/新测试，而审稿包停留在旧基线”的脱节现象。
+2. **Core 实验基线 Tag 冻结与受控回流**：
+   - 论文轨道启动对照实验前，须为 Core Runtime 打独立 Git Tag（如 `paper-eval-v1`）以锁定实验复现基线；
+   - 商业层必须严格单向依赖 Core 公共 API 与事件契约（`/api/v2`、`events.ndjson`、`WorkspaceRef`）；若商业 UAT 暴露出 Core 自身缺陷，按受控 Bugfix 窗口评审后决定是否回流，不得在实验进行中静默篡改 Core 协议语义。
+3. **`src/visualizer/` 商业增量冻结**：
+   - 在阶段 B 执行 Gate 2 物理拆分（提取只读 Inspector、剥离 Studio 私有编排）之前，商业轨道新增私有能力**一律落在 `apps/team-site/`，禁止继续向 `src/visualizer/` 叠加商业私有逻辑**，防止重打 Stage A 审稿包时误带入商业增量并控制后续拆分成本。
+4. **证据口径分离与 Linux Clean-Room 补验**：
+   - 论文严禁将商业 UAT 未签收项包装为学术结论，亦不得将确定性 `local_shell` 工程回归测试等同于真实大模型实证评测；
+   - 当前阶段 A 复现报告基于 macOS 本地独立目录验证，正式向审稿人提交匿名包前，须在无缓存 Linux 容器环境中补跑一次端到端 Clean-Room 复现验证。

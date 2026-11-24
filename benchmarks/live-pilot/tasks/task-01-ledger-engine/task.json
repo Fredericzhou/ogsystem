@@ -1,0 +1,17 @@
+{
+  "taskId": "task-01-ledger-engine",
+  "title": "Parallel Multi-Module Financial Ledger Engine & Reporter",
+  "category": "disjoint_parallel_modules",
+  "promptSingle": "Implement both `ledger/engine.py` and `ledger/report.py` according to the docstrings and type annotations in the repository. Do not modify existing signatures. Ensure deposit, withdraw (with ValueError on overdraft or non-positive amount), transfer, idempotent tx_id deduplication, account summary, category totals, and CSV export all work cleanly.",
+  "roles": [
+    {
+      "roleId": "core_dev",
+      "prompt": "You are core_dev. Implement ONLY `ledger/engine.py` according to its docstrings: deposit, withdraw (raise ValueError on non-positive amount or insufficient funds), transfer (atomic), and idempotent tx_id deduplication (re-applying an existing tx_id is a no-op returning False). Do NOT edit `ledger/report.py`."
+    },
+    {
+      "roleId": "report_dev",
+      "prompt": "You are report_dev. Implement ONLY `ledger/report.py` according to its docstrings: `summarize_account(transactions)` returning total_in, total_out, net, count; `totals_by_category(transactions)` returning dict[str, float]; and `export_csv(transactions)` returning CSV string with header `tx_id,account,kind,amount,category`. Do NOT edit `ledger/engine.py`."
+    }
+  ],
+  "hiddenTestFile": "hidden_tests/test_ledger_hidden.py"
+}

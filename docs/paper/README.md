@@ -11,6 +11,8 @@
 | **[`ogsystem-paper-zh.md`](ogsystem-paper-zh.md)** | **中文版工程实践论文** (完整文稿) | 面向多角色 AI 协作、智能体运行时治理与协同工作流相关期刊或会议。 |
 | **[`ogsystem-paper-en.md`](ogsystem-paper-en.md)** | **英文版工程实践论文** (完整文稿) | 面向多智能体系统、AI 协作治理与可信工作流相关期刊或会议。 |
 | **[`ogsystem-submission-paper-en.md`](ogsystem-submission-paper-en.md)** | **英文投稿稿（V2）** | 按 RQ 组织的系统设计与工程验证论文；含先行工作归属、四层架构、共享 Workspace/Join/Release 状态、证据边界和研究限制。 |
+| **[`formal-model-and-proofs.md`](formal-model-and-proofs.md)** | **形式化模型与协议安全证明附录** | 责任席位 EFSM 代数、Context Map 字段封闭性、四值 Join 粘滞失败单调性、Expected-Head CAS 无覆盖一致性与有界循环终止性证明。 |
+| **[`experiment-benchmark-design.md`](experiment-benchmark-design.md)** | **前沿文献对标实验设计与评测脚手架** | 直接对标 STORM、Executable-FSM、TraceDev、Auditable Agents、Sustainable Agents 的实验组（A/B1/B2/C + 3 项消融）、指标矩阵与 `benchmarks/` 可运行脚本说明。 |
 | **[`experimental-validation-plan-bilingual.md`](experimental-validation-plan-bilingual.md)** | **中英双语实验设计** | 预注册导向的单 Agent / 通用多 Agent / OGS V2 对照方案；定义交付成功、Evidence 支持陈述、幻觉测量边界、故障恢复、样本量规划、统计方法和论文直达地址。 |
 | **[`multi-agent-collaboration-models-and-tech-stacks.md`](multi-agent-collaboration-models-and-tech-stacks.md)** | **多智能体编排与协作模型专题调研报告** (深度对照) | 深度解构 9 种编排范式、通信工具、底层技术栈（Herdr, Orca, OMP, Codex v2, Claude Code 等）及 EFSM/DAG 模型包含关系，**方便快速参考与横向对照**。 |
 | **[`traceable-references.md`](traceable-references.md)** | **可溯源文献与标准研究线索** | 包含经典理论与 2024–2026 MAS 研究的 DOI、代码库、公开地址，以及待官方核验的 GB/Z 候选条目。 |
@@ -39,7 +41,7 @@ LangGraph / 多角色 Agent / Git Worktree   V2 单 Project Workspace 状态协�
 
 ## 分层开源架构与可复现性边界 (Tiered Open-Source Architecture & Reproducibility)
 
-为平衡学术严谨性（顶级期刊与会议可复现性要求）与商业工程壁垒，本项目采用 **Open-Core 分层开源战略**。以下规划为目标架构规范；正式对外发布代码、创建公开仓库与生成 Zenodo DOI 需满足全部八项发布门禁（见 [`docs/development/open-core-release-gate-checklist.md`](../development/open-core-release-gate-checklist.md)）：
+为平衡学术严谨性（顶级期刊与会议可复现性要求）与商业工程壁垒，本项目采用 **Open-Core 分层开源战略**。以下规划为目标架构规范；正式对外发布代码、创建公开仓库与生成 Zenodo DOI 需满足全部八项发布门禁，且论文轨道与商业化轨道的并行隔离规则（审稿包受控升版、Core 实验 Tag 冻结、`src/visualizer/` 商业增量冻结与 Linux Clean-Room 补验）统一受 [`docs/development/open-core-release-gate-checklist.md`](../development/open-core-release-gate-checklist.md) 约束：
 
 ### 1. 公开开源核心（Open-Source Core 目标范围: Apache-2.0）
 涵盖支撑论文核心学术主张与全部形式化证明的运行时与复现包：
