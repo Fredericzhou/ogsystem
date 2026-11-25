@@ -111,6 +111,7 @@ OfficeBench 等非源码任务不属于当前论文主实验，暂不接入。
 | **Phase 2a** | **确定性状态机消融**：C-full 与普通命令式基线的六类故障轨迹 | `node benchmarks/run-efsm-ablation.mjs --out=benchmarks/results/efsm-ablation.json` | ✅ 已完成 |
 | **Phase 3** | **公开基准扩展**：Commit0-Lite、外部框架和 OfficeBench均延期，不阻塞本文核心结论 | 不纳入当前论文主表 | ⏸️ 已延期 |
 | **Phase 4** | **论文回填**：将核心实验汇总、限制和复现指令回填正文与附录 | 正文结论与原始 JSON 证据一致 | ✅ 已完成 |
+| **Phase 5** | **归档确权与发表**：Git 冻结 Tag → Zenodo 归档并取得 DOI → 按当前投稿指南向 Elsevier *Science of Computer Programming*（SCICO；目标 OSP 轨道如仍开放）投稿 → arXiv (`cs.SE`) 预印本 | 补齐作者/ORCID、转 `elsarticle` LaTeX、回填 Zenodo DOI，并保存投稿时采用的政策页面快照 | ⏭️ 下一步 |
 
 ### Phase 1/2 v3 实跑记录（2026-11-25）
 
@@ -132,3 +133,15 @@ Arm A 和 B1 的 `CanonicalIntegrity = 0/10` 源于其在工作区内直接产�
 该结果支持有限结论：C 在这组任务上保持较高的原始功能通过率（9/10），FCR 为 0/10，并在 9/10 单元满足四项协议无关审计维度；B2 的 FCR 为 5/10，VerifiedDelivery 为 3/10，说明 Worktree 本身不能保证交付事实。A、B1 在隐藏测试上均为 10/10，但缺少角色不可变归因或完整交付审计链。C 有 1 个冲突单元未发布，失败没有被隐藏在成功率中。确定性消融结果见 [`benchmarks/results/efsm-ablation.json`](../../benchmarks/results/efsm-ablation.json)：普通命令式基线在 6 类轨迹均出现目标违规，C-full 为 0/6。数据只支持冻结任务集和统一模型下的系统级结论，不支持跨模型、外部框架或普遍成本优势。
 
 完整重现实验的环境、固定参数和逐条命令见 [`benchmarks/CORE-EXPERIMENT-REPRO.md`](../../benchmarks/CORE-EXPERIMENT-REPRO.md)。
+
+---
+
+## 7. 论文归档与发表计划（Zenodo → Elsevier SCICO → arXiv）
+
+实验与文本审核通过后，按以下三步推进。该路线通常与期刊投稿不冲突，但最终以投稿时的期刊指南、预印本政策、作者协议和各平台条款为准。
+
+| 步骤 | 平台 / 目标 | 核心动作与交付物 | 关键注意事项 |
+| :--- | :--- | :--- | :--- |
+| **Step 1** | **Git 冻结 + Zenodo 归档** | 提交当前 `paper/experiments-v2` 全部变更并打冻结 Tag（如 `paper-eval-v3`）；将开源核心代码、40 单元 `v3-seed*.json`、40 个交付快照及 `efsm-ablation.json` 打包发布至 Zenodo，发布记录后取得 DOI（格式如 `10.5281/zenodo.xxxxxxx`）。 | DOI 发布记录通常作为永久归档标识，不能按普通文件方式删除，但记录可能被弃用或产生新版本；不要把占位 DOI 写入论文。上传前确认**不含** `apps/team-site/`、专有商业角色、个人数据或密钥，并为代码、数据和论文分别选择明确许可证。`Restricted` 只在确有访问控制需要时使用，因为审稿人需要能够访问复现包。若论文另发 arXiv，Zenodo 可只归档代码与实验包，并在记录中关联论文。参见 [Zenodo DOI 说明](https://help.zenodo.org/docs/deposit/describe-records/reserve-doi/) 和 [Zenodo 记录说明](https://help.zenodo.org/docs/deposit/describe-records/)。 |
+| **Step 2** | **Elsevier *Science of Computer Programming*（SCICO）正式投稿** | 补齐 [`ogsystem-submission-paper-en.md`](ogsystem-submission-paper-en.md) 中的作者、单位、[ORCID](https://orcid.org/) 与联系邮箱，将真实 Zenodo DOI 回填至元数据 `C2`；按 [SCICO Guide for Authors](https://www.sciencedirect.com/journal/science-of-computer-programming/publish/guide-for-authors) 和 [Elsevier LaTeX instructions](https://www.elsevier.com/authors/policies-and-guidelines/latex-instructions) 的当前要求转为 `elsarticle` 模板，将 Mermaid 图导出为期刊接受的矢量图并通过 [Editorial Manager](https://www.editorialmanager.com/scico/default.aspx) 投稿。 | “OSP” 轨道、评审模式、订阅/开放获取选项和 APC 以投稿页面当日信息为准，不预先承诺“单盲”或“零版面费”。在 Cover Letter 和投稿系统的预印本问题中如实注明 Zenodo DOI；录用后再按 Zenodo 的 related identifiers 关联正式期刊 DOI。 |
+| **Step 3** | **arXiv 预印本** | 按 [arXiv 分类表](https://arxiv.org/category_taxonomy) 选择 `cs.SE`（Software Engineering）作为主分类；只有论文确实覆盖多智能体系统时再申请 `cs.MA` 交叉分类，并上传作者原稿（Author Original / Preprint），关联代码 Zenodo DOI。 | arXiv 的 [endorsement](https://info.arxiv.org/help/endorsement.html) 主要适用于首次投稿或首次进入某分类的账户，不是每次上传都必须重新取得。遵循 [Elsevier sharing policy](https://www.elsevier.com/about/policies-and-standards/sharing)，上传作者原稿，不上传出版社排版终稿；如 Step 1 已归档论文 PDF，在 Zenodo 中补充关联 arXiv ID。 |
