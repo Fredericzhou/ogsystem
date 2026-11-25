@@ -4,6 +4,22 @@ PDF copies below were retrieved directly from official open-access endpoints (ar
 
 All files are verified to start with `%PDF-` magic bytes, and their SHA-256 digests are computed and documented below for reproducible verification.
 
+## Core comparator and evidence set for the current paper
+
+The seven papers below are the focused reading set for the current OGS study. The thematic index is separate from the chronological archive sections that follow; it does not imply that their published scores are OGS control results.
+
+| Theme | Paper | Local copy | Evidence used in this paper |
+| --- | --- | --- | --- |
+| Role-based software collaboration | MetaGPT (ICLR 2024) | `metagpt-arxiv-2308.00352.pdf` | HumanEval/MBPP and SoftwareDev; quality, time, tokens, code size, and revision cost |
+| Communicative software collaboration | ChatDev (ACL 2024) | `chatdev-arxiv-2307.07924.pdf` | GPT-Engineer/MetaGPT comparisons; pairwise quality judgments and runtime, tokens, files, and lines |
+| State-driven workflow control | StateFlow (COLM 2024) | `stateflow-arxiv-2403.11322.pdf` | StateFlow versus ReAct on InterCode and ALFWorld; success and inference cost |
+| Executable finite-state control | Executable-FSM (2026 preprint) | `executable-fsm-arxiv-2611.10884.pdf` | Long-horizon procedure fidelity, cost, and recovery-oriented execution controls |
+| Workspace/state management | STORM (2026 preprint) | `storm-arxiv-2605.20563.pdf` | Single-agent and Git-worktree comparisons on Commit0-Lite/PaperBench; score, cost, time, and conflict timing |
+| Artifact traceability | TraceDev (2026 preprint) | `tracedev-arxiv-2607.18886.pdf` | Traceability graph and Validator Agent; ETOUR/SMOS semantic coverage and success |
+| Auditability and responsibility | Auditable Agents (2026 preprint) | `auditable-agents-arxiv-2604.05485.pdf` | Five auditability dimensions, ecosystem findings, runtime overhead, and recovery evidence |
+
+The last four entries are retained as recent preprints unless a cited archival venue record is available; they are used as related-work evidence, not as claims that OGS is the first state-machine, workspace-management, traceability, or auditability system.
+
 ---
 
 ## 1. 2026 最新前沿多智能体与状态机/形式化方法研究 (2026 State Machine & Multi-Agent Research)
