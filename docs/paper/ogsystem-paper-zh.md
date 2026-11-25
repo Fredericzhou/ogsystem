@@ -57,6 +57,7 @@ Anthropic 的 *Building Effective Agents* 总结了 routing、orchestrator-worke
 | Wang 等（2024）自主 Agent 综述 | 汇总自主 Agent 的架构、记忆、规划、工具和评估路线 | 用于扩大相关工作覆盖与校准分类；综述不证明 OGS 特定 Workspace/Release 协议的新颖性。 |
 | Xi 等（2025）Agent 综述 | 总结 LLM Agent 的能力、架构与研究方向 | OpenAlex cited_by_count 为 3,314（2026-11-19）；用于定位 Agent 研究趋势，不作为 OGS 治理有效性证据。 |
 | OpenHands（ICLR 2025；预印本 2024） | 开放式软件开发 Agent 平台及运行时 | 直接相关的软件 Agent 执行与工作区参照；本文尚未完成 WorkspaceRef、合并、Evidence、Release 协议的同条件逐项比较。 |
+| StateFlow（COLM 2024） | 基于显式有限状态机（FSM）的任务级 LLM 流程控制与降本增效 | 证明了显式状态驱动可提升过程可控性并抑制失控循环；OGS V2 在此基础上扩展为结合 Single-Workspace Contract 的 EFSM（携带守卫条件、循环预算、四值 Join、expected-head CAS 与 fail-closed Release 门禁），侧重评估交付可核验性与失败安全，不直接套用其 Token 降本结论。 |
 
 ---
 

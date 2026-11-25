@@ -15,10 +15,10 @@ The seven papers below are the focused reading set for the current OGS study. Th
 | State-driven workflow control | StateFlow (COLM 2024) | `stateflow-arxiv-2403.11322.pdf` | StateFlow versus ReAct on InterCode and ALFWorld; success and inference cost |
 | Executable finite-state control | Executable-FSM (2026 preprint) | `executable-fsm-arxiv-2611.10884.pdf` | Long-horizon procedure fidelity, cost, and recovery-oriented execution controls |
 | Workspace/state management | STORM (2026 preprint) | `storm-arxiv-2605.20563.pdf` | Single-agent and Git-worktree comparisons on Commit0-Lite/PaperBench; score, cost, time, and conflict timing |
-| Artifact traceability | TraceDev (2026 preprint) | `tracedev-arxiv-2607.18886.pdf` | Traceability graph and Validator Agent; ETOUR/SMOS semantic coverage and success |
+| Artifact traceability | TraceDev (ISSTA 2026; arXiv author copy) | `tracedev-arxiv-2607.18886.pdf` | Traceability graph and Validator Agent; ETOUR/SMOS semantic coverage and success |
 | Auditability and responsibility | Auditable Agents (2026 preprint) | `auditable-agents-arxiv-2604.05485.pdf` | Five auditability dimensions, ecosystem findings, runtime overhead, and recovery evidence |
 
-The last four entries are retained as recent preprints unless a cited archival venue record is available; they are used as related-work evidence, not as claims that OGS is the first state-machine, workspace-management, traceability, or auditability system.
+Executable-FSM, STORM, and Auditable Agents are retained as recent arXiv preprints. TraceDev is marked as an ISSTA 2026 paper because its arXiv metadata records acceptance and DOI `10.1145/3832171`; the local file is still the arXiv author copy. These works are related-work evidence, not claims that OGS is the first state-machine, workspace-management, traceability, or auditability system.
 
 ---
 

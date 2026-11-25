@@ -68,6 +68,7 @@ The following studies were checked against DOI, ACL Anthology, OpenReview, or ar
 | Wang et al. (2024) survey of autonomous LLM agents | Surveys agent architectures, memory, planning, tools, and evaluation | Used to broaden related-work coverage and calibrate the taxonomy; it does not establish novelty of OGS's specific Workspace/Release protocol. |
 | Xi et al. (2025) survey of LLM-based agents | Surveys agent capabilities, architectures, and research directions | OpenAlex cited_by_count 3,314 (2026-11-19); used to position agent research, not as evidence that OGS governance works. |
 | OpenHands (ICLR 2025; 2024 preprint) | Open platform and runtime for software-development agents | Directly relevant software-agent execution and workspace reference; this paper has not completed a matched, item-by-item comparison of WorkspaceRef, merge, Evidence, and Release protocols. |
+| StateFlow (COLM 2024) | Explicit FSM-driven LLM task-solving workflows and cost-efficiency | Establishes that explicit state machines improve procedural control and curb unconstrained loops; OGS V2 extends this direction into an EFSM coupled with a Single-Workspace Contract (typed guards, loop budgets, four-valued Join, expected-head CAS, and fail-closed Release gates), evaluated specifically for delivery verifiability rather than token-cost reduction. |
 
 ---
 
