@@ -95,6 +95,10 @@ manual UAT scenarios or human sign-off in [`../release-uat-checklist.md`](../rel
 - The first package-install smoke attempt was stopped by the host reaching `ENOSPC`; after removing
   only the smoke's temporary install roots and restoring free space, both package-manager smokes
   passed.
-- The current working tree still contains the intended uncommitted CLI/example and Studio editor
-  stability changes. The final release gate must be rerun after those changes are committed as one
-  final source state.
+- After the validation changes were committed as `806543d4439c4aa26929f71c1fb7c21166ca99c9`
+  (`chore: harden release validation and runtime probes`), the final committed-source gate passed:
+  `pnpm test` (496 core passed, one Windows-only skip, Team Site 108/108),
+  `pnpm run test:examples`, `pnpm run test:docs-command-drift`, and
+  `pnpm run test:visualizer-browser` (Studio 17/17, Build 4/4; two deployment-only skips).
+  `git diff --check` passed and the working tree is clean. The local branch is one commit ahead of
+  `origin/main`; this record does not imply that the commit has been pushed or published.
