@@ -1774,6 +1774,124 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }));
     }
 
+    function captureContextMapRows(root) {
+      return Array.from(root?.querySelectorAll?.("[data-role-config-editor]") || []).map((editor) => ({
+        roleId: editor.getAttribute("data-role-config-editor") || "",
+        rows: Array.from(editor.querySelectorAll("[data-context-map-row]") || []).map((row) => ({
+          target: String(row.querySelector("[data-context-map-target]")?.value || ""),
+          selector: String(row.querySelector("[data-context-map-selector]")?.value || ""),
+          path: String(row.querySelector("[data-context-map-path]")?.value || ""),
+          optional: row.querySelector("[data-context-map-optional]")?.checked === true
+        }))
+      }));
+    }
+
+    function restoreContextMapRows(root, editors) {
+      for (const snapshot of editors) {
+        if (!snapshot.roleId || !snapshot.rows.length) continue;
+        const editor = Array.from(root?.querySelectorAll?.("[data-role-config-editor]") || [])
+          .find((candidate) => candidate.getAttribute("data-role-config-editor") === snapshot.roleId);
+        const rowsRoot = editor?.querySelector("[data-context-map-rows]");
+        const template = editor?.querySelector("[data-context-map-row-template]");
+        if (!rowsRoot || !template) continue;
+        for (const rowSnapshot of snapshot.rows) {
+          const rowValues = (row) => ({
+            target: String(row.querySelector("[data-context-map-target]")?.value || ""),
+            selector: String(row.querySelector("[data-context-map-selector]")?.value || ""),
+            path: String(row.querySelector("[data-context-map-path]")?.value || ""),
+            optional: row.querySelector("[data-context-map-optional]")?.checked === true
+          });
+          let row = Array.from(rowsRoot.querySelectorAll("[data-context-map-row]"))
+            .find((candidate) => JSON.stringify(rowValues(candidate)) === JSON.stringify(rowSnapshot));
+          if (!row && rowSnapshot.target) {
+            row = Array.from(rowsRoot.querySelectorAll("[data-context-map-row]"))
+              .find((candidate) => String(candidate.querySelector("[data-context-map-target]")?.value || "") === rowSnapshot.target);
+          }
+          if (!row && !rowSnapshot.target) {
+            row = Array.from(rowsRoot.querySelectorAll("[data-context-map-row]"))
+              .find((candidate) => !String(candidate.querySelector("[data-context-map-target]")?.value || "").trim());
+          }
+          if (!row) {
+            row = template.content?.firstElementChild?.cloneNode(true);
+            if (!row) continue;
+            rowsRoot.appendChild(row);
+          }
+          const target = row.querySelector("[data-context-map-target]");
+          const selector = row.querySelector("[data-context-map-selector]");
+          const path = row.querySelector("[data-context-map-path]");
+          const optional = row.querySelector("[data-context-map-optional]");
+          if (target) target.value = rowSnapshot.target;
+          if (selector) {
+            if (rowSnapshot.selector && !Array.from(selector.options || []).some((option) => option.value === rowSnapshot.selector)) {
+              const option = document.createElement("option");
+              option.value = rowSnapshot.selector;
+              option.textContent = rowSnapshot.selector;
+              selector.appendChild(option);
+            }
+            selector.value = rowSnapshot.selector;
+          }
+          if (path) path.value = rowSnapshot.path;
+          if (optional) optional.checked = rowSnapshot.optional;
+        }
+      }
+    }
+
+    function captureContractEditorState(root) {
+      return Array.from(root?.querySelectorAll?.(".studio-contract-editor") || []).map((editor) => ({
+        rows: Array.from(editor.querySelectorAll("[data-contract-row]") || []).map((row) => ({
+          kind: String(row.querySelector("[data-contract-kind]")?.value || "flow"),
+          properties: Array.from(row.querySelectorAll("[data-contract-property]") || []).map((field) => ({
+            name: field.getAttribute("data-contract-property") || "",
+            value: String(field.value || "")
+          }))
+        })),
+        files: Array.from(editor.querySelectorAll("[data-contract-file-editor]") || []).map((fileEditor) => ({
+          path: String(fileEditor.querySelector("[data-contract-file-save]")?.getAttribute("data-contract-file-save") || ""),
+          value: String(fileEditor.querySelector("[data-contract-file-content]")?.value || "")
+        }))
+      }));
+    }
+
+    function restoreContractEditorState(root, editors) {
+      const contractEditors = Array.from(root?.querySelectorAll?.(".studio-contract-editor") || []);
+      for (const [index, snapshot] of editors.entries()) {
+        const editor = contractEditors[index];
+        if (!editor) continue;
+        const rowsRoot = editor.querySelector("[data-contract-rows]");
+        const template = editor.querySelector("[data-contract-row-template]");
+        if (rowsRoot && template) {
+          let rows = Array.from(rowsRoot.querySelectorAll("[data-contract-row]"));
+          for (let rowIndex = rows.length; rowIndex < snapshot.rows.length; rowIndex += 1) {
+            const row = template.content?.firstElementChild?.cloneNode(true);
+            if (!row) break;
+            rowsRoot.appendChild(row);
+            rows.push(row);
+          }
+          snapshot.rows.forEach((rowSnapshot, rowIndex) => {
+            const row = rows[rowIndex];
+            if (!row) return;
+            const kind = row.querySelector("[data-contract-kind]");
+            if (kind) kind.value = rowSnapshot.kind;
+            for (const property of rowSnapshot.properties) {
+              const field = row.querySelector('[data-contract-property="' + property.name + '"]');
+              if (field) field.value = property.value;
+            }
+            const flowFields = row.querySelector("[data-contract-flow-fields]");
+            const roleFields = row.querySelector("[data-contract-role-fields]");
+            const roleInput = rowSnapshot.kind === "role_input";
+            if (flowFields) flowFields.hidden = roleInput;
+            if (roleFields) roleFields.hidden = !roleInput;
+          });
+        }
+        for (const fileSnapshot of snapshot.files) {
+          const fileEditor = Array.from(editor.querySelectorAll("[data-contract-file-editor]"))
+            .find((candidate) => String(candidate.querySelector("[data-contract-file-save]")?.getAttribute("data-contract-file-save") || "") === fileSnapshot.path);
+          const field = fileEditor?.querySelector("[data-contract-file-content]");
+          if (field) field.value = fileSnapshot.value;
+        }
+      }
+    }
+
     function restoreBlankContextMapRows(root, editors) {
       for (const snapshot of editors) {
         if (!snapshot.roleId || !snapshot.rows.length) continue;
@@ -3528,12 +3646,14 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         }
       };
       const setRolePackageHtml = (html) => {
-        const states = Array.from(rolePackage.querySelectorAll?.("details") || []).map((disclosure) => disclosure.open);
+        const disclosureStates = captureDisclosureState(rolePackage);
+        const contextMapRows = captureContextMapRows(rolePackage);
+        const contractEditorState = captureContractEditorState(rolePackage);
         if (rolePackage.innerHTML === html) return;
         rolePackage.innerHTML = html;
-        Array.from(rolePackage.querySelectorAll?.("details") || []).forEach((disclosure, index) => {
-          if (index < states.length) disclosure.open = states[index];
-        });
+        restoreDisclosureState(rolePackage, disclosureStates);
+        restoreContextMapRows(rolePackage, contextMapRows);
+        restoreContractEditorState(rolePackage, contractEditorState);
       };
       const selectedRoleIdValue = state.studioBridgeSelectedRoleId || "";
       const selectedFlowKeyValue = state.studioBridgeSelectedFlowKey || "";

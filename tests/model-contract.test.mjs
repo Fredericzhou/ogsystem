@@ -332,6 +332,29 @@ test("fresh discovery fails closed for unavailable and incapable pinned models",
   );
 });
 
+test("fresh discovery reports the backend reason when a provider is unavailable", () => {
+  const unavailableCatalog = catalog([]);
+  unavailableCatalog.sources = [{
+    backend: "qwen",
+    displayName: "Qwen Code",
+    iconKey: "qwen",
+    transport: "http",
+    sessionKind: "logical-session",
+    status: "installed_but_broken",
+    detail: "Shared Responses API credential is unavailable."
+  }];
+
+  assert.throws(
+    () => resolveModelSelectionForSystem({
+      system: system(["release-manager"]),
+      selection: { configVersion: "3", roles: { "release-manager": { backend: "qwen", modelId: "gpt-6-luna" } } },
+      catalog: unavailableCatalog
+    }),
+    (error) => error?.envelope?.errorCode === "MODEL_UNAVAILABLE"
+      && /Shared Responses API credential is unavailable/.test(error.message)
+  );
+});
+
 test("Harness normalization rejects Business Graph model bindings", () => {
   assert.throws(() => resolveModelSelectionForSystem({
     system: system(["writer"], { writer: "provider/offline" }),

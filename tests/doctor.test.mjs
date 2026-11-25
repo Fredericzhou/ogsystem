@@ -94,3 +94,36 @@ test("doctor skips online check when system context is absent", async () => {
 
   assert.ok(report.warnings.some((item) => item.includes("online check skipped")));
 });
+
+test("doctor probes non-OpenCode adapters when they expose a connectivity probe", async () => {
+  const calls = [];
+  const backendRegistry = {
+    getAdapter(backend) {
+      if (backend !== "codex") return undefined;
+      return {
+        probe: async (args) => {
+          calls.push(args);
+        }
+      };
+    }
+  };
+  const report = await runDoctor({
+    systemPath: path.resolve("examples/target-model-binding-system.mmd"),
+    lawsPath: path.resolve(".ogs/laws.json"),
+    workdir: process.cwd(),
+    onlineCheck: true,
+    backendRegistry
+  });
+
+  assert.equal(report.errors.length, 0);
+  assert.deepEqual(
+    report.providerHealth.map((item) => [item.modelRef, item.status, item.code]),
+    [
+      ["codex/gpt-6-luna", "ok", "DOCTOR_PROVIDER_CONNECTIVITY_OK"],
+      ["codex/gpt-6-luna", "ok", "DOCTOR_PROVIDER_CONNECTIVITY_OK"]
+    ]
+  );
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls.map((call) => call.modelId), ["gpt-6-luna", "gpt-6-luna"]);
+  assert.ok(calls.every((call) => call.timeoutMs >= 20_000 && call.timeoutMs <= 90_000));
+});

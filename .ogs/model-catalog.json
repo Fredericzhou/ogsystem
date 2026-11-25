@@ -1,6 +1,6 @@
 {
   "catalogVersion": "4",
-  "generatedAt": "2026-11-15T17:43:31.784Z",
+  "generatedAt": "2026-11-25T20:44:30.556Z",
   "sources": [
     {
       "backend": "opencode",
@@ -10,7 +10,7 @@
       "sessionKind": "server-session",
       "processOwnership": "spawned_by_ogs",
       "status": "runnable",
-      "detail": "OpenCode ready (212 models)."
+      "detail": "OpenCode ready (182 models)."
     },
     {
       "backend": "codex",
@@ -20,7 +20,7 @@
       "sessionKind": "app-server-thread",
       "processOwnership": "spawned_by_ogs",
       "status": "runnable",
-      "detail": "Codex app-server ready (9 models)."
+      "detail": "Codex app-server ready (11 models)."
     },
     {
       "backend": "ollama",
@@ -29,7 +29,7 @@
       "transport": "http",
       "sessionKind": "logical-session",
       "processOwnership": "attached_external",
-      "status": "runnable",
+      "status": "unavailable",
       "detail": "Ollama HTTP service ready (5 models)."
     },
     {
@@ -40,27 +40,27 @@
       "sessionKind": "process-session",
       "processOwnership": "spawned_by_ogs",
       "status": "runnable",
-      "detail": "Pi RPC ready; 1 configured model found."
+      "detail": "Pi RPC ready; 17 configured models found."
     },
     {
       "backend": "qwen",
       "displayName": "Qwen Code",
       "iconKey": "qwen",
-      "transport": "acp-stdio",
-      "sessionKind": "process-session",
-      "processOwnership": "spawned_by_ogs",
-      "status": "runnable",
-      "detail": "Qwen ACP ready; 1 configured model found."
+      "transport": "http",
+      "sessionKind": "logical-session",
+      "processOwnership": "attached_external",
+      "status": "installed_but_broken",
+      "detail": "Shared Responses API credential is unavailable."
     },
     {
       "backend": "kimi",
       "displayName": "Kimi Code",
       "iconKey": "kimi",
-      "transport": "acp-stdio",
-      "sessionKind": "process-session",
-      "processOwnership": "spawned_by_ogs",
-      "status": "runnable",
-      "detail": "Kimi ACP ready; 2 configured models found."
+      "transport": "http",
+      "sessionKind": "logical-session",
+      "processOwnership": "attached_external",
+      "status": "installed_but_broken",
+      "detail": "Shared Responses API credential is unavailable."
     }
   ],
   "models": [
@@ -134,9 +134,9 @@
     },
     {
       "backend": "opencode",
-      "modelId": "opencode/glm-5.3-flash-free",
+      "modelId": "opencode/hy4-flash-free",
       "runnable": true,
-      "name": "GLM-5.3-Flash Free",
+      "name": "Hy4 flash Free",
       "status": "discovered",
       "capabilities": {
         "textInput": true,
@@ -145,8 +145,7 @@
       },
       "variants": [
         "high",
-        "low",
-        "max"
+        "none"
       ]
     },
     {
@@ -164,43 +163,6 @@
     },
     {
       "backend": "opencode",
-      "modelId": "opencode/inkling-2-small-free",
-      "runnable": true,
-      "name": "Inkling 2 Small Free",
-      "status": "discovered",
-      "capabilities": {
-        "textInput": true,
-        "textOutput": true,
-        "toolcall": true
-      },
-      "variants": [
-        "high",
-        "low",
-        "max",
-        "medium",
-        "minimal",
-        "none"
-      ]
-    },
-    {
-      "backend": "opencode",
-      "modelId": "opencode/longcat-2.5-free",
-      "runnable": true,
-      "name": "LongCat 2.5 Free",
-      "status": "discovered",
-      "capabilities": {
-        "textInput": true,
-        "textOutput": true,
-        "toolcall": true
-      },
-      "variants": [
-        "high",
-        "low",
-        "medium"
-      ]
-    },
-    {
-      "backend": "opencode",
       "modelId": "opencode/mimo-v2.6-flash-free",
       "runnable": true,
       "name": "MiMo-V2.6-Flash Free",
@@ -211,25 +173,6 @@
         "toolcall": true
       },
       "variants": []
-    },
-    {
-      "backend": "opencode",
-      "modelId": "opencode/minimax-m3.1-flash-free",
-      "runnable": true,
-      "name": "MiniMax M3.1 Flash Free",
-      "status": "discovered",
-      "capabilities": {
-        "textInput": true,
-        "textOutput": true,
-        "toolcall": true
-      },
-      "variants": [
-        "high",
-        "low",
-        "max",
-        "medium",
-        "xhigh"
-      ]
     },
     {
       "backend": "opencode",
@@ -261,6 +204,26 @@
         "medium",
         "minimal",
         "none",
+        "xhigh"
+      ]
+    },
+    {
+      "backend": "opencode",
+      "modelId": "opencode/tidepool-alpha-free",
+      "runnable": true,
+      "name": "Tidepool Alpha Free",
+      "status": "discovered",
+      "capabilities": {
+        "textInput": true,
+        "textOutput": true,
+        "toolcall": true
+      },
+      "variants": [
+        "high",
+        "low",
+        "max",
+        "medium",
+        "minimal",
         "xhigh"
       ]
     },
@@ -335,35 +298,6 @@
     },
     {
       "backend": "opencode",
-      "modelId": "google/gemini-2.5-computer-use-preview-10-2025",
-      "runnable": true,
-      "name": "Gemini 2.5 Computer Use Preview 10-2025",
-      "status": "discovered",
-      "capabilities": {
-        "textInput": true,
-        "textOutput": true,
-        "toolcall": true
-      },
-      "variants": []
-    },
-    {
-      "backend": "opencode",
-      "modelId": "google/gemini-2.5-flash",
-      "runnable": true,
-      "name": "Gemini 2.5 Flash",
-      "status": "discovered",
-      "capabilities": {
-        "textInput": true,
-        "textOutput": true,
-        "toolcall": true
-      },
-      "variants": [
-        "high",
-        "max"
-      ]
-    },
-    {
-      "backend": "opencode",
       "modelId": "google/gemini-2.5-flash-lite",
       "runnable": true,
       "name": "Gemini 2.5 Flash-Lite",
@@ -377,19 +311,6 @@
         "high",
         "max"
       ]
-    },
-    {
-      "backend": "opencode",
-      "modelId": "google/gemini-2.5-flash-preview-tts",
-      "runnable": true,
-      "name": "Gemini 2.5 Flash Preview TTS",
-      "status": "discovered",
-      "capabilities": {
-        "textInput": true,
-        "textOutput": false,
-        "toolcall": false
-      },
-      "variants": []
     },
     {
       "backend": "opencode",
@@ -407,35 +328,6 @@
         "low",
         "medium"
       ]
-    },
-    {
-      "backend": "opencode",
-      "modelId": "google/gemini-2.5-pro",
-      "runnable": true,
-      "name": "Gemini 2.5 Pro",
-      "status": "discovered",
-      "capabilities": {
-        "textInput": true,
-        "textOutput": true,
-        "toolcall": true
-      },
-      "variants": [
-        "high",
-        "max"
-      ]
-    },
-    {
-      "backend": "opencode",
-      "modelId": "google/gemini-2.5-pro-preview-tts",
-      "runnable": true,
-      "name": "Gemini 2.5 Pro Preview TTS",
-      "status": "discovered",
-      "capabilities": {
-        "textInput": true,
-        "textOutput": false,
-        "toolcall": false
-      },
-      "variants": []
     },
     {
       "backend": "opencode",
@@ -473,40 +365,6 @@
     },
     {
       "backend": "opencode",
-      "modelId": "google/gemini-3.1-flash-image",
-      "runnable": true,
-      "name": "Nano Banana 2",
-      "status": "discovered",
-      "capabilities": {
-        "textInput": true,
-        "textOutput": true,
-        "toolcall": false
-      },
-      "variants": [
-        "high",
-        "minimal"
-      ]
-    },
-    {
-      "backend": "opencode",
-      "modelId": "google/gemini-3.1-flash-lite",
-      "runnable": true,
-      "name": "Gemini 3.1 Flash Lite",
-      "status": "discovered",
-      "capabilities": {
-        "textInput": true,
-        "textOutput": true,
-        "toolcall": true
-      },
-      "variants": [
-        "high",
-        "low",
-        "medium",
-        "minimal"
-      ]
-    },
-    {
-      "backend": "opencode",
       "modelId": "google/gemini-3.1-flash-lite-image",
       "runnable": true,
       "name": "Nano Banana 2 Lite",
@@ -538,19 +396,6 @@
         "medium",
         "minimal"
       ]
-    },
-    {
-      "backend": "opencode",
-      "modelId": "google/gemini-3.1-flash-tts-preview",
-      "runnable": true,
-      "name": "Gemini 3.1 Flash TTS Preview",
-      "status": "discovered",
-      "capabilities": {
-        "textInput": true,
-        "textOutput": false,
-        "toolcall": false
-      },
-      "variants": []
     },
     {
       "backend": "opencode",
@@ -618,24 +463,6 @@
     },
     {
       "backend": "opencode",
-      "modelId": "google/gemini-3.5-flash",
-      "runnable": true,
-      "name": "Gemini 3.5 Flash",
-      "status": "discovered",
-      "capabilities": {
-        "textInput": true,
-        "textOutput": true,
-        "toolcall": true
-      },
-      "variants": [
-        "high",
-        "low",
-        "medium",
-        "minimal"
-      ]
-    },
-    {
-      "backend": "opencode",
       "modelId": "google/gemini-3.5-flash-lite",
       "runnable": true,
       "name": "Gemini 3.5 Flash Lite",
@@ -695,23 +522,6 @@
         "toolcall": true
       },
       "variants": []
-    },
-    {
-      "backend": "opencode",
-      "modelId": "google/gemini-3.7-flash",
-      "runnable": true,
-      "name": "Gemini 3.7 Flash",
-      "status": "discovered",
-      "capabilities": {
-        "textInput": true,
-        "textOutput": true,
-        "toolcall": true
-      },
-      "variants": [
-        "high",
-        "low",
-        "medium"
-      ]
     },
     {
       "backend": "opencode",
@@ -797,16 +607,21 @@
     },
     {
       "backend": "opencode",
-      "modelId": "google/gemini-embedding-001",
+      "modelId": "google/gemini-4-neon",
       "runnable": true,
-      "name": "Gemini Embedding 001",
+      "name": "Gemini 4 Neon",
       "status": "discovered",
       "capabilities": {
         "textInput": true,
         "textOutput": true,
-        "toolcall": false
+        "toolcall": true
       },
-      "variants": []
+      "variants": [
+        "high",
+        "low",
+        "medium",
+        "xhigh"
+      ]
     },
     {
       "backend": "opencode",
@@ -855,19 +670,6 @@
         "medium",
         "minimal"
       ]
-    },
-    {
-      "backend": "opencode",
-      "modelId": "google/gemini-omni-flash-preview",
-      "runnable": true,
-      "name": "Gemini Omni Flash Preview",
-      "status": "discovered",
-      "capabilities": {
-        "textInput": true,
-        "textOutput": false,
-        "toolcall": false
-      },
-      "variants": []
     },
     {
       "backend": "opencode",
@@ -1114,349 +916,6 @@
     },
     {
       "backend": "opencode",
-      "modelId": "openai/gpt-4.1",
-      "runnable": true,
-      "name": "GPT-4.1",
-      "status": "discovered",
-      "capabilities": {
-        "textInput": true,
-        "textOutput": true,
-        "toolcall": true
-      },
-      "variants": []
-    },
-    {
-      "backend": "opencode",
-      "modelId": "openai/gpt-4.1-fast",
-      "runnable": true,
-      "name": "GPT-4.1 Fast",
-      "status": "discovered",
-      "capabilities": {
-        "textInput": true,
-        "textOutput": true,
-        "toolcall": true
-      },
-      "variants": []
-    },
-    {
-      "backend": "opencode",
-      "modelId": "openai/gpt-4.1-mini",
-      "runnable": true,
-      "name": "GPT-4.1 mini",
-      "status": "discovered",
-      "capabilities": {
-        "textInput": true,
-        "textOutput": true,
-        "toolcall": true
-      },
-      "variants": []
-    },
-    {
-      "backend": "opencode",
-      "modelId": "openai/gpt-4.1-mini-fast",
-      "runnable": true,
-      "name": "GPT-4.1 mini Fast",
-      "status": "discovered",
-      "capabilities": {
-        "textInput": true,
-        "textOutput": true,
-        "toolcall": true
-      },
-      "variants": []
-    },
-    {
-      "backend": "opencode",
-      "modelId": "openai/gpt-4o",
-      "runnable": true,
-      "name": "GPT-4o",
-      "status": "discovered",
-      "capabilities": {
-        "textInput": true,
-        "textOutput": true,
-        "toolcall": true
-      },
-      "variants": []
-    },
-    {
-      "backend": "opencode",
-      "modelId": "openai/gpt-4o-2024-08-06",
-      "runnable": true,
-      "name": "GPT-4o (2024-08-06)",
-      "status": "discovered",
-      "capabilities": {
-        "textInput": true,
-        "textOutput": true,
-        "toolcall": true
-      },
-      "variants": []
-    },
-    {
-      "backend": "opencode",
-      "modelId": "openai/gpt-4o-2024-11-20",
-      "runnable": true,
-      "name": "GPT-4o (2024-11-20)",
-      "status": "discovered",
-      "capabilities": {
-        "textInput": true,
-        "textOutput": true,
-        "toolcall": true
-      },
-      "variants": []
-    },
-    {
-      "backend": "opencode",
-      "modelId": "openai/gpt-4o-fast",
-      "runnable": true,
-      "name": "GPT-4o Fast",
-      "status": "discovered",
-      "capabilities": {
-        "textInput": true,
-        "textOutput": true,
-        "toolcall": true
-      },
-      "variants": []
-    },
-    {
-      "backend": "opencode",
-      "modelId": "openai/gpt-4o-mini",
-      "runnable": true,
-      "name": "GPT-4o mini",
-      "status": "discovered",
-      "capabilities": {
-        "textInput": true,
-        "textOutput": true,
-        "toolcall": true
-      },
-      "variants": []
-    },
-    {
-      "backend": "opencode",
-      "modelId": "openai/gpt-4o-mini-fast",
-      "runnable": true,
-      "name": "GPT-4o mini Fast",
-      "status": "discovered",
-      "capabilities": {
-        "textInput": true,
-        "textOutput": true,
-        "toolcall": true
-      },
-      "variants": []
-    },
-    {
-      "backend": "opencode",
-      "modelId": "openai/gpt-5",
-      "runnable": true,
-      "name": "GPT-5",
-      "status": "discovered",
-      "capabilities": {
-        "textInput": true,
-        "textOutput": true,
-        "toolcall": true
-      },
-      "variants": [
-        "high",
-        "low",
-        "medium",
-        "minimal"
-      ]
-    },
-    {
-      "backend": "opencode",
-      "modelId": "openai/gpt-5-fast",
-      "runnable": true,
-      "name": "GPT-5 Fast",
-      "status": "discovered",
-      "capabilities": {
-        "textInput": true,
-        "textOutput": true,
-        "toolcall": true
-      },
-      "variants": [
-        "high",
-        "low",
-        "medium",
-        "minimal"
-      ]
-    },
-    {
-      "backend": "opencode",
-      "modelId": "openai/gpt-5-flex",
-      "runnable": true,
-      "name": "GPT-5 Flex",
-      "status": "discovered",
-      "capabilities": {
-        "textInput": true,
-        "textOutput": true,
-        "toolcall": true
-      },
-      "variants": [
-        "high",
-        "low",
-        "medium",
-        "minimal"
-      ]
-    },
-    {
-      "backend": "opencode",
-      "modelId": "openai/gpt-5-mini",
-      "runnable": true,
-      "name": "GPT-5 Mini",
-      "status": "discovered",
-      "capabilities": {
-        "textInput": true,
-        "textOutput": true,
-        "toolcall": true
-      },
-      "variants": [
-        "high",
-        "low",
-        "medium",
-        "minimal"
-      ]
-    },
-    {
-      "backend": "opencode",
-      "modelId": "openai/gpt-5-mini-fast",
-      "runnable": true,
-      "name": "GPT-5 Mini Fast",
-      "status": "discovered",
-      "capabilities": {
-        "textInput": true,
-        "textOutput": true,
-        "toolcall": true
-      },
-      "variants": [
-        "high",
-        "low",
-        "medium",
-        "minimal"
-      ]
-    },
-    {
-      "backend": "opencode",
-      "modelId": "openai/gpt-5-mini-flex",
-      "runnable": true,
-      "name": "GPT-5 Mini Flex",
-      "status": "discovered",
-      "capabilities": {
-        "textInput": true,
-        "textOutput": true,
-        "toolcall": true
-      },
-      "variants": [
-        "high",
-        "low",
-        "medium",
-        "minimal"
-      ]
-    },
-    {
-      "backend": "opencode",
-      "modelId": "openai/gpt-5-nano",
-      "runnable": true,
-      "name": "GPT-5 Nano",
-      "status": "discovered",
-      "capabilities": {
-        "textInput": true,
-        "textOutput": true,
-        "toolcall": true
-      },
-      "variants": [
-        "high",
-        "low",
-        "medium",
-        "minimal"
-      ]
-    },
-    {
-      "backend": "opencode",
-      "modelId": "openai/gpt-5-nano-flex",
-      "runnable": true,
-      "name": "GPT-5 Nano Flex",
-      "status": "discovered",
-      "capabilities": {
-        "textInput": true,
-        "textOutput": true,
-        "toolcall": true
-      },
-      "variants": [
-        "high",
-        "low",
-        "medium",
-        "minimal"
-      ]
-    },
-    {
-      "backend": "opencode",
-      "modelId": "openai/gpt-5-pro",
-      "runnable": true,
-      "name": "GPT-5 Pro",
-      "status": "discovered",
-      "capabilities": {
-        "textInput": true,
-        "textOutput": true,
-        "toolcall": true
-      },
-      "variants": [
-        "high"
-      ]
-    },
-    {
-      "backend": "opencode",
-      "modelId": "openai/gpt-5.1",
-      "runnable": true,
-      "name": "GPT-5.1",
-      "status": "discovered",
-      "capabilities": {
-        "textInput": true,
-        "textOutput": true,
-        "toolcall": true
-      },
-      "variants": [
-        "high",
-        "low",
-        "medium",
-        "none"
-      ]
-    },
-    {
-      "backend": "opencode",
-      "modelId": "openai/gpt-5.1-fast",
-      "runnable": true,
-      "name": "GPT-5.1 Fast",
-      "status": "discovered",
-      "capabilities": {
-        "textInput": true,
-        "textOutput": true,
-        "toolcall": true
-      },
-      "variants": [
-        "high",
-        "low",
-        "medium",
-        "none"
-      ]
-    },
-    {
-      "backend": "opencode",
-      "modelId": "openai/gpt-5.1-flex",
-      "runnable": true,
-      "name": "GPT-5.1 Flex",
-      "status": "discovered",
-      "capabilities": {
-        "textInput": true,
-        "textOutput": true,
-        "toolcall": true
-      },
-      "variants": [
-        "high",
-        "low",
-        "medium",
-        "none"
-      ]
-    },
-    {
-      "backend": "opencode",
       "modelId": "openai/gpt-5.2",
       "runnable": true,
       "name": "GPT-5.2",
@@ -1526,63 +985,6 @@
       "variants": [
         "high",
         "medium",
-        "xhigh"
-      ]
-    },
-    {
-      "backend": "opencode",
-      "modelId": "openai/gpt-5.3-codex",
-      "runnable": true,
-      "name": "GPT-5.3 Codex",
-      "status": "discovered",
-      "capabilities": {
-        "textInput": true,
-        "textOutput": true,
-        "toolcall": true
-      },
-      "variants": [
-        "high",
-        "low",
-        "medium",
-        "none",
-        "xhigh"
-      ]
-    },
-    {
-      "backend": "opencode",
-      "modelId": "openai/gpt-5.3-codex-fast",
-      "runnable": true,
-      "name": "GPT-5.3 Codex Fast",
-      "status": "discovered",
-      "capabilities": {
-        "textInput": true,
-        "textOutput": true,
-        "toolcall": true
-      },
-      "variants": [
-        "high",
-        "low",
-        "medium",
-        "none",
-        "xhigh"
-      ]
-    },
-    {
-      "backend": "opencode",
-      "modelId": "openai/gpt-5.3-codex-spark",
-      "runnable": true,
-      "name": "GPT-5.3 Codex Spark",
-      "status": "discovered",
-      "capabilities": {
-        "textInput": true,
-        "textOutput": true,
-        "toolcall": true
-      },
-      "variants": [
-        "high",
-        "low",
-        "medium",
-        "none",
         "xhigh"
       ]
     },
@@ -1686,44 +1088,6 @@
       "modelId": "openai/gpt-5.4-mini-flex",
       "runnable": true,
       "name": "GPT-5.4 mini Flex",
-      "status": "discovered",
-      "capabilities": {
-        "textInput": true,
-        "textOutput": true,
-        "toolcall": true
-      },
-      "variants": [
-        "high",
-        "low",
-        "medium",
-        "none",
-        "xhigh"
-      ]
-    },
-    {
-      "backend": "opencode",
-      "modelId": "openai/gpt-5.4-nano",
-      "runnable": true,
-      "name": "GPT-5.4 nano",
-      "status": "discovered",
-      "capabilities": {
-        "textInput": true,
-        "textOutput": true,
-        "toolcall": true
-      },
-      "variants": [
-        "high",
-        "low",
-        "medium",
-        "none",
-        "xhigh"
-      ]
-    },
-    {
-      "backend": "opencode",
-      "modelId": "openai/gpt-5.4-nano-flex",
-      "runnable": true,
-      "name": "GPT-5.4 nano Flex",
       "status": "discovered",
       "capabilities": {
         "textInput": true,
@@ -2188,6 +1552,44 @@
     },
     {
       "backend": "opencode",
+      "modelId": "openai/gpt-6-astra-healthcare",
+      "runnable": true,
+      "name": "GPT-6 Astra Healthcare",
+      "status": "discovered",
+      "capabilities": {
+        "textInput": true,
+        "textOutput": true,
+        "toolcall": true
+      },
+      "variants": [
+        "high",
+        "low",
+        "max",
+        "medium",
+        "xhigh"
+      ]
+    },
+    {
+      "backend": "opencode",
+      "modelId": "openai/gpt-6-astra-healthcare-fast",
+      "runnable": true,
+      "name": "GPT-6 Astra Healthcare Fast",
+      "status": "discovered",
+      "capabilities": {
+        "textInput": true,
+        "textOutput": true,
+        "toolcall": true
+      },
+      "variants": [
+        "high",
+        "low",
+        "max",
+        "medium",
+        "xhigh"
+      ]
+    },
+    {
+      "backend": "opencode",
       "modelId": "openai/gpt-6-astra-pro",
       "runnable": true,
       "name": "GPT-6 Astra Pro",
@@ -2443,6 +1845,44 @@
     },
     {
       "backend": "opencode",
+      "modelId": "openai/gpt-6.1-sol-healthcare",
+      "runnable": true,
+      "name": "GPT-6.1 Sol Healthcare",
+      "status": "discovered",
+      "capabilities": {
+        "textInput": true,
+        "textOutput": true,
+        "toolcall": true
+      },
+      "variants": [
+        "high",
+        "low",
+        "max",
+        "medium",
+        "xhigh"
+      ]
+    },
+    {
+      "backend": "opencode",
+      "modelId": "openai/gpt-6.1-sol-healthcare-fast",
+      "runnable": true,
+      "name": "GPT-6.1 Sol Healthcare Fast",
+      "status": "discovered",
+      "capabilities": {
+        "textInput": true,
+        "textOutput": true,
+        "toolcall": true
+      },
+      "variants": [
+        "high",
+        "low",
+        "max",
+        "medium",
+        "xhigh"
+      ]
+    },
+    {
+      "backend": "opencode",
       "modelId": "openai/gpt-6.1-sol-pro",
       "runnable": true,
       "name": "GPT-6.1 Sol Pro",
@@ -2561,6 +2001,234 @@
     },
     {
       "backend": "opencode",
+      "modelId": "openai/gpt-6.2-astra",
+      "runnable": true,
+      "name": "GPT-6.2 Astra",
+      "status": "discovered",
+      "capabilities": {
+        "textInput": true,
+        "textOutput": true,
+        "toolcall": true
+      },
+      "variants": [
+        "high",
+        "low",
+        "max",
+        "medium",
+        "xhigh"
+      ]
+    },
+    {
+      "backend": "opencode",
+      "modelId": "openai/gpt-6.2-astra-fast",
+      "runnable": true,
+      "name": "GPT-6.2 Astra Fast",
+      "status": "discovered",
+      "capabilities": {
+        "textInput": true,
+        "textOutput": true,
+        "toolcall": true
+      },
+      "variants": [
+        "high",
+        "low",
+        "max",
+        "medium",
+        "xhigh"
+      ]
+    },
+    {
+      "backend": "opencode",
+      "modelId": "openai/gpt-6.2-astra-healthcare",
+      "runnable": true,
+      "name": "GPT-6.2 Astra Healthcare",
+      "status": "discovered",
+      "capabilities": {
+        "textInput": true,
+        "textOutput": true,
+        "toolcall": true
+      },
+      "variants": [
+        "high",
+        "low",
+        "max",
+        "medium",
+        "xhigh"
+      ]
+    },
+    {
+      "backend": "opencode",
+      "modelId": "openai/gpt-6.2-astra-healthcare-fast",
+      "runnable": true,
+      "name": "GPT-6.2 Astra Healthcare Fast",
+      "status": "discovered",
+      "capabilities": {
+        "textInput": true,
+        "textOutput": true,
+        "toolcall": true
+      },
+      "variants": [
+        "high",
+        "low",
+        "max",
+        "medium",
+        "xhigh"
+      ]
+    },
+    {
+      "backend": "opencode",
+      "modelId": "openai/gpt-6.2-astra-pro",
+      "runnable": true,
+      "name": "GPT-6.2 Astra Pro",
+      "status": "discovered",
+      "capabilities": {
+        "textInput": true,
+        "textOutput": true,
+        "toolcall": true
+      },
+      "variants": [
+        "high",
+        "low",
+        "max",
+        "medium",
+        "xhigh"
+      ]
+    },
+    {
+      "backend": "opencode",
+      "modelId": "openai/gpt-6.2-astra-ultrafast",
+      "runnable": true,
+      "name": "GPT-6.2 Astra Ultrafast",
+      "status": "discovered",
+      "capabilities": {
+        "textInput": true,
+        "textOutput": true,
+        "toolcall": true
+      },
+      "variants": [
+        "high",
+        "low",
+        "max",
+        "medium",
+        "xhigh"
+      ]
+    },
+    {
+      "backend": "opencode",
+      "modelId": "openai/gpt-6.2-sol",
+      "runnable": true,
+      "name": "GPT-6.2 Sol",
+      "status": "discovered",
+      "capabilities": {
+        "textInput": true,
+        "textOutput": true,
+        "toolcall": true
+      },
+      "variants": [
+        "high",
+        "low",
+        "max",
+        "medium",
+        "xhigh"
+      ]
+    },
+    {
+      "backend": "opencode",
+      "modelId": "openai/gpt-6.2-sol-fast",
+      "runnable": true,
+      "name": "GPT-6.2 Sol Fast",
+      "status": "discovered",
+      "capabilities": {
+        "textInput": true,
+        "textOutput": true,
+        "toolcall": true
+      },
+      "variants": [
+        "high",
+        "low",
+        "max",
+        "medium",
+        "xhigh"
+      ]
+    },
+    {
+      "backend": "opencode",
+      "modelId": "openai/gpt-6.2-sol-healthcare",
+      "runnable": true,
+      "name": "GPT-6.2 Sol Healthcare",
+      "status": "discovered",
+      "capabilities": {
+        "textInput": true,
+        "textOutput": true,
+        "toolcall": true
+      },
+      "variants": [
+        "high",
+        "low",
+        "max",
+        "medium",
+        "xhigh"
+      ]
+    },
+    {
+      "backend": "opencode",
+      "modelId": "openai/gpt-6.2-sol-healthcare-fast",
+      "runnable": true,
+      "name": "GPT-6.2 Sol Healthcare Fast",
+      "status": "discovered",
+      "capabilities": {
+        "textInput": true,
+        "textOutput": true,
+        "toolcall": true
+      },
+      "variants": [
+        "high",
+        "low",
+        "max",
+        "medium",
+        "xhigh"
+      ]
+    },
+    {
+      "backend": "opencode",
+      "modelId": "openai/gpt-6.2-sol-pro",
+      "runnable": true,
+      "name": "GPT-6.2 Sol Pro",
+      "status": "discovered",
+      "capabilities": {
+        "textInput": true,
+        "textOutput": true,
+        "toolcall": true
+      },
+      "variants": [
+        "high",
+        "low",
+        "max",
+        "medium",
+        "xhigh"
+      ]
+    },
+    {
+      "backend": "opencode",
+      "modelId": "openai/gpt-6.2-sol-ultrafast",
+      "runnable": true,
+      "name": "GPT-6.2 Sol Ultrafast",
+      "status": "discovered",
+      "capabilities": {
+        "textInput": true,
+        "textOutput": true,
+        "toolcall": true
+      },
+      "variants": [
+        "high",
+        "low",
+        "max",
+        "medium",
+        "xhigh"
+      ]
+    },
+    {
+      "backend": "opencode",
       "modelId": "openai/gpt-daybreak-blue-latest",
       "runnable": true,
       "name": "Daybreak Blue",
@@ -2597,106 +2265,6 @@
         "medium",
         "none",
         "xhigh"
-      ]
-    },
-    {
-      "backend": "opencode",
-      "modelId": "openai/gpt-image-2",
-      "runnable": true,
-      "name": "gpt-image-2",
-      "status": "discovered",
-      "capabilities": {
-        "textInput": true,
-        "textOutput": false,
-        "toolcall": false
-      },
-      "variants": []
-    },
-    {
-      "backend": "opencode",
-      "modelId": "openai/gpt-realtime-2.1",
-      "runnable": true,
-      "name": "GPT-Realtime-2.1",
-      "status": "discovered",
-      "capabilities": {
-        "textInput": true,
-        "textOutput": true,
-        "toolcall": true
-      },
-      "variants": [
-        "high",
-        "low",
-        "medium",
-        "minimal",
-        "xhigh"
-      ]
-    },
-    {
-      "backend": "opencode",
-      "modelId": "openai/o3",
-      "runnable": true,
-      "name": "o3",
-      "status": "discovered",
-      "capabilities": {
-        "textInput": true,
-        "textOutput": true,
-        "toolcall": true
-      },
-      "variants": [
-        "high",
-        "low",
-        "medium"
-      ]
-    },
-    {
-      "backend": "opencode",
-      "modelId": "openai/o3-fast",
-      "runnable": true,
-      "name": "o3 Fast",
-      "status": "discovered",
-      "capabilities": {
-        "textInput": true,
-        "textOutput": true,
-        "toolcall": true
-      },
-      "variants": [
-        "high",
-        "low",
-        "medium"
-      ]
-    },
-    {
-      "backend": "opencode",
-      "modelId": "openai/o3-flex",
-      "runnable": true,
-      "name": "o3 Flex",
-      "status": "discovered",
-      "capabilities": {
-        "textInput": true,
-        "textOutput": true,
-        "toolcall": true
-      },
-      "variants": [
-        "high",
-        "low",
-        "medium"
-      ]
-    },
-    {
-      "backend": "opencode",
-      "modelId": "openai/o3-pro",
-      "runnable": true,
-      "name": "o3-pro",
-      "status": "discovered",
-      "capabilities": {
-        "textInput": true,
-        "textOutput": true,
-        "toolcall": true
-      },
-      "variants": [
-        "high",
-        "low",
-        "medium"
       ]
     },
     {
@@ -3497,6 +3065,45 @@
     },
     {
       "backend": "codex",
+      "modelId": "gpt-6.2-sol",
+      "runnable": true,
+      "name": "GPT-6.2-Sol",
+      "status": "discovered",
+      "capabilities": {
+        "textInput": true,
+        "textOutput": true,
+        "toolcall": true
+      },
+      "variants": []
+    },
+    {
+      "backend": "codex",
+      "modelId": "gpt-6.2-astra",
+      "runnable": true,
+      "name": "GPT-6.2-Astra",
+      "status": "discovered",
+      "capabilities": {
+        "textInput": true,
+        "textOutput": true,
+        "toolcall": true
+      },
+      "variants": []
+    },
+    {
+      "backend": "codex",
+      "modelId": "gpt-6.1-terra",
+      "runnable": true,
+      "name": "GPT-6.1 Terra",
+      "status": "discovered",
+      "capabilities": {
+        "textInput": true,
+        "textOutput": true,
+        "toolcall": true
+      },
+      "variants": []
+    },
+    {
+      "backend": "codex",
       "modelId": "gpt-6.1-sol",
       "runnable": true,
       "name": "GPT-6.1-Sol",
@@ -3562,19 +3169,6 @@
     },
     {
       "backend": "codex",
-      "modelId": "gpt-6.1-terra",
-      "runnable": true,
-      "name": "GPT-6.1 Terra",
-      "status": "discovered",
-      "capabilities": {
-        "textInput": true,
-        "textOutput": true,
-        "toolcall": true
-      },
-      "variants": []
-    },
-    {
-      "backend": "codex",
       "modelId": "gpt-5.6-terra",
       "runnable": true,
       "name": "GPT-5.6-Terra",
@@ -3615,7 +3209,7 @@
     {
       "backend": "ollama",
       "modelId": "llama3.2:latest",
-      "runnable": true,
+      "runnable": false,
       "name": "llama3.2:latest",
       "status": "discovered",
       "capabilities": {
@@ -3633,7 +3227,7 @@
     {
       "backend": "ollama",
       "modelId": "qwen2.5:1.5b",
-      "runnable": true,
+      "runnable": false,
       "name": "qwen2.5:1.5b",
       "status": "discovered",
       "capabilities": {
@@ -3651,7 +3245,7 @@
     {
       "backend": "ollama",
       "modelId": "embeddinggemma:latest",
-      "runnable": true,
+      "runnable": false,
       "name": "embeddinggemma:latest",
       "status": "discovered",
       "capabilities": {
@@ -3669,7 +3263,7 @@
     {
       "backend": "ollama",
       "modelId": "bge-m3:latest",
-      "runnable": true,
+      "runnable": false,
       "name": "bge-m3:latest",
       "status": "discovered",
       "capabilities": {
@@ -3687,7 +3281,7 @@
     {
       "backend": "ollama",
       "modelId": "gemma2:2b",
-      "runnable": true,
+      "runnable": false,
       "name": "gemma2:2b",
       "status": "discovered",
       "capabilities": {
@@ -3718,19 +3312,16 @@
         "supported": true,
         "kind": "effort",
         "levels": [
-          "off",
-          "low",
-          "medium",
-          "high"
+          "off"
         ]
       }
     },
     {
-      "backend": "qwen",
-      "modelId": "gpt-6-luna",
-      "runnable": false,
-      "name": "GPT-6 Luna (Codex endpoint)",
-      "status": "unverified",
+      "backend": "pi",
+      "modelId": "cliproxyapi/gpt-6-luna",
+      "runnable": true,
+      "name": "gpt-6-luna",
+      "status": "discovered",
       "capabilities": {
         "textInput": true,
         "textOutput": true,
@@ -3741,20 +3332,16 @@
         "supported": true,
         "kind": "effort",
         "levels": [
-          "low",
-          "medium",
-          "high",
-          "xhigh",
-          "max"
+          "off"
         ]
       }
     },
     {
-      "backend": "kimi",
-      "modelId": "ogs-codex/gpt-6-luna",
-      "runnable": false,
-      "name": "ogs-codex/gpt-6-luna",
-      "status": "unverified",
+      "backend": "pi",
+      "modelId": "cliproxyapi/gpt-5.6-terra",
+      "runnable": true,
+      "name": "gpt-5.6-terra",
+      "status": "discovered",
       "capabilities": {
         "textInput": true,
         "textOutput": true,
@@ -3763,20 +3350,18 @@
       "variants": [],
       "reasoning": {
         "supported": true,
-        "kind": "toggle",
+        "kind": "effort",
         "levels": [
-          "off",
-          "on"
-        ],
-        "default": "on"
+          "off"
+        ]
       }
     },
     {
-      "backend": "kimi",
-      "modelId": "gpt-6-luna",
-      "runnable": false,
-      "name": "gpt-6-luna",
-      "status": "unverified",
+      "backend": "pi",
+      "modelId": "cliproxyapi/claude-opus-5-5-high",
+      "runnable": true,
+      "name": "Claude Opus 5.5 (High)",
+      "status": "discovered",
       "capabilities": {
         "textInput": true,
         "textOutput": true,
@@ -3785,12 +3370,270 @@
       "variants": [],
       "reasoning": {
         "supported": true,
-        "kind": "toggle",
+        "kind": "effort",
         "levels": [
-          "off",
-          "on"
-        ],
-        "default": "on"
+          "off"
+        ]
+      }
+    },
+    {
+      "backend": "pi",
+      "modelId": "cliproxyapi/claude-sonnet-5-5-high",
+      "runnable": true,
+      "name": "Claude Sonnet 5.5 (High)",
+      "status": "discovered",
+      "capabilities": {
+        "textInput": true,
+        "textOutput": true,
+        "toolcall": true
+      },
+      "variants": [],
+      "reasoning": {
+        "supported": true,
+        "kind": "effort",
+        "levels": [
+          "off"
+        ]
+      }
+    },
+    {
+      "backend": "pi",
+      "modelId": "cliproxyapi/gemini-3-flash",
+      "runnable": true,
+      "name": "Gemini 3 Flash",
+      "status": "discovered",
+      "capabilities": {
+        "textInput": true,
+        "textOutput": true,
+        "toolcall": true
+      },
+      "variants": [],
+      "reasoning": {
+        "supported": true,
+        "kind": "effort",
+        "levels": [
+          "off"
+        ]
+      }
+    },
+    {
+      "backend": "pi",
+      "modelId": "cliproxyapi/gemini-3.1-flash-image",
+      "runnable": true,
+      "name": "Gemini 3.1 Flash Image",
+      "status": "discovered",
+      "capabilities": {
+        "textInput": true,
+        "textOutput": true,
+        "toolcall": true
+      },
+      "variants": [],
+      "reasoning": {
+        "supported": true,
+        "kind": "effort",
+        "levels": [
+          "off"
+        ]
+      }
+    },
+    {
+      "backend": "pi",
+      "modelId": "cliproxyapi/gemini-3.1-flash-lite",
+      "runnable": true,
+      "name": "Gemini 3.1 Flash Lite",
+      "status": "discovered",
+      "capabilities": {
+        "textInput": true,
+        "textOutput": true,
+        "toolcall": true
+      },
+      "variants": [],
+      "reasoning": {
+        "supported": true,
+        "kind": "effort",
+        "levels": [
+          "off"
+        ]
+      }
+    },
+    {
+      "backend": "pi",
+      "modelId": "cliproxyapi/gemini-3.5-flash-lite",
+      "runnable": true,
+      "name": "Gemini 3.5 Flash Lite",
+      "status": "discovered",
+      "capabilities": {
+        "textInput": true,
+        "textOutput": true,
+        "toolcall": true
+      },
+      "variants": [],
+      "reasoning": {
+        "supported": true,
+        "kind": "effort",
+        "levels": [
+          "off"
+        ]
+      }
+    },
+    {
+      "backend": "pi",
+      "modelId": "cliproxyapi/gemini-3.8-flash-high",
+      "runnable": true,
+      "name": "Gemini 3.8 Flash",
+      "status": "discovered",
+      "capabilities": {
+        "textInput": true,
+        "textOutput": true,
+        "toolcall": true
+      },
+      "variants": [],
+      "reasoning": {
+        "supported": true,
+        "kind": "effort",
+        "levels": [
+          "off"
+        ]
+      }
+    },
+    {
+      "backend": "pi",
+      "modelId": "cliproxyapi/gemini-3.8-flash-tiered",
+      "runnable": true,
+      "name": "Gemini 3.8 Flash (Tiered)",
+      "status": "discovered",
+      "capabilities": {
+        "textInput": true,
+        "textOutput": true,
+        "toolcall": true
+      },
+      "variants": [],
+      "reasoning": {
+        "supported": true,
+        "kind": "effort",
+        "levels": [
+          "off"
+        ]
+      }
+    },
+    {
+      "backend": "pi",
+      "modelId": "cliproxyapi/gemini-4-argon-high",
+      "runnable": true,
+      "name": "Gemini 4 Argon",
+      "status": "discovered",
+      "capabilities": {
+        "textInput": true,
+        "textOutput": true,
+        "toolcall": true
+      },
+      "variants": [],
+      "reasoning": {
+        "supported": true,
+        "kind": "effort",
+        "levels": [
+          "off"
+        ]
+      }
+    },
+    {
+      "backend": "pi",
+      "modelId": "cliproxyapi/gemini-4-hydrogen-xhigh",
+      "runnable": true,
+      "name": "Gemini 4 Hydrogen",
+      "status": "discovered",
+      "capabilities": {
+        "textInput": true,
+        "textOutput": true,
+        "toolcall": true
+      },
+      "variants": [],
+      "reasoning": {
+        "supported": true,
+        "kind": "effort",
+        "levels": [
+          "off"
+        ]
+      }
+    },
+    {
+      "backend": "pi",
+      "modelId": "cliproxyapi/gemini-4-neon-xhigh",
+      "runnable": true,
+      "name": "Gemini 4 Neon",
+      "status": "discovered",
+      "capabilities": {
+        "textInput": true,
+        "textOutput": true,
+        "toolcall": true
+      },
+      "variants": [],
+      "reasoning": {
+        "supported": true,
+        "kind": "effort",
+        "levels": [
+          "off"
+        ]
+      }
+    },
+    {
+      "backend": "pi",
+      "modelId": "cliproxyapi/gpt-oss-120b-medium",
+      "runnable": true,
+      "name": "GPT-OSS 120B (Medium)",
+      "status": "discovered",
+      "capabilities": {
+        "textInput": true,
+        "textOutput": true,
+        "toolcall": true
+      },
+      "variants": [],
+      "reasoning": {
+        "supported": true,
+        "kind": "effort",
+        "levels": [
+          "off"
+        ]
+      }
+    },
+    {
+      "backend": "pi",
+      "modelId": "cliproxyapi/claude-opus-4-6-thinking",
+      "runnable": true,
+      "name": "Claude Opus 4.6 (Thinking)",
+      "status": "discovered",
+      "capabilities": {
+        "textInput": true,
+        "textOutput": true,
+        "toolcall": true
+      },
+      "variants": [],
+      "reasoning": {
+        "supported": true,
+        "kind": "effort",
+        "levels": [
+          "off"
+        ]
+      }
+    },
+    {
+      "backend": "pi",
+      "modelId": "cliproxyapi/claude-sonnet-4-6",
+      "runnable": true,
+      "name": "Claude Sonnet 4.6 (Thinking)",
+      "status": "discovered",
+      "capabilities": {
+        "textInput": true,
+        "textOutput": true,
+        "toolcall": true
+      },
+      "variants": [],
+      "reasoning": {
+        "supported": true,
+        "kind": "effort",
+        "levels": [
+          "off"
+        ]
       }
     }
   ]

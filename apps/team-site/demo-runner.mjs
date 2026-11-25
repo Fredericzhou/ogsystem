@@ -23,7 +23,10 @@ const DEFAULT_DEMO_MODEL_TIMEOUT_MS = 600000;
 // A classic team can contain several sequential model activations. The
 // process wrapper must outlive that chain; each role still keeps its own
 // model timeout and Runtime node budget.
-const DEFAULT_DEMO_RUN_TIMEOUT_MS = 600000;
+// The process wrapper covers the whole graph, while each model activation has
+// its own timeout. Keep the run budget longer than one activation so a
+// multi-role case is not stopped merely because its first few roles were slow.
+const DEFAULT_DEMO_RUN_TIMEOUT_MS = 1800000;
 
 // Deterministic local publisher used by the classic teams. It writes only to
 // the Runtime execution workspace and emits one JSON Role result on stdout.
@@ -485,13 +488,17 @@ async function collectReleaseEvidence(workdir, runId) {
         digest: typeof rawVerification.manifestSha256 === "string" ? `sha256:${rawVerification.manifestSha256}` : undefined
       }
     : undefined;
+  const hasMaterializationEvidence = Boolean(rawManifest || rawSeal || rawVerification || files.length);
   const verified = manifest?.status === "verified" && seal?.status === "sealed" && verification?.status === "verified" && verification?.passed === true;
   return {
     release: {
       kind: "run-evidence-projection",
       releaseId: `run:${runId}`,
       runId,
-      status: verified ? "published" : "failed",
+      // runCase is a temporary role-execution probe. It does not create a
+      // Project Workspace, so absence of the V2 Release/Materialization record
+      // is not a failed release. Formal Project Runs provide that evidence.
+      status: verified ? "published" : hasMaterializationEvidence ? "failed" : "not-applicable",
       materializationManifestRef: `run://${runId}/evidence/materialization-manifest`,
       materializationManifestDigest: manifest?.digest,
       outputDigest: seal?.digest,

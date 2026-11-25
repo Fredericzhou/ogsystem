@@ -2,7 +2,7 @@ import { cases } from "../cases.mjs";
 import { lintCase, resolveCaseRoleModel, runCase } from "../demo-runner.mjs";
 
 const failures = [];
-const verificationTimeoutMs = Number(process.env.OGS_CASE_TIMEOUT_MS || 600000);
+const verificationTimeoutMs = Number(process.env.OGS_CASE_TIMEOUT_MS || 1800000);
 if (!Number.isFinite(verificationTimeoutMs) || verificationTimeoutMs <= 0) {
   throw new Error("OGS_CASE_TIMEOUT_MS must be a positive number.");
 }
@@ -54,40 +54,48 @@ for (const item of cases) {
       const evidence = result.releaseEvidence;
       const release = evidence?.release;
       const materialization = evidence?.materialization;
-      const manifest = materialization?.manifest;
-      const seal = materialization?.seal;
-      const verification = materialization?.verification;
-      const declaredFiles = Array.isArray(manifest?.files) ? manifest.files : [];
-      const deliveredFiles = Array.isArray(materialization?.files) ? materialization.files : [];
-      const fileDetails = Array.isArray(materialization?.fileDetails) ? materialization.fileDetails : [];
-      const nonEmptyFiles = fileDetails.filter((entry) => Number(entry?.sizeBytes) > 0);
-      const sourceFiles = declaredFiles.filter((entry) => String(entry?.mediaType || "").startsWith("text/") || /\.(?:md|json|csv|txt|ts|js)$/i.test(String(entry?.path || "")));
-      const mediaFiles = declaredFiles.filter((entry) => /^(?:image|audio|video)\//i.test(String(entry?.mediaType || "")));
-      const requiredPaths = item.id === "structured-debate"
-        ? ["debate-brief.md"]
-        : item.id === "management-consulting"
-          ? ["executive-brief.md"]
-          : [];
-      if (
-        manifest?.status !== "verified" ||
-        manifest.producerRoleId !== "document-publisher" ||
-        typeof manifest.digest !== "string" ||
-        declaredFiles.length === 0 ||
-        seal?.status !== "sealed" ||
-        seal.digest !== manifest.digest ||
-        verification?.status !== "verified" ||
-        verification?.passed !== true ||
-        !declaredFiles.every((entry) => typeof entry?.path === "string" && deliveredFiles.includes(entry.path)) ||
-        nonEmptyFiles.length !== declaredFiles.length ||
-        sourceFiles.length === 0 ||
-        !requiredPaths.every((requiredPath) => declaredFiles.some((entry) => entry?.path === requiredPath) && deliveredFiles.includes(requiredPath)) ||
-        release?.status !== "published" ||
-        typeof release.materializationManifestDigest !== "string" ||
-        typeof release.downloadReference !== "string"
-      ) {
-        throw new Error("Release materialization evidence is incomplete: expected non-empty source files, declarations, verified manifest, sealed manifest, and a published download reference.");
+      const hasMaterializationEvidence = Boolean(
+        materialization?.manifest || materialization?.seal || materialization?.verification ||
+        (Array.isArray(materialization?.files) && materialization.files.length > 0)
+      );
+      if (release?.status === "not-applicable" && !hasMaterializationEvidence) {
+        process.stdout.write("[release] not-applicable; this temporary model run has no Project Workspace materialization\n");
+      } else {
+        const manifest = materialization?.manifest;
+        const seal = materialization?.seal;
+        const verification = materialization?.verification;
+        const declaredFiles = Array.isArray(manifest?.files) ? manifest.files : [];
+        const deliveredFiles = Array.isArray(materialization?.files) ? materialization.files : [];
+        const fileDetails = Array.isArray(materialization?.fileDetails) ? materialization.fileDetails : [];
+        const nonEmptyFiles = fileDetails.filter((entry) => Number(entry?.sizeBytes) > 0);
+        const sourceFiles = declaredFiles.filter((entry) => String(entry?.mediaType || "").startsWith("text/") || /\.(?:md|json|csv|txt|ts|js)$/i.test(String(entry?.path || "")));
+        const mediaFiles = declaredFiles.filter((entry) => /^(?:image|audio|video)\//i.test(String(entry?.mediaType || "")));
+        const requiredPaths = item.id === "structured-debate"
+          ? ["debate-brief.md"]
+          : item.id === "management-consulting"
+            ? ["executive-brief.md"]
+            : [];
+        if (
+          manifest?.status !== "verified" ||
+          manifest.producerRoleId !== "document-publisher" ||
+          typeof manifest.digest !== "string" ||
+          declaredFiles.length === 0 ||
+          seal?.status !== "sealed" ||
+          seal.digest !== manifest.digest ||
+          verification?.status !== "verified" ||
+          verification?.passed !== true ||
+          !declaredFiles.every((entry) => typeof entry?.path === "string" && deliveredFiles.includes(entry.path)) ||
+          nonEmptyFiles.length !== declaredFiles.length ||
+          sourceFiles.length === 0 ||
+          !requiredPaths.every((requiredPath) => declaredFiles.some((entry) => entry?.path === requiredPath) && deliveredFiles.includes(requiredPath)) ||
+          release?.status !== "published" ||
+          typeof release.materializationManifestDigest !== "string" ||
+          typeof release.downloadReference !== "string"
+        ) {
+          throw new Error("Release materialization evidence is incomplete: expected non-empty source files, declarations, verified manifest, sealed manifest, and a published download reference.");
+        }
+        process.stdout.write(`[release] passed; files=${declaredFiles.length}; source=${sourceFiles.length}; media=${mediaFiles.length}; manifest=${manifest.digest}\n`);
       }
-      process.stdout.write(`[release] passed; files=${declaredFiles.length}; source=${sourceFiles.length}; media=${mediaFiles.length}; manifest=${manifest.digest}\n`);
     }
     const bindings = [...new Set(successfulEntries.map((entry) => entry.profileId
       ? `profile:${entry.profileId}`

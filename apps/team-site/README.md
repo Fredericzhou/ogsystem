@@ -150,3 +150,5 @@ pnpm --dir apps/team-site verify:cases
 
 也可以通过 `OGS_DEMO_BACKEND` 和 `OGS_DEMO_MODEL` 选择 Codex 或 OpenCode 的具体模型。Team Site 页面和
 Visualizer 图编辑器有不同的自动化测试入口；测试使用隔离的数据目录，不代表它们是两个面向用户的站点。
+`verify:cases` 是隔离的真实模型 Role/Backend 探针，不会创建正式 Project、Task、Run 或
+Workspace Release/Materialization；文件交付、下载和刷新持久性必须通过正式 Project Run 验收。

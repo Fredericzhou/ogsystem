@@ -30,6 +30,7 @@ import { loadRolePackage } from "./role-repo.js";
 import { resolveProjectTargetDirectory } from "./project-target.js";
 import { listRunArtifactPolicy } from "./run-artifact-policy.js";
 import { checkExecutable } from "./executable-resolver.js";
+import { defaultBackendRegistry, type BackendRegistry } from "./model-backend-registry.js";
 export { findExecutable } from "./executable-resolver.js";
 import {
   RuntimeError,
@@ -320,6 +321,7 @@ async function runOnlineModelConnectivityCheck(args: {
   workdir: string;
   targetDir: string;
   system: SystemDefinition;
+  backendRegistry?: BackendRegistry;
 }): Promise<void> {
   const ONLINE_CHECK_MIN_TIMEOUT_MS = 20000;
   const ONLINE_CHECK_MAX_TIMEOUT_MS = 90000;
@@ -336,27 +338,19 @@ async function runOnlineModelConnectivityCheck(args: {
   }
 
   const opencodeModels = resolvedModels.filter(([, model]) => model.backend === "opencode");
-  for (const [roleId, model] of resolvedModels) {
-    if (model.backend === "opencode") continue;
-    args.report.providerHealth.push({
-      roleId,
-          modelRef: `${model.backend}/${model.modelId}`,
-      status: "skipped",
-      code: "DOCTOR_PROVIDER_ONLINE_SKIPPED",
-      message: `online connectivity probe is not implemented for backend ${model.backend}`
-    });
-  }
-  if (opencodeModels.length === 0) return;
+  const adapterModels = resolvedModels.filter(([, model]) => model.backend !== "opencode");
 
   // Trade-off: reuse one short-lived OpenCode server for all probes to keep doctor latency/cost
   // bounded while still validating each model binding independently.
-  const runClient = await startOpencodeRunClient({
-    startupTimeoutMs: ONLINE_CHECK_MAX_TIMEOUT_MS,
-    directory: args.targetDir
-  });
+  const runClient = opencodeModels.length > 0
+    ? await startOpencodeRunClient({
+        startupTimeoutMs: ONLINE_CHECK_MAX_TIMEOUT_MS,
+        directory: args.targetDir
+      })
+    : undefined;
 
   try {
-  for (const [roleId, selectionConfig] of opencodeModels) {
+    for (const [roleId, selectionConfig] of opencodeModels) {
       try {
         const checkTimeoutMs = Math.min(
           Math.max(selectionConfig.timeoutMs ?? ONLINE_CHECK_MIN_TIMEOUT_MS, ONLINE_CHECK_MIN_TIMEOUT_MS),
@@ -405,8 +399,53 @@ async function runOnlineModelConnectivityCheck(args: {
         );
       }
     }
+    for (const [roleId, selectionConfig] of adapterModels) {
+      const adapter = (args.backendRegistry ?? defaultBackendRegistry).getAdapter(selectionConfig.backend);
+      if (!adapter?.probe) {
+        args.report.providerHealth.push({
+          roleId,
+          modelRef: `${selectionConfig.backend}/${selectionConfig.modelId}`,
+          status: "skipped",
+          code: "DOCTOR_PROVIDER_ONLINE_SKIPPED",
+          message: `online connectivity probe is not implemented for backend ${selectionConfig.backend}`
+        });
+        continue;
+      }
+      try {
+        const checkTimeoutMs = Math.min(
+          Math.max(selectionConfig.timeoutMs ?? ONLINE_CHECK_MIN_TIMEOUT_MS, ONLINE_CHECK_MIN_TIMEOUT_MS),
+          ONLINE_CHECK_MAX_TIMEOUT_MS
+        );
+        await adapter.probe({
+          modelId: selectionConfig.modelId,
+          workdir: args.targetDir,
+          timeoutMs: checkTimeoutMs
+        });
+        args.report.providerHealth.push({
+          roleId,
+          modelRef: `${selectionConfig.backend}/${selectionConfig.modelId}`,
+          status: "ok",
+          code: "DOCTOR_PROVIDER_CONNECTIVITY_OK",
+          message: "online connectivity ok"
+        });
+        addNote(args.report, `online connectivity ok: ${roleId} -> ${selectionConfig.backend}/${selectionConfig.modelId}`);
+      } catch (error) {
+        const message = redactText(error instanceof Error ? error.message : String(error));
+        args.report.providerHealth.push({
+          roleId,
+          modelRef: `${selectionConfig.backend}/${selectionConfig.modelId}`,
+          status: "failed",
+          code: "DOCTOR_PROVIDER_CONNECTIVITY_FAILED",
+          message
+        });
+        addError(
+          args.report,
+          `online connectivity failed: ${roleId} -> ${selectionConfig.backend}/${selectionConfig.modelId} (${message})`
+        );
+      }
+    }
   } finally {
-    await runClient.close();
+    await runClient?.close();
   }
 }
 
@@ -421,6 +460,7 @@ export async function runDoctor(args: {
   production?: boolean;
   minFreeBytes?: number;
   workdir?: string;
+  backendRegistry?: BackendRegistry;
 }): Promise<DoctorReport> {
   const workdir = resolve(args.workdir ?? process.cwd());
   const runtimePath = resolve(workdir, args.runtimeConfigPath ?? ".ogs/runtime.json");
@@ -588,7 +628,8 @@ export async function runDoctor(args: {
         report,
         workdir,
         targetDir: await resolveProjectTargetDirectory({ workdir }),
-        system
+        system,
+        backendRegistry: args.backendRegistry
       });
     }
   }

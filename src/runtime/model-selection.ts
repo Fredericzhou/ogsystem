@@ -194,6 +194,17 @@ export function inspectResolvedModelCatalogEntry(args: {
   const entry = args.catalog.models.find((item) => item.backend === backend && item.modelId === modelId);
   if (!entry || !entry.runnable) {
     if (isModelCatalogStale(args.catalog)) return undefined;
+    const source = args.catalog.sources.find((item) => item.backend === backend);
+    if (source && source.status !== "runnable" && source.detail) {
+      return {
+        code: "MODEL_UNAVAILABLE",
+        roleId: args.roleId,
+        backend,
+        modelId,
+        modelRef,
+        message: `Role "${args.roleId}" selects ${backend}/${modelId}, but the ${backend} backend is ${source.status}: ${source.detail}`
+      };
+    }
     return {
       code: "MODEL_UNAVAILABLE",
       roleId: args.roleId,

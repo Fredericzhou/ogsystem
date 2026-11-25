@@ -113,6 +113,30 @@ test("cli prints runtime logs to stderr by default without breaking stdout json"
   assert.match(stderr, /\[run:end\]/);
 });
 
+test("cli returns a non-zero exit code when the runtime result fails", async () => {
+  const { code, stdout, stderr } = await runCli([
+    "run",
+    "start",
+    "--ogs-dir",
+    "examples/langgraph-debate-current",
+    "--system",
+    "examples/langgraph-debate-current/system.mmd",
+    "--laws",
+    "examples/langgraph-debate-current/laws.json",
+    "--user-profile",
+    "examples/langgraph-debate-current/user-profile.json",
+    "--input",
+    "cli failed run",
+    "--dry-run"
+  ]);
+
+  assert.strictEqual(code, 1);
+  const result = JSON.parse(stdout);
+  assert.equal(result.status, "failed");
+  assert.equal(result.errorEnvelope.errorCode, "IR_ROUTE_NO_MATCH");
+  assert.match(stderr, /\[run:end\] status=failed/);
+});
+
 test("cli can attach a temporary visualizer server and auto-close it after run completion", async () => {
   const { code, stdout, stderr } = await runCli([
     "run",

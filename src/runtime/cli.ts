@@ -900,6 +900,10 @@ type RunExecutionReport = {
   detail: Record<string, unknown>;
 };
 
+function isTerminalRuntimeFailure(result: AdapterRunResult | undefined): boolean {
+  return result?.status === "failed" || result?.status === "terminated";
+}
+
 function printHumanReviewActionCard(args: {
   report: RunExecutionReport;
   workdir: string;
@@ -1332,7 +1336,7 @@ async function runStartCommand(argv: string[]): Promise<void> {
   });
 
   try {
-    await runAdapterCommand({
+    const report = await runAdapterCommand({
       systemPath: resolvedSystemPath,
       prompt,
       runtimeConfigPath: asString(values.runtime),
@@ -1359,6 +1363,12 @@ async function runStartCommand(argv: string[]): Promise<void> {
         autoClose: true
       }
     });
+    // A completed CLI invocation can still contain a failed runtime result.
+    // Surface terminal runtime failures to shells and CI while keeping a
+    // stopped run available for human review or an explicit resume.
+    if (isTerminalRuntimeFailure(report.result)) {
+      process.exitCode = 1;
+    }
   } catch (error) {
     if (error instanceof RuntimeError) {
       await printModernResumeHint({
@@ -1411,7 +1421,7 @@ async function runResumeCommand(argv: string[]): Promise<void> {
     (await readFile(resolve(runDir, "request.md"), "utf8")).replace(/\s+$/, "");
 
   try {
-    await runAdapterCommand({
+    const report = await runAdapterCommand({
       systemPath: resolvedSystemPath,
       prompt,
       runtimeConfigPath: asString(values.runtime),
@@ -1440,6 +1450,9 @@ async function runResumeCommand(argv: string[]): Promise<void> {
         autoClose: true
       }
     });
+    if (isTerminalRuntimeFailure(report.result)) {
+      process.exitCode = 1;
+    }
   } catch (error) {
     if (error instanceof RuntimeError) {
       await printModernResumeHint({
@@ -1859,7 +1872,7 @@ async function runRunCommand(argv: string[]): Promise<void> {
       } else {
         console.log(`Review ${reviewId}: ${decision} recorded; run ${runId} remains stopped until recovery succeeds.`);
       }
-      if (resumeError) process.exitCode = 1;
+      if (resumeError || isTerminalRuntimeFailure(resumeReport?.result)) process.exitCode = 1;
       return;
     }
     throw createCliInputError("CLI_RUN_REVIEW_UNKNOWN_SUBCOMMAND", `unknown run review subcommand: ${nested}`);

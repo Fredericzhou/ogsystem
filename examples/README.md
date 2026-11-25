@@ -30,9 +30,11 @@ as built-in product teams:
 pnpm run test:examples
 ```
 
-The command runs the minimal linear, parallel/all-of, and quorum scenarios with the real Codex
-adapter in dry-run mode. It asserts that the v2 graph compiles, binds a model/Harness, freezes
-the run policy, and produces no noop execution.
+The command runs two successful dry-run scenarios (linear and quorum) and one semantic contract
+fixture. The semantic fixture is expected to fail closed because synthetic dry-run output does not
+contain its business state fields; the smoke asserts the stable `IR_ROUTE_NO_MATCH` result instead
+of treating that failure as a passing run. All three checks must complete with their declared
+outcome.
 
 For the full architecture and acceptance evidence requirements, see:
 

@@ -430,3 +430,13 @@ refreshing the desktop screenshot baseline for the current 15px workbench inset.
 passed. This engineering evidence does not change the UAT status or close human, external-provider,
 deployment, supported-machine, or Windows requirements. Details are in
 [`evidence/v2-automated-release-recheck-2026-11-22.md`](evidence/v2-automated-release-recheck-2026-11-22.md).
+
+Current-source validation on 2026-11-26: `pnpm run build` passed; `pnpm test` passed with 496 core
+tests, one Windows-only skip, and Team Site 108/108; the example smoke, CLI regression, npm/pnpm
+package-install smoke, documentation drift check, and visualizer browser suite (Studio 17/17,
+Build 4/4, two deployment-only skips) also passed. `ogs doctor --online-check` verified both
+Codex `gpt-6-luna` bindings after the adapter probe fix; a fresh real-model probe passed four
+built-in teams and failed closed for `release-operations` because its Qwen/Kimi credentials are
+not configured. This updates engineering and provider evidence only and does not change the UAT
+scenario count or human sign-off requirements. Details are in
+[`evidence/post-merge-validation-2026-11-26.md`](evidence/post-merge-validation-2026-11-26.md).
