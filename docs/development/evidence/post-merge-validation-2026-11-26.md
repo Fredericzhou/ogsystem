@@ -102,3 +102,8 @@ manual UAT scenarios or human sign-off in [`../release-uat-checklist.md`](../rel
   `pnpm run test:visualizer-browser` (Studio 17/17, Build 4/4; two deployment-only skips).
   `git diff --check` passed and the working tree is clean. The local branch is one commit ahead of
   `origin/main`; this record does not imply that the commit has been pushed or published.
+- Post-commit package lifecycle checks also passed: `pnpm run smoke:package-install:npm` and
+  `pnpm run smoke:package-install:pnpm`. A post-commit
+  `ogs doctor --online-check --system examples/target-model-binding-system.mmd --laws .ogs/laws.json`
+  returned `status=ok`, no warnings or errors, and `DOCTOR_PROVIDER_CONNECTIVITY_OK` for both
+  configured Codex `gpt-6-luna` bindings.
