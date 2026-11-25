@@ -2,6 +2,8 @@
   "taskId": "task-01-ledger-engine",
   "title": "Parallel Multi-Module Financial Ledger Engine & Reporter",
   "category": "disjoint_parallel_modules",
+  "stressProfile": "disjoint_modules",
+  "visibleTestFile": "visible_tests/test_ledger_visible.py",
   "promptSingle": "Implement both `ledger/engine.py` and `ledger/report.py` according to the docstrings and type annotations in the repository. Do not modify existing signatures. Ensure deposit, withdraw (with ValueError on overdraft or non-positive amount), transfer, idempotent tx_id deduplication, account summary, category totals, and CSV export all work cleanly.",
   "roles": [
     {

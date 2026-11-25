@@ -1,0 +1,24 @@
+{
+  "taskId": "task-05-cross-module-contract",
+  "title": "Cross-Module Product Contract Evolution",
+  "category": "cross_module_contract",
+  "stressProfile": "cross_module_contract",
+  "visibleTestFile": "visible_tests/test_catalog_visible.py",
+  "promptSingle": "Implement the catalog package according to the docstrings and type annotations. Keep the Product contract consistent between catalog/models.py and catalog/service.py, reject duplicate product IDs, preserve input data, and run the visible tests.",
+  "roles": [
+    {
+      "roleId": "model_owner",
+      "prompt": "Implement ONLY catalog/models.py. Define the Product dataclass and validation helpers exactly as documented, preserving field names and types. Do not edit catalog/service.py."
+    },
+    {
+      "roleId": "service_owner",
+      "prompt": "Implement ONLY catalog/service.py against the Product contract in catalog/models.py. Implement add_product, total_value, and find_product with duplicate and missing-ID behavior from the docstrings. Do not edit catalog/models.py."
+    },
+    {
+      "roleId": "contract_reviewer",
+      "prompt": "Review the cross-module Product contract in catalog/models.py and catalog/service.py. Make only compatibility fixes needed so the documented constructor, validation, and service behavior agree. Do not change public function names."
+    }
+  ],
+  "reconcilerPrompt": "Reconcile the model, service, and contract-review changes into one coherent catalog API. Preserve the Product field contract, reject duplicate IDs, and run all visible tests before producing the final change.",
+  "hiddenTestFile": "hidden_tests/test_catalog_hidden.py"
+}

@@ -1,0 +1,24 @@
+{
+  "taskId": "task-04-review-rework-loop",
+  "title": "Reviewed Pricing Rules with Bounded Rework",
+  "category": "review_rework_loop",
+  "stressProfile": "same_path_conflict",
+  "visibleTestFile": "visible_tests/test_pricing_visible.py",
+  "promptSingle": "Implement the pricing package according to the docstrings. Implement apply_discount in pricing/calculator.py with Decimal-safe cent rounding, validation of non-negative amount and a rate in [0, 1], and summarize in pricing/summary.py without changing public signatures. Run the visible tests before finishing.",
+  "roles": [
+    {
+      "roleId": "pricing_impl",
+      "prompt": "Implement ONLY pricing/calculator.py according to its docstrings. Use Decimal or an equivalent exact cent calculation, reject negative amounts and rates outside [0, 1], and preserve the public signature. Do not edit pricing/summary.py. Run the visible tests if useful."
+    },
+    {
+      "roleId": "pricing_reviewer",
+      "prompt": "Act as an independent reviewer for pricing/calculator.py. Implement or correct the calculator in that file so its docstring and boundary behavior are satisfied, including exact cent rounding and invalid input rejection. Do not edit pricing/summary.py. Treat the starter file as the review baseline and leave a complete implementation."
+    },
+    {
+      "roleId": "summary_impl",
+      "prompt": "Implement ONLY pricing/summary.py according to its docstrings. Do not edit pricing/calculator.py. Keep the function signatures unchanged and ensure empty inputs and Decimal cent values are handled."
+    }
+  ],
+  "reconcilerPrompt": "Reconcile the immutable pricing_impl and pricing_reviewer changes to pricing/calculator.py, and preserve the summary_impl change. Produce a clean implementation satisfying all docstrings and visible tests; do not silently discard a valid boundary fix.",
+  "hiddenTestFile": "hidden_tests/test_pricing_hidden.py"
+}

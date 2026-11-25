@@ -12,8 +12,10 @@
 | **[`ogsystem-paper-en.md`](ogsystem-paper-en.md)** | **英文版工程实践论文** (完整文稿) | 面向多智能体系统、AI 协作治理与可信工作流相关期刊或会议。 |
 | **[`ogsystem-submission-paper-en.md`](ogsystem-submission-paper-en.md)** | **英文投稿稿（V2）** | 按 RQ 组织的系统设计与工程验证论文；含先行工作归属、四层架构、共享 Workspace/Join/Release 状态、证据边界和研究限制。 |
 | **[`formal-model-and-proofs.md`](formal-model-and-proofs.md)** | **形式化模型与协议安全证明附录** | 责任席位 EFSM 代数、Context Map 字段封闭性、四值 Join 粘滞失败单调性、Expected-Head CAS 无覆盖一致性与有界循环终止性证明。 |
-| **[`experiment-benchmark-design.md`](experiment-benchmark-design.md)** | **前沿文献对标实验设计与评测脚手架** | 直接对标 STORM、Executable-FSM、TraceDev、Auditable Agents、Sustainable Agents 的实验组（A/B1/B2/C + 3 项消融）、指标矩阵与 `benchmarks/` 可运行脚本说明。 |
-| **[`paper-experiment-master-plan.md`](paper-experiment-master-plan.md)** | **论文完整实验执行方案（独立 Worktree）** | 统一模型 `gpt-6-luna`、两层对照（内层 A/B1/B2/C + 外层 STORM 真实源码）、Commit0-Lite 主考卷 + 并发冲突专项、4 组正交指标与 Phase 0–4 执行路线图。 |
+| **[`experiment-benchmark-design.md`](experiment-benchmark-design.md)** | **延期实验设计目录** | 文献对标、历史 VDS/效率指标和外部框架扩展的设计记录；当前论文以 `paper-experiment-master-plan.md` 与 `benchmarks/CORE-EXPERIMENT-REPRO.md` 为准。 |
+| **[`paper-experiment-master-plan.md`](paper-experiment-master-plan.md)** | **论文核心实验执行方案（独立 Worktree）** | 统一模型 `gpt-6-luna`、A/B1/B2/C 四臂、5 个专项任务 × 2 个 seed、隐藏测试后置评估、四项审计维度、EFSM 消融与 Phase 0–4 路线图。外部框架和额外基准延期。 |
+| **[`../../benchmarks/CORE-EXPERIMENT-REPRO.md`](../../benchmarks/CORE-EXPERIMENT-REPRO.md)** | **核心实验复现说明** | 固定模型、任务、seed、命令、原始 JSON 和汇总脚本；仅覆盖论文当前核心实验。 |
+| **[`../../benchmarks/run-efsm-ablation.mjs`](../../benchmarks/run-efsm-ablation.mjs)** | **确定性状态机消融** | 零 LLM 成本复现 TOCTOU、崩溃重放、粘滞 Join、非法引用、LoopBudget 和 digest 失败轨迹。 |
 | **[`experimental-validation-plan-bilingual.md`](experimental-validation-plan-bilingual.md)** | **中英双语实验设计** | 预注册导向的单 Agent / 通用多 Agent / OGS V2 对照方案；定义交付成功、Evidence 支持陈述、幻觉测量边界、故障恢复、样本量规划、统计方法和论文直达地址。 |
 | **[`multi-agent-collaboration-models-and-tech-stacks.md`](multi-agent-collaboration-models-and-tech-stacks.md)** | **多智能体编排与协作模型专题调研报告** (深度对照) | 深度解构 9 种编排范式、通信工具、底层技术栈（Herdr, Orca, OMP, Codex v2, Claude Code 等）及 EFSM/DAG 模型包含关系，**方便快速参考与横向对照**。 |
 | **[`traceable-references.md`](traceable-references.md)** | **可溯源文献与标准研究线索** | 包含经典理论与 2024–2026 MAS 研究的 DOI、代码库、公开地址，以及待官方核验的 GB/Z 候选条目。 |
@@ -48,7 +50,7 @@ LangGraph / 多角色 Agent / Git Worktree   V2 单 Project Workspace 状态协�
 涵盖支撑论文核心学术主张与全部形式化证明的运行时与复现包：
 - **形式化契约与核心状态机引擎 (`src/runtime/`)**：责任席位 EFSM/LTS 转移代数、Context Map 字段级投影、单一 Git+LFS Workspace 隔离 Worktree 管理器、4 值 Join 语义演算、expected-head CAS 状态协议与 WAL 记录器。
 - **轻量只读可观测性审计工具 (`src/visualizer/` 只读审阅面)**：供审稿人与审计员对单个 Run 轨迹、Mermaid/X6 拓扑图、业务事件流与决策点进行只读深度审查（注：Studio 可视化拖拽编排与商业设计能力保持私有）。
-- **论文评测与可复现套件 (`benchmarks/`, `scripts/reproduce-paper-results.mjs`)**：提供零 API 消耗的一键离线数据验算脚本、代表性脱敏运行记录与公开基准测试套件（注：独立评测隐藏测试 Hidden Tests 保留为内部门禁）。
+- **论文评测与可复现套件 (`benchmarks/`, `scripts/reproduce-paper-results.mjs`)**：提供零 API 消耗的一键离线证据验算、核心实验原始 JSON、确定性汇总脚本和公开任务。离线验算复核已记录数据，不重新调用 live 模型；可见测试可作为内部门禁，独立隐藏测试仅在各对照臂交付快照落盘后统一后置评测。
 - **论文基础案例集 (`examples/`)**：包含计算器、辩论、咨询等论文引用基准。
 
 ### 2. 商业与企业应用层（Proprietary Commercial Layer: 保留所有权利）
@@ -58,11 +60,12 @@ LangGraph / 多角色 Agent / Git Worktree   V2 单 Project Workspace 状态协�
 - **企业级中间件与私有连接器**：企业 IAM/SSO 鉴权、专有私有模型安全网关。
 
 ### 3. 审稿人离线一键复现指令
-在同行评审阶段，审稿人无需商业大模型 API Key，亦无需安装 Team Site，运行以下命令即可完成数据验算与轨迹探查：
-- **复算论文全部表格与提交凭据（耗时 < 5 秒）**：
+在同行评审阶段，审稿人无需商业大模型 API Key，亦无需安装 Team Site，即可复核已提交的核心实验 JSON、汇总表和工程证据。运行以下命令可完成离线验算与轨迹探查：
+- **复核已记录证据与协议表格（耗时 < 5 秒，不重跑 live 模型）**：
   ```bash
   pnpm run reproduce:paper-evidence
   ```
+- **重跑核心 live 实验（需要可用的 `gpt-6-luna` Codex endpoint，结果具有模型随机性）**：见 [`benchmarks/CORE-EXPERIMENT-REPRO.md`](../../benchmarks/CORE-EXPERIMENT-REPRO.md)。
 - **交互式探查单次运行执行轨迹与拓扑图**：
   ```bash
   pnpm run run:visualizer -- --ogs-dir .

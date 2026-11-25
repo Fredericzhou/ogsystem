@@ -2,6 +2,8 @@
   "taskId": "task-03-task-scheduler",
   "title": "DAG Priority Topological Sorter & Bounded Retry Runner (With Regression Guard)",
   "category": "multi_module_regression_guard",
+  "stressProfile": "cross_module_regression",
+  "visibleTestFile": "repo/tests/test_existing.py",
   "promptSingle": "Implement `topo_sort_prioritized(deps, priorities)` in `scheduler/dag.py` (deterministic priority order, higher priority first, tie-break lexicographically by task_id, raise ValueError on cycle, without breaking existing `has_cycle`) and `run_with_retries(fn, max_retries)` in `scheduler/runner.py` (retries on Exception up to max_retries additional attempts and records attempt count). Existing `tests/test_existing.py` must continue to pass.",
   "roles": [
     {

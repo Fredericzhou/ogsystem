@@ -2,6 +2,8 @@
   "taskId": "task-02-config-merger",
   "title": "Concurrent Same-File Config Deep Merger & Env Interpolator",
   "category": "concurrent_same_file_conflict",
+  "stressProfile": "same_path_conflict",
+  "visibleTestFile": "visible_tests/test_merger_visible.py",
   "promptSingle": "Implement both `merge_dicts` (deep recursive merge with list_strategy='replace' or 'append', without mutating inputs) and `resolve_env_vars` (recursively resolve `${VAR}` and `${VAR:default}` in string values, raising KeyError if missing without default) inside `config_pkg/merger.py`.",
   "roles": [
     {

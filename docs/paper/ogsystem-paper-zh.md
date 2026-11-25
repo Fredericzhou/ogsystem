@@ -11,7 +11,7 @@
 ### 摘要
 多角色 AI 协作可用于软件开发、办公文档、咨询分析和结构化讨论等项目任务。无论交付物是源代码还是其他文件，运行时都需要显式处理职责、授权、并发修改、状态一致性、恢复与交付。DAG 表达有向无环依赖；带有返工边的协作需使用支持循环的图或其他控制结构，不同工作流产品对相关能力的实现各异。
 
-本文报告 **OGSystem（简称 OGS）**，一个面向有界多角色协作项目的持久化 EFSM Runtime 工程实现。其应用范围不限于软件开发，而是面向办公及更广泛的文件型协作任务；软件开发、管理咨询和结构化辩论是当前已有工程运行记录的场景。从组织管理视角，OGS 将职责分化、执行授权、协作协调和运行问责映射为 Role 合同、Harness 策略、事件/Join 控制与 Evidence/Release 记录；这一映射是运行时工程化，不是完整组织治理方案，最终责任仍属于部署组织和人类决策者。OGS 组合既有状态机、工作流、持久化执行、最小授权和 Git 版本控制思想，形成责任 Role 合同、离散业务事件、Context Map、状态感知 Join 与共享 Workspace/Release 状态协议。V2 中每个 Project 使用一个文件型 Git + LFS Workspace，内容可包括代码、文档及其他项目文件；Role 从固定 `baseCommit` 在隔离 Worktree 中工作，以提交快照和 Framework 管理的状态更新维持内容一致性并支持恢复与回退。Framework 管理 canonical lock、expected-head CAS、只读 `WorkspaceRef`、Evidence 和 Release Materialization。工程验证包括当前全量 596 项自动化测试（核心套件 488 通过、1 项按 Windows 平台跳过、Team Site 107 通过，0 失败；此前 2026-11-19 记录为 587 项，更早期 819 项为旧版 v1 测试归档前的历史计数），基于 `gpt-6-luna` 的 Python 计算器团队运行记录（2026-11-15 8 项 unittest 与 2026-11-16 10 项测试通过），以及 Codex Planner 到 OpenCode Implementer、管理咨询和结构化辩论等 Project Run/Release 记录。Codex 到 OpenCode 的一次运行中 Implementer 没有产生文件改动，且现有证据未证明跨模型泛化、双向互操作或图执行引擎可替换。本文的贡献主张限于上述语义与协议的系统组合及其工程实现；跨场景治理效益和学术新颖性仍需受控实验及更广泛先行工作比较。
+本文报告 **OGSystem（简称 OGS）**，一个面向有界多角色协作项目的持久化 EFSM Runtime 工程实现。其应用范围不限于软件开发，而是面向办公及更广泛的文件型协作任务；软件开发、管理咨询和结构化辩论是当前已有工程运行记录的场景。从组织管理视角，OGS 将职责分化、执行授权、协作协调和运行问责映射为 Role 合同、Harness 策略、事件/Join 控制与 Evidence/Release 记录；这一映射是运行时工程化，不是完整组织治理方案，最终责任仍属于部署组织和人类决策者。本文的核心设计特色是：**把角色的完成声明绑定到可核验的交付事实**，要求其能够回溯到 commit、Evidence、独立测试结果和 Release 状态。OGS 组合既有状态机、工作流、持久化执行、最小授权和 Git 版本控制思想，形成责任 Role 合同、离散业务事件、Context Map、状态感知 Join 与共享 Workspace/Release 状态协议。V2 中每个 Project 使用一个文件型 Git + LFS Workspace，内容可包括代码、文档及其他项目文件；Role 从固定 `baseCommit` 在隔离 Worktree 中工作，以提交快照和 Framework 管理的状态更新维持内容一致性并支持恢复与回退。Framework 管理 canonical lock、expected-head CAS、只读 `WorkspaceRef`、Evidence 和 Release Materialization。修正版核心受控实验覆盖 5 个冻结软件任务、4 个对照臂和 2 个 seed：C 获得 `9/10` RawPass、`9/10` VerifiedDelivery 和 `0/10` FCR，B2 为 `5/10` RawPass、`3/10` VerifiedDelivery 和 `5/10` FCR。该证据支持有限的交付可核验性结论，不证明模型能力提升、跨模型泛化或外部系统优越性。其他工程测试和运行记录用于说明实现边界，不扩展为跨场景效果主张。
 
 **关键词：** 多角色 AI 协作；AI 运行治理；职责与授权；扩展有限状态机（EFSM）；共享 Workspace；状态恢复；可审计交付
 
@@ -62,7 +62,7 @@ Anthropic 的 *Building Effective Agents* 总结了 routing、orchestrator-worke
 
 ### 2. 主流协同系统调查与结构性深度对比
 
-为深入探讨多智能体协同运行时的系统本质，本节对当前全球代表性厂商的自研协作产品（OpenAI Codex Multi-Agent v2、Anthropic Claude Subagents、Google Opal、LangChain LangGraph/LangSmith）、新兴通用智能体（Manus、腾讯 WorkBuddy）、主流多智能体协作编程软件（Orca、OMP / oh-my-pi、Aider）、经典多智能体框架（MetaGPT、AutoGen、ChatDev）以及主流工作流平台（n8n、Dify、Coze）进行形式化计算模型调查与全景对比。
+本节仅用于定位与本文直接相关的协作、工作区和工作流研究。表格依据公开文档和论文整理，帮助说明 OGS 的设计边界；它们不是同条件功能、性能或安全评测，也不构成对所列系统的优劣结论。外部系统的版本、配置和未公开实现可能改变其行为。
 
 #### 2.1 多智能体编排能力与协作模型的形式化分类学（Orchestration & Collaboration Taxonomy）
 下列分类是用于组织相关工作的分析视角，不是完备或互斥的产品分类。外部系统条目概述其公开产品文档、论文或代码中可确认的能力；不同版本和配置可能不同。没有在所引资料中确认某项能力，不表示产品不具备该能力。表格不是同条件功能或性能评测。
@@ -245,8 +245,8 @@ Anthropic 的 *Building Effective Agents* 总结了 routing、orchestrator-worke
 本节区分已有技术、OGS 的组合性工程贡献和尚未被直接验证的研究主张，不把公开的 LangGraph、LTS/EFSM、Git、WAL/CAS、最小特权或 Role-based Agent 能力重复归为 OGS 创新。表 2.5 是设计维度对照，不等同于八项独立学术发明。
 
 **理论设计创新与工程底座的明确界定：**
-1. **理论与架构设计创新（论文核心创新价值）：** OGS 核心创新在于构建了**面向多智能体社会化协作的责任席位扩展状态机（Role-First EFSM over LTS）**。通用图执行框架（如 LangGraph 原生）仅将状态视为弱类型的字典对象、将节点转移视为任意代码执行；2026 年顶会前沿探索中，NeuralFSM（ACL 2026）将多 Agent 求解抽象为有限状态执行过程、Agent-SAMA（AAAI 2026）协同维护 FSM 状态机进行故障自愈、GraphFlow（ICML 2026）通过图拓扑管理多 Agent 状态，HEXIS（2026）与 Sun 等人（2026）探索了 EFSM Skill 编译与外部状态控制——这些最新研究有力印证了“以状态机治理大模型执行不确定性”已成为顶级学术共识；但现有研究大多停留在单 Agent 内部提示词、内存变量或 UI 操作的状态约束。OGS 将经典 EFSM 形式化推进至多 Agent 组织社会技术协作——确立不可变的责任席位本体 ($V$)、受限业务事件驱动跃迁 ($\Sigma$)、Fail-Closed 上下文投影守卫条件、有界循环配额与终止路径、四值汇聚代数 ($S_{src} \in \{pending, arrived, skipped, failed\}$) 以及状态跃迁与物理资产快照 (`WorkspaceRef`) / Release 物化状态机的原子绑定。这套状态机形式化模型构成了本文的主要理论与设计创新。
-2. **工程实现底座：** 在工程上，OGS 同时兼顾并实现了类似 LangGraph 与 Temporal 的**全流程可追溯可审计保障**（基于 WAL `events.ndjson`、CAS `state.json` 与 Git Commit 不可变历史）。2026 年最新研究中，Auditable Agents（Nian 等人 2026）系统形式化了智能体可审计性的五大基石（动作可恢复性、生命周期覆盖、策略可检验性、责任归属、证据完整性），TraceDev（ISSTA 2026）实证了跨阶段制品可追溯图对消除多 Agent 协作漂移的关键作用，Automata from Agent Traces（Cho 等人 2026）实证发现智能体的全局行为拓扑本质上由部署环境和 Harness 状态机决定；OGS 的工程实现恰好在底层以单一文件工作区、原子 CAS 快照与加密签名 Release 兑现了这些审计维度与拓扑控制。全流程可审计性是企业级落地的关键工程保障，而面向多角色的扩展状态机模型则是支撑其协作确定性的理论核心。
+1. **候选系统集成贡献：** OGS 将责任席位、显式字段投影、不可变 Role commit、源状态感知 Join、Evidence 和 Release Materialization 绑定为一个 Single-Workspace Contract。其设计特色不是重新发明 EFSM、Git、CAS 或 provenance，而是让角色的完成声明必须对应可检查的交付事实。核心实验直接检验了这一边界：C 的测试、commit provenance 和 Release 状态可以被逐 Run 核验；B1 虽可通过测试，却没有契约级冲突封闭和可验证发布。该组合是候选工程贡献，学术新颖性仍需更广泛先行工作和同条件比较确认。
+2. **工程实现底座：** OGS 使用 WAL `events.ndjson`、CAS `state.json`、Git commit 历史和 Release manifest 实现上述交付事实链。它们分别有成熟先例，本文不把单项机制主张为原创，也不把当前小样本结果外推为跨系统优越性。
 
 ##### 先行工作与公开能力归属
 
@@ -366,12 +366,12 @@ V2 的共享协作数据不再以“产物引用”或“晋升对象”组织�
 因此，`WorkspaceRef`、Run Evidence、Release 和 Materialization 是 V2 唯一公共文件与交付边界；
 Manifest 不创建新的内容历史，checkpoint 不创建平行状态枚举，Release 状态也不复制为第二套事件模型。
 
-该设计从根本上解决了现有协作框架普遍存在的**“破坏性原地写入（Destructive In-place Mutation）”**难题。现有主流多智能体系统（如 ChatDev、MetaGPT、CrewAI、AutoGen 等）在文件型协作中普遍采用平铺共享目录，各 Agent 对文件进行原地覆写。当后续的 Editor、Reviewer 或下游专员修改产物时（无论是多章节研报、咨询方案、财务测算表还是代码模块），前序角色的中间草稿被直接抹除。这在企业级场景与合规审计中带来三大致命隐患：
+在本文覆盖的文件型任务中，共享可写目录可能产生**“破坏性原地写入（Destructive In-place Mutation）”**风险。本文没有对 ChatDev、MetaGPT、CrewAI、AutoGen 等系统进行同条件实验，因此不把该风险概括为这些系统的普遍属性。对本实验而言，后续角色修改重叠文件时，前序角色的中间草稿可能被覆盖，带来以下可观察风险：
 1. **中间过程不可审计（Loss of Intermediate Auditability）：** 各角色的独立贡献被抹去，事后无法审计是哪一个 Agent 引入了事实性错误、违规数据或幻觉推断；
 2. **不可逆的内容丢失与静默退化（Irreversible Content Loss）：** 后续审查角色若发生幻觉或过度概括，前序专家角色产出的有效章节与推导过程会被永久删除，且因缺乏版本对象而无法查看 diff 或一键回滚；
 3. **并发脏写冲突（Concurrent Dirty Writes）：** 多角色并行协同编辑交叠文件时，缺乏并发控制，最终产物取决于随机的写完成顺序。
 
-OGS 通过为每个 Role 分配基于 `baseCommit` 的物理隔离 Git Worktree、强制要求中间修改必须形成不可变 Git Commit、且跨角色交接仅传递密码学寻址的只读 `WorkspaceRef`，将软件工程与通用办公知识工作中的每一次角色动作转化为可精确比对、可完整还原、不可篡改的版本对象，从而在企业协作中实现了全流程的中间状态可审计与可追溯性。该设计同时回应了 2026 年多智能体代码协同前沿研究（如 STORM, Liu & Dong et al. 2026, arXiv:2605.20563）指出的朴素 Git worktree 隔离将冲突推迟到事后合并的痛点；OGS 通过 Role 契约与 Context Map 约束写权限、以 expected-head CAS 串行化权威变更、并在非权威 Merge Worktree 中隔离冲突，保证了冲突发生时安全 fail-closed 而不污染权威主干。
+OGS 为每个 Role 分配基于 `baseCommit` 的隔离 Git Worktree，要求中间修改形成 Git Commit，并通过只读 `WorkspaceRef` 交接。这样可在本实验任务中保留角色级提交、内容摘要和发布状态，便于事后检查与回滚。该设计针对朴素 Git Worktree 将冲突留到事后合并的风险，使用 Role 契约与 Context Map 限定写范围、用 expected-head CAS 保护权威变更，并在独立 Merge Worktree 中记录冲突。实验结果支持这些控制在指定故障轨迹上的失败封闭行为，但不证明证据存储不可篡改，也不证明对所有协作系统或场景均有效。
 
 ---
 
@@ -428,19 +428,31 @@ Release。Role 被拒绝直接 commit、push、update-ref、操作 LFS 锁或修
 AI resolver、跨系统事务或外部发布补偿；失败 Run 不发布 canonical Workspace 或官方 download
 reference，merge/Release 证据和可能的部分外部生效状态写入 Run，调用方必须据此执行外部核查和补偿。
 
-#### 7.6 后续对照实验设计（尚未执行）
-不同交付类型须使用对应验收器：代码可用隐藏测试，办公文档与分析材料应采用冻结的需求覆盖清单和盲法评审；各任务层先独立报告，不把代码测试通过率直接外推为一般协作质量。
-现有工程证据包含软件实现、管理咨询和结构化辩论等不同 Project 场景，但缺少受控对照，不能证明跨场景任务质量提高或幻觉减少。主实验建议设置三组：A) 相同模型和验证器的单 Agent；B) 使用 LangGraph、相同角色图、提示词、工具及隔离工作区，但不使用 OGS Context Map、WorkspaceRef、Join/Release 合同的多 Agent 流程；C) 完整 OGS V2。另在软件任务层增加 MetaGPT 和 ChatDev 产品比较组，在办公与知识工作任务层增加 CrewAI 产品比较组，在同一冻结任务子集上重新运行；不把各系统已发表分数或默认输出直接当作 OGS 对照结果。MetaGPT、ChatDev 与 CrewAI 的同类系统比较可借鉴任务比较和指标设计，但这些外部产品组不能单独识别 OGS 合同的因果效应。任务集覆盖软件项目协作（借鉴 MetaGPT SoftwareDev 及 SWE-EVO 跨多文件长周期版本演进任务）、办公文档/报告起草与审阅（借鉴 OfficeBench 及 GAIA 通用办公助手任务）、结构化分析或辩论总结等文件型交付，并按任务类型分层报告。B 组用于识别协议贡献，A 组用于估计角色拆分的收益和成本。固定模型版本、token 上限、工具、验收器和重试策略，按任务类型、任务和随机种子配对随机化。
+#### 7.6 修正版受控核心实验（已执行）
+核心实验覆盖文件型软件协作，使用 `benchmarks/live-pilot/tasks/` 中冻结的 5 个多文件 Python 任务、统一模型 `gpt-6-luna` 和 2 个 seed。每题拆分可见测试与独立隐藏 `pytest` 验收器；所有 arm 完成并保存交付快照后才执行隐藏测试。四个对照臂为：A) 单 Agent；B1) 共享目录并发多 Agent；B2) 独立 Git Worktree 加事后直接合并；C) 完整 OGS V2 Single-Workspace Contract。提示词、工具权限、`reasoning=low` 和每角色 900 秒超时固定不变。
 
-主要指标为“可验证交付成功率”：隐藏测试和需求验收通过、既有测试无回归、提交来源可追溯、Release digest 校验通过且状态为 `published`。报告分母、绝对百分点差和 95% 置信区间。幻觉相关指标仅定义为交接/最终报告中可与日志、Git、测试和 Release 证据核对的原子事实陈述：由盲法人工标注员统计每百条可验证陈述中的无支持陈述、矛盾率和虚报完成率；这不等同于测量模型的全部幻觉。另统计冲突恢复、过期引用拒绝、未授权字段泄漏、无效发布、时延、token/API 成本和每次成功交付成本。任务通过率持平但虚报完成/无效发布下降，可支持交付可靠性价值，不代表模型更准确。探索性 H5 可在声明的策略或模型版本变更后重跑固定版本工作流，记录策略违规逃逸率、Evidence 还原完整度、审计耗时和控制漂移；这些是有界工作流的运行连续性指标，不代表组织治理成熟度。建议先以 20–30 个任务开展 pilot，再按配对效应和任务聚类做功效分析；例如配对不一致率 0.25、目标差异 10 个百分点时，近似需 196 个独立任务配对；最终样本量应据 pilot 重算。检验零效果和额外成本也应如实报告。
+主要指标为隐藏 `RawPass`、`claimedComplete`、`FCR = claimedComplete && !hiddenOracle.rawPass`、四项协议无关审计维度（`RoleAttribution`、`CanonicalIntegrity`、`VerifiedArtifactDigest`、`FailClosedOnError`）及其合取 `VerifiedDelivery`。每个 Role 的 LLM 调用次数（包括 C 的有界 reconciler）和墙钟时间均落盘，因此额外恢复工作不会被视为零成本。超时、崩溃和合并失败均保留在分母中。
 
-实验操作细则、指标定义、统计方法与文献地址见[中英双语实验方案](experimental-validation-plan-bilingual.md)。正式样本量应从 pilot 估计配对不一致率；例如不一致率 0.25、检出 10 个百分点差异的近似功效分析约需 196 个独立任务配对，实际值须按 pilot 和任务聚类重新计算。AutoGen 作为高引用多 Agent 框架先行工作；MetaGPT 和 ChatDev 提供软件协作产品之间的同任务比较实例；近期 MetaAgent (ICML 2025)、StateFlow (COLM 2024)、NeuralFSM (ACL 2026)、Agent-SAMA (AAAI 2026)、GraphFlow (ICML 2026)、HEXIS (2026) 与 Sun 等人 (2026) 进一步验证了有限状态机对 LLM 智能体控制流与任务成功率的积极作用；Auditable Agents (2026)、TraceDev (ISSTA 2026) 与 Cho 等人 (2026) 强力佐证了多智能体工程中可追溯性、状态拓扑监控与可审计性的核心地位。多 Agent Debate、LLM 幻觉综述、SWE-EVO、OfficeBench 及 RAGTruth 仅用于讨论任务基准与测量方法，不作为产品对照。这些工作均不构成 OGS 效果的证据。
+5 个任务 × 2 个 seed 的结果如下：
+
+| 对照臂 | RawPass | Claimed | FCR | VerifiedDelivery | 角色归因 | canonical 完整 | 验证摘要 | 失败封闭 | 平均墙钟时间 | 平均 LLM 调用 |
+| :-- | :--: | :--: | :--: | :--: | :--: | :--: | :--: | :--: | --: | --: |
+| A | 10/10 | 10/10 | 0/10 | 0/10 | 0/10 | 0/10 | 10/10 | 10/10 | 112.8 秒 | 1.00 |
+| B1 | 10/10 | 10/10 | 0/10 | 0/10 | 0/10 | 0/10 | 10/10 | 10/10 | 184.6 秒 | 2.40 |
+| B2 | 5/10 | 10/10 | 5/10 | 3/10 | 10/10 | 10/10 | 3/10 | 3/10 | 183.4 秒 | 2.40 |
+| C | 9/10 | 9/10 | 0/10 | 9/10 | 10/10 | 9/10 | 9/10 | 10/10 | 190.3 秒 | 3.00 |
+
+Arm A 和 B1 的 `CanonicalIntegrity = 0/10` 源于其在工作区内直接产生未提交修改；这不表示其隐藏功能测试失败。该指标现在统一要求交付快照为干净、受版本控制保护的 canonical 内容。
+
+结果支持有限的系统级结论：在该冻结任务集和统一模型下，C 的 FCR 为 0/10，9/10 单元满足四项交付审计维度；B2 虽有角色提交，但 FCR 为 5/10、VerifiedDelivery 为 3/10，说明 Worktree 隔离本身不能保证交付事实。A、B1 在本样本中 RawPass 均为 10/10，但没有完整的角色级交付审计链。C 有 1 个冲突单元未发布，失败没有被隐藏在成功率中。确定性零 LLM 消融 `benchmarks/run-efsm-ablation.mjs` 覆盖六类故障轨迹：普通命令式基线在 6/6 轨迹出现目标违规，C-full 为 0/6。表中结果仅作描述性报告，不证明模型变聪明、跨模型泛化、外部框架优越性或普遍成本优势。
+
+原始 JSON、交付快照、消融报告、汇总脚本、固定参数和逐条复现命令见 [`benchmarks/CORE-EXPERIMENT-REPRO.md`](../../benchmarks/CORE-EXPERIMENT-REPRO.md)。Commit0-Lite、外部框架、OfficeBench 和跨模型实验均为延期扩展，不属于本文核心结果。
 
 ---
 
 ### 8. 结论与工程展望
 
-OGSystem 将既有状态机、契约、持久化执行和版本控制机制用于多角色协作项目，并以四层产品架构和单一文件型 Git/LFS Workspace 连接责任、执行、证据与发布状态。Worktree 提供基于提交快照的隔离工作视图，Framework 管理的状态变更用于维持一致性并支持恢复和回退。现有运行记录覆盖软件开发、管理咨询和结构化辩论；这支持文件型多角色协作的工程可行性描述，但不等于对所有办公或社会协作场景完成验证。相对先行系统的学术新颖性仍需扩大文献检索和同条件比较。未来工作包括按第 7.6 节和双语实验方案开展分场景预注册对照实验；交付质量、证据支持度、成本与恢复价值在取得数据前不作效果结论。
+OGSystem 将既有状态机、契约、持久化执行和版本控制机制用于多角色协作项目，并以四层产品架构和单一文件型 Git/LFS Workspace 连接责任、执行、证据与发布状态。核心受控实验表明，在统一模型和冻结任务集上，Single-Workspace Contract 为冲突失败封闭和可验证交付提供了可检查边界，同时不会自动提升所有任务的原始功能通过率。该证据来自 10 个任务/seed 配对单元、一个模型和五个软件任务，不支持跨模型、外部框架或办公场景的普遍结论。更大样本和外部对照属于后续工作，不影响本文核心结果的复现。
 
 ---
 
@@ -448,7 +460,7 @@ OGSystem 将既有状态机、契约、持久化执行和版本控制机制用�
 
 本文报告的形式化责任契约、EFSM 运行时执行引擎、Context Map 投影规范、Git/LFS WorkspaceRef 与 Join/CAS 状态协议，以及学术可复现性套件（包括离线证据验算脚本、原始 `events.ndjson` 轨迹、公开基准任务与 Docker 镜像定义）按 Apache-2.0 开源核心规划。在同行评审阶段提供匿名复现包；论文正式录用后将同步建立公开代码仓库并在 Zenodo 永久归档分配正式 DOI。
 
-任何研究人员均可通过仓库内置的 `pnpm run reproduce:paper-evidence` 脚本，在**无需任何外部商业大模型 API 凭据与成本**的前提下，离线校验并复算本文所有表格（Table 1, Table 2, Table 3）与真实运行凭据指纹（SHA-256 Digest）。面向终端团队的商业化协作工作台（Team Site）与专有行业角色资产属于企业应用层投影，按独立商业协议保留；该部分的闭源不影响本文核心协议与实证结果的独立复现与验证。
+任何研究人员均可通过仓库内置的 `pnpm run reproduce:paper-evidence` 脚本，在**无需任何外部商业大模型 API 凭据与成本**的前提下，离线校验已提交的工程证据与协议表格；该脚本不重新调用 live 模型。核心实验的两个 seed JSON、40 个交付快照和确定性汇总脚本可直接复核主表；若要独立重跑 40 个 live task/seed/arm 单元，则需要可用的 `gpt-6-luna` Codex endpoint，且由于模型随机性不承诺逐字节相同结果，具体步骤见 [`benchmarks/CORE-EXPERIMENT-REPRO.md`](../../benchmarks/CORE-EXPERIMENT-REPRO.md)。面向终端团队的商业化协作工作台（Team Site）与专有行业角色资产属于企业应用层投影，按独立商业协议保留；该部分的闭源不影响本文核心协议与实证结果的独立复现与验证。
 
 ---
 

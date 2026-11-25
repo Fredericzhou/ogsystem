@@ -4,6 +4,10 @@
 > **Status / 状态:** Executable benchmark specification and protocol harness design.  
 > **Evidence Discipline / 证据纪律:** Deterministic protocol benchmarks (`--mode=deterministic`) validate framework invariants and scoring pipelines at $0 API cost; live LLM empirical claims require executing the pinned `--mode=live-llm` Pilot & Main Study across real models. Never conflate deterministic harness scores with live-model task accuracy.
 
+> **Current-paper boundary (v3):** This document is a literature-grounded design catalogue, not the frozen protocol for the current submission. The current paper uses the narrower five-task v3 protocol in [`paper-experiment-master-plan.md`](paper-experiment-master-plan.md): A/B1/B2/C only, hidden tests evaluated post-arm, four audit dimensions, and the zero-LLM EFSM ablation. The older VDS, external-arm, office-task, and multi-ablation proposals below are deferred and must not be used to interpret `benchmarks/results/v3-seed*.json`.
+
+> **Metric note:** The historical `VDS`, `Cost_eff`, and `Time_eff` rows below are retained for literature mapping only. The current paper reports `VerifiedDelivery`, `FCR`, `RawPass`, audit dimensions, wall time, and recorded LLM calls as defined in the master plan and reproduction guide.
+
 ---
 
 ## 1. Design Grounding in 2024–2026 Peer Literature / 前沿论文实验范式对标

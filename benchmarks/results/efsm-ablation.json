@@ -1,0 +1,94 @@
+{
+  "protocolVersion": "efsm-ablation-v1",
+  "zeroLlm": true,
+  "scenarios": [
+    {
+      "id": "toctou-stale-head",
+      "imperative": {
+        "accepted": true,
+        "staleHeadOverwrite": true
+      },
+      "full": {
+        "accepted": false,
+        "staleHeadOverwrite": false,
+        "errorCode": "WORKSPACE_LOCK_STALE_HEAD"
+      }
+    },
+    {
+      "id": "crash-resume-replay",
+      "imperative": {
+        "publishedRecords": 2,
+        "duplicatePublication": true
+      },
+      "full": {
+        "publishedRecords": 1,
+        "duplicatePublication": false,
+        "finalStatus": "published"
+      }
+    },
+    {
+      "id": "sticky-failed-join",
+      "imperative": {
+        "finalStatus": "skipped",
+        "downstreamReady": true,
+        "failedToSkippedDowngrade": true
+      },
+      "full": {
+        "finalStatus": "failed",
+        "downstreamReady": false,
+        "failedToSkippedDowngrade": false
+      }
+    },
+    {
+      "id": "illegal-transition-and-reference",
+      "imperative": {
+        "acceptedIllegalPublish": true,
+        "acceptedPathEscape": true
+      },
+      "full": {
+        "acceptedIllegalPublish": false,
+        "acceptedPathEscape": false,
+        "refError": "WORKSPACE_PATH_INVALID",
+        "eventError": true
+      }
+    },
+    {
+      "id": "review-loop-budget",
+      "imperative": {
+        "terminated": false,
+        "attempts": 100,
+        "unboundedRetry": true
+      },
+      "full": {
+        "terminated": true,
+        "attempts": 2,
+        "unboundedRetry": false
+      }
+    },
+    {
+      "id": "digest-failure-repeat-release",
+      "imperative": {
+        "firstAttemptFailed": true,
+        "secondAttemptPublished": true,
+        "canonicalPolluted": true
+      },
+      "full": {
+        "firstAttemptFailed": true,
+        "secondAttemptPublished": false,
+        "canonicalPolluted": false,
+        "failureCode": "[OUTPUT_DIGEST_MISMATCH] materialized output size does not match its manifest"
+      }
+    }
+  ],
+  "metrics": {
+    "imperativeViolationCount": 6,
+    "fullViolationCount": 0,
+    "illegalTransitionAcceptance": true,
+    "erroneousPublication": true,
+    "staleHeadOverwrite": true,
+    "failedToSkippedDowngrade": true,
+    "unboundedRetry": true,
+    "evidenceComplete": 6,
+    "wallTimeMs": 168.3
+  }
+}

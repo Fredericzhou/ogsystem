@@ -1,0 +1,100 @@
+{
+  "protocol": {
+    "version": "v3-no-oracle-leakage",
+    "model": "gpt-6-luna",
+    "reasoningEffort": "low",
+    "tasks": [
+      "task-01-ledger-engine",
+      "task-02-config-merger",
+      "task-03-task-scheduler",
+      "task-04-review-rework-loop",
+      "task-05-cross-module-contract"
+    ],
+    "seeds": [
+      "1",
+      "2"
+    ],
+    "arms": [
+      "A",
+      "B1",
+      "B2",
+      "C"
+    ],
+    "hiddenEvaluation": "post-arm independent evaluation",
+    "artifactRoot": "benchmarks/results/artifacts"
+  },
+  "sourceFiles": [
+    "v3-seed1.json",
+    "v3-seed2.json"
+  ],
+  "summary": {
+    "A": {
+      "runs": 10,
+      "rawPass": 10,
+      "visiblePass": 10,
+      "claimedComplete": 10,
+      "fcr": 0,
+      "verifiedDelivery": 0,
+      "auditDimensionsMean": 2,
+      "roleAttribution": 0,
+      "canonicalIntegrity": 0,
+      "verifiedArtifactDigest": 10,
+      "failClosedOnError": 10,
+      "wallTimeMsMean": 112761.9,
+      "llmCallsMean": 1,
+      "hiddenPassedTests": 54,
+      "hiddenTotalTests": 54
+    },
+    "B1": {
+      "runs": 10,
+      "rawPass": 10,
+      "visiblePass": 10,
+      "claimedComplete": 10,
+      "fcr": 0,
+      "verifiedDelivery": 0,
+      "auditDimensionsMean": 2,
+      "roleAttribution": 0,
+      "canonicalIntegrity": 0,
+      "verifiedArtifactDigest": 10,
+      "failClosedOnError": 10,
+      "wallTimeMsMean": 184560,
+      "llmCallsMean": 2.4,
+      "hiddenPassedTests": 54,
+      "hiddenTotalTests": 54
+    },
+    "B2": {
+      "runs": 10,
+      "rawPass": 5,
+      "visiblePass": 5,
+      "claimedComplete": 10,
+      "fcr": 5,
+      "verifiedDelivery": 3,
+      "auditDimensionsMean": 2.6,
+      "roleAttribution": 10,
+      "canonicalIntegrity": 10,
+      "verifiedArtifactDigest": 3,
+      "failClosedOnError": 3,
+      "wallTimeMsMean": 183421.3,
+      "llmCallsMean": 2.4,
+      "hiddenPassedTests": 41,
+      "hiddenTotalTests": 54
+    },
+    "C": {
+      "runs": 10,
+      "rawPass": 9,
+      "visiblePass": 10,
+      "claimedComplete": 9,
+      "fcr": 0,
+      "verifiedDelivery": 9,
+      "auditDimensionsMean": 3.8,
+      "roleAttribution": 10,
+      "canonicalIntegrity": 9,
+      "verifiedArtifactDigest": 9,
+      "failClosedOnError": 10,
+      "wallTimeMsMean": 190325.1,
+      "llmCallsMean": 3,
+      "hiddenPassedTests": 49,
+      "hiddenTotalTests": 54
+    }
+  }
+}
