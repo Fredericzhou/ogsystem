@@ -200,8 +200,15 @@ test("backend capability directory is read-only and fail-closed for incomplete a
   assert.equal(opencode.resources.process, false);
   for (const backendId of ["kimi", "ollama", "qwen"]) {
     const entry = entries.find((item) => item.backendId === backendId);
-    assert.equal(entry.readiness, "unavailable");
-    assert.equal(entry.nativeTools.status, "unavailable");
+    if (["kimi", "qwen"].includes(backendId)) {
+      assert.equal(entry.readiness, "degraded");
+      assert.equal(entry.nativeTools.status, "unavailable");
+      assert.equal(entry.transport, "http");
+      assert.equal(entry.capabilities.toolcall, false);
+    } else {
+      assert.equal(entry.readiness, "unavailable");
+      assert.equal(entry.nativeTools.status, "unavailable");
+    }
   }
   assert.equal(entries.some((entry) => entry.backendId === "claude"), false);
   for (const entry of entries) {

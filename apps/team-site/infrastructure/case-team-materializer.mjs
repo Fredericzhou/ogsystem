@@ -1,7 +1,12 @@
 import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { getCase } from "../cases.mjs";
-import { buildCaseSystem, materializeCaseTeam } from "../demo-runner.mjs";
+import {
+  buildCaseFlowEnvelopeSchema,
+  buildCaseHandoffContracts,
+  buildCaseSystem,
+  materializeCaseTeam
+} from "../demo-runner.mjs";
 
 export const caseTeamMaterializer = Object.freeze({
   materialize: materializeCaseTeam,
@@ -15,6 +20,10 @@ export const caseTeamMaterializer = Object.freeze({
       const bindings = JSON.parse(await readFile(join(workdir, ".ogs", "execution-bindings.json"), "utf8"));
       const runtime = JSON.parse(await readFile(join(workdir, ".ogs", "runtime.json"), "utf8"));
       const authoring = JSON.parse(await readFile(join(workdir, ".ogs", "studio", "system.authoring.json"), "utf8"));
+      const contractsCurrent = caseSpec.handoffContracts
+        ? JSON.stringify(JSON.parse(await readFile(join(workdir, caseSpec.handoffContracts), "utf8"))) === JSON.stringify(buildCaseHandoffContracts(caseSpec))
+          && JSON.stringify(JSON.parse(await readFile(join(workdir, "contracts", "flow-envelope.schema.json"), "utf8"))) === JSON.stringify(buildCaseFlowEnvelopeSchema(caseSpec))
+        : true;
       const roleFiles = await Promise.all(caseSpec.roles.map(async (role) => {
         try { return JSON.parse(await readFile(join(workdir, "team-roles", "roles", role.id, "role.json"), "utf8")); }
         catch { return undefined; }
@@ -31,6 +40,7 @@ export const caseTeamMaterializer = Object.freeze({
         && runtime?.configVersion === "2"
         && runtime?.roleRepo === "team-roles"
         && runtime?.runsDir === ".ogs/runs"
+        && contractsCurrent
         && !Object.hasOwn(runtime, "runtime")
         && roleEntries.filter((entry) => entry.isDirectory()).every((entry) => expectedRoleIds.has(entry.name))
         && roleEntries.filter((entry) => entry.isDirectory()).length === expectedRoleIds.size

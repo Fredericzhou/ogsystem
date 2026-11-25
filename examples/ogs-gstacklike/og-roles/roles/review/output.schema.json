@@ -1,0 +1,10 @@
+{
+  "type": "object",
+  "required": ["event", "content", "data"],
+  "properties": {
+    "event": { "type": "string", "enum": ["APPROVED","CHANGES_REQUIRED","BLOCKED"] },
+    "content": { "type": "string" },
+    "data": { "type": "object", "additionalProperties": false }
+  },
+  "additionalProperties": false
+}

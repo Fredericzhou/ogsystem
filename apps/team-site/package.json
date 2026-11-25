@@ -16,6 +16,8 @@
     "verify:cases": "node scripts/verify-cases.mjs"
   },
   "devDependencies": {
-    "esbuild": "^0.28.2"
+    "dompurify": "^3.4.18",
+    "esbuild": "^0.28.2",
+    "marked": "^18.2.1"
   }
 }

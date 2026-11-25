@@ -1,0 +1,23 @@
+{
+  "roleId": "debate-judge",
+  "roleVersion": "classic-v2",
+  "name": "Debate Judge",
+  "description": "V2 migrated classic-team role for debate-judge.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "purpose": "Perform the debate-judge responsibility and emit a declared transition.",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": ["debate-judge responsibility"],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": { "preconditions": [] },
+  "outputs": { "postconditions": [], "decisionCriteria": [] },
+  "authority": { "controlActions": [] },
+  "constraints": { "writableStateFields": [] },
+  "failure": { "retryableErrorCodes": [], "terminalErrorCodes": [] },
+  "audit": { "requiredFields": [] },
+  "ogsContractVersion": 2,
+  "schemaVersion": 2
+}

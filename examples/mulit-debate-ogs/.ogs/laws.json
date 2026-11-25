@@ -1,0 +1,12 @@
+{
+  "laws": [
+    {
+      "lawId": "law.project.base",
+      "constraints": {
+        "forbiddenToolRefs": [],
+        "maxTransitions": 16,
+        "allowNoopWithoutExecutionBinding": true
+      }
+    }
+  ]
+}

@@ -115,7 +115,7 @@ export function resolveDemoModel(env = process.env, backend = resolveDemoBackend
   if (specificModel) return specificModel;
   if (backend === resolveDemoBackend(env) && env.OGS_DEMO_MODEL) return env.OGS_DEMO_MODEL;
   if (backend === "opencode") return "codex-gateway/gpt-6-luna";
-  if (backend === "codex") return DEFAULT_DEMO_MODEL;
+  if (["codex", "qwen", "kimi"].includes(backend)) return DEFAULT_DEMO_MODEL;
   throw new Error(`Set ${backendEnvName} to select a model for the ${backend} backend.`);
 }
 
@@ -132,8 +132,18 @@ export function buildCaseSystem(caseSpec) {
   const lines = [
     "flowchart TD",
     `%% system.id=site.${caseSpec.id}`,
-    "%% system.version=1.0.0",
+    "%% system.version=2.0.0",
     `%% law.global=law.site.${caseSpec.id}`,
+    ...(caseSpec.handoffMode ? [`%% handoff.mode=${caseSpec.handoffMode}`] : []),
+    ...(caseSpec.handoffContracts ? [`%% handoff.contracts=${caseSpec.handoffContracts}`] : []),
+    ...(caseSpec.reviews ?? []).flatMap((review) => [
+      `%% review.mode.${review.roleId}=${review.mode ?? "required"}`,
+      ...(review.timeout ? [`%% review.timeout.${review.roleId}=${review.timeout}`] : []),
+      ...(review.timeoutAction ? [`%% review.timeout.action.${review.roleId}=${review.timeoutAction}`] : []),
+      ...(review.reworkTarget ? [`%% review.rework.target.${review.roleId}=${review.reworkTarget}`] : []),
+      ...(review.reworkMax ? [`%% review.rework.max.${review.roleId}=${review.reworkMax}`] : []),
+      ...(review.terminateScope ? [`%% review.terminate.scope.${review.roleId}=${review.terminateScope}`] : [])
+    ]),
     ...caseSpec.roles.filter((role) => role.mode).map((role) => `%% role.mode.${role.id}=${role.mode}`),
     ...caseSpec.joins.flatMap((joinSpec) => [
       `%% join.mode.${joinSpec.roleId}=${joinSpec.mode}`,
@@ -150,6 +160,36 @@ export function buildCaseSystem(caseSpec) {
     lines.push(`${source} -->|${event}| ${target}`);
   }
   return `${lines.join("\n")}\n`;
+}
+
+export function buildCaseHandoffContracts(caseSpec) {
+  const parallelRoles = new Set(caseSpec.roles.filter((role) => role.mode === "parallel_split").map((role) => role.id));
+  const contracts = caseSpec.flows
+    .filter(([from, to, event]) => from !== "__system_start__" && to !== "__system_end__" && !["ERROR", "FAILED", "CANCELLED"].includes(event))
+    .map(([from, to, event]) => ({
+      id: `${from}.to.${to}.${parallelRoles.has(from) ? "split" : event}`.replace(/[^A-Za-z0-9._-]+/g, "-"),
+      kind: "flow",
+      match: parallelRoles.has(from)
+        ? { fromRoleId: from, mode: "split", toRoleId: to }
+        : { fromRoleId: from, eventType: event, toRoleId: to },
+      schema: "flow-envelope.schema.json",
+      onViolation: "FAIL"
+    }));
+  return { version: 1, contracts };
+}
+
+export function buildCaseFlowEnvelopeSchema(caseSpec) {
+  return {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    type: "object",
+    properties: {
+      event: { type: "string" },
+      content: { type: "string" },
+      data: { type: "object" }
+    },
+    required: ["content"],
+    additionalProperties: false
+  };
 }
 
 export function buildCaseGraph(caseId, locale = "zh-CN") {
@@ -219,7 +259,7 @@ function roleManifest(role) {
       postconditions: [{ op: "exists", args: [{ kind: "path", root: "role", path: ["output"] }] }],
       decisionCriteria: []
     },
-    authority: { controlActions: [] },
+    authority: { controlActions: role.controlActions ?? [] },
     constraints: { writableStateFields: [] },
     failure: { retryableErrorCodes: [], terminalErrorCodes: [] },
     audit: { requiredFields: [] }
@@ -261,6 +301,7 @@ async function writeCaseProject(caseSpec, workdir, prompt, mode, locale = "zh-CN
       properties: {
         event: { type: "string", enum: role.events },
         content: { type: "string", minLength: 1 },
+        ...(role.outputDataSchema ? { data: role.outputDataSchema } : {}),
       },
       additionalProperties: false
     }, null, 2)}\n`);
@@ -276,6 +317,12 @@ async function writeCaseProject(caseSpec, workdir, prompt, mode, locale = "zh-CN
   ]);
   const systemSource = buildCaseSystem(caseSpec);
   await writeFile(join(workdir, "system.mmd"), systemSource);
+  if (caseSpec.handoffContracts) {
+    const contractsDir = join(workdir, "contracts");
+    await mkdir(contractsDir, { recursive: true });
+    await writeFile(join(contractsDir, "flow-envelope.schema.json"), `${JSON.stringify(buildCaseFlowEnvelopeSchema(caseSpec), null, 2)}\n`);
+    await writeFile(join(workdir, caseSpec.handoffContracts), `${JSON.stringify(buildCaseHandoffContracts(caseSpec), null, 2)}\n`);
+  }
   const authoring = importSystemToAuthoring({
     workdir,
     systemPath: "system.mmd",

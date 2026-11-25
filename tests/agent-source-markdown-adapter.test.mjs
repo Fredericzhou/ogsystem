@@ -114,8 +114,11 @@ test("pinned Agency Agents samples preserve reviewed metadata and body digests",
 
   for (const entry of expected.entries) {
     const sourceText = await readFile(new URL(`./fixtures/agent-source/agency-agents/${entry.path}`, import.meta.url), "utf8");
-    const parsed = parseMarkdownRole(sourceText, { category: entry.category });
-    const sourceDigest = createHash("sha256").update(sourceText).digest("hex");
+    // Git may materialize this checked-in LF fixture as CRLF on Windows. The pinned
+    // digest describes repository bytes, so compare against a canonical LF view.
+    const canonicalSourceText = sourceText.replaceAll("\r\n", "\n");
+    const parsed = parseMarkdownRole(canonicalSourceText, { category: entry.category });
+    const sourceDigest = createHash("sha256").update(canonicalSourceText).digest("hex");
     const bodyDigest = createHash("sha256").update(parsed.body).digest("hex");
 
     assert.equal(parsed.name, entry.name, entry.path);

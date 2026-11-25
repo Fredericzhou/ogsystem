@@ -1,3 +1,6 @@
+packages:
+  - "apps/team-site"
+
 allowBuilds:
   esbuild: false
 

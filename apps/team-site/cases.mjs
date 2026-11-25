@@ -33,7 +33,6 @@ export const cases = [
     joins: [],
     projections: [
       ["implementer", "handoff", "direct.content"],
-      ["implementer", "workspaceRefs", "direct.workspaceRefs"],
       ["implementer", "task", "global.task"]
     ],
     outputSchema: {
@@ -56,10 +55,9 @@ export const cases = [
         id: "implementer",
         label: { "zh-CN": "OpenCode 复核员", en: "OpenCode reviewer" },
         backend: "opencode",
-        readsWorkspaceRefs: true,
-        purpose: "Review the planner's business handoff and verify its referenced Workspace content.",
+        purpose: "Review the planner's business handoff and verify its evidence boundaries.",
         events: ["READY"],
-        prompt: "Review the planner's business conclusion and its projected WorkspaceRefs. When the selected backend exposes the read-only workspace.read tool, use it for each authorized reference you need to verify; check the referenced file content against its recorded digest. If the tool is unavailable, state that content verification is blocked and do not claim it succeeded. Return JSON with event READY and state the reviewed conclusion, reference path, digest result, and any limitations. Do not request or disclose upstream Harness, tool, permission, or private role configuration."
+        prompt: "Review the planner's business conclusion and the projected handoff content. Check its acceptance checks, evidence boundaries, and limitations. Return JSON with event READY and state the reviewed conclusion, evidence checks, and any limitations. Do not request or disclose upstream Harness, tool, permission, or private role configuration."
       }
     ],
     flows: [
@@ -381,6 +379,137 @@ export const cases = [
       ["neutral-judge", "debate-host", "NEEDS_REWORK"],
       ["neutral-judge", "document-publisher", "READY"],
       ["document-publisher", "__system_end__", "READY"]
+    ]
+  },
+  {
+    id: "release-operations",
+    title: { "zh-CN": "产品交付与发布", en: "Product release operations" },
+    short: {
+      "zh-CN": "从需求澄清、并行实现和质量验证，到人工审批、发布和失败补偿的完整交付团队。",
+      en: "A practical delivery team from intake and parallel implementation through human approval, release, and compensation."
+    },
+    category: { "zh-CN": "产品交付", en: "Product delivery" },
+    duration: { "zh-CN": "7 个角色", en: "7 roles" },
+    catalog: {
+      tier: { "zh-CN": "高价值模板", en: "High-value template" },
+      fit: { "zh-CN": "适合需要代码、测试、文档、审批和可追溯发布的小型产品交付。", en: "For small product releases that need code, tests, documentation, approval, and traceable delivery." },
+      delivery: { "zh-CN": "经过审批的发布包与补偿记录", en: "Approved release package and compensation evidence" },
+      api: { "zh-CN": "可通过 API 运行", en: "API runnable" }
+    },
+    icon: "rocket",
+    detail: {
+      scenario: { "zh-CN": "把一项明确的产品需求拆解为实现、测试和文档工作，完成质量门禁后交由人工审批，再执行发布。", en: "Turn a defined product request into implementation, tests, and documentation, pass a quality gate, obtain human approval, and execute a release." },
+      relationship: { "zh-CN": "交付负责人分发同一份任务上下文，三个工作流并行完成后由发布经理汇总；审批通过才允许发布，返工回到发布经理，部署失败进入补偿处理。", en: "The delivery lead fans out one task context to three workstreams. A release manager joins them, requires human approval before deployment, routes rework back to the gate, and sends deployment failures to compensation." },
+      background: { "zh-CN": "真实交付需要把并行产出、汇合条件、人工决策、发布动作和失败处置放在同一条可审计流程中。", en: "Real delivery needs parallel outputs, join conditions, human decisions, release actions, and failure handling in one auditable flow." },
+      problem: { "zh-CN": "适合需要明确责任边界、可回退审批和发布失败处置的小型软件或文档产品交付。", en: "Use this for small software or document releases that need explicit ownership, approval rollback, and deployment failure handling." },
+      collaboration: { "zh-CN": "实现、质量和文档角色在独立工作区并行工作；发布经理通过 all_of 和 context.map 汇总结果；Runtime 审批负责暂停、批准或返工；部署角色失败时由补偿角色记录恢复或升级。", en: "Implementation, quality, and documentation work in isolated workspaces. The release manager combines them through all_of and context.map. Runtime review pauses, approves, or reworks the gate; deployment failures are recorded as compensated or escalated." },
+      deliverable: { "zh-CN": "经过验证的源代码、测试、发布说明，以及审批和补偿证据。", en: "Verified source, tests, release notes, and approval plus compensation evidence." },
+      roles: {
+        "delivery-lead": { "zh-CN": "澄清目标、范围、验收条件并分发统一上下文。", en: "Clarifies the goal, scope, acceptance criteria, and shared context." },
+        "implementation-engineer": { "zh-CN": "实现需求并提交可追踪的源代码。", en: "Implements the request and commits traceable source changes." },
+        "quality-engineer": { "zh-CN": "编写并运行覆盖关键边界的自动化测试。", en: "Creates and runs automated tests for the important boundaries." },
+        "release-writer": { "zh-CN": "整理发布说明、变更范围和已知限制。", en: "Prepares release notes, scope, and known limitations." },
+        "release-manager": { "zh-CN": "汇总并行结果，确认质量门禁并提交人工审批。", en: "Combines parallel results, confirms the quality gate, and requests human approval." },
+        "release-deployer": { "zh-CN": "在审批通过后执行受控发布并报告结果。", en: "Runs the controlled release after approval and reports the result." },
+        "error-handler": { "zh-CN": "记录发布失败的补偿动作、升级条件和最终状态。", en: "Records compensation actions, escalation conditions, and the final failure state." }
+      }
+    },
+    accent: "violet",
+    layout: {
+      "delivery-lead": [80, 145],
+      "implementation-engineer": [360, 48],
+      "quality-engineer": [360, 145],
+      "release-writer": [360, 242],
+      "release-manager": [690, 145],
+      "release-deployer": [990, 95],
+      "error-handler": [990, 245]
+    },
+    semantics: ["handoff.strict", "parallel_split", "all_of", "context.map", "human_review", "rework", "error_compensation"],
+    handoffMode: "strict",
+    handoffContracts: "contracts/handoff.contracts.json",
+    reviews: [{ roleId: "release-manager", mode: "required", timeout: 86400, timeoutAction: "pause", reworkTarget: "delivery-lead", reworkMax: 2, terminateScope: "run" }],
+    joins: [{ roleId: "release-manager", mode: "all_of", sources: ["implementation-engineer", "quality-engineer", "release-writer"] }],
+    loopBudgets: [{ roleId: "delivery-lead", max: 2 }],
+    projections: [
+      ["release-manager", "implementation", "source(implementation-engineer).content"],
+      ["release-manager", "quality", "source(quality-engineer).content"],
+      ["release-manager", "releaseNotes", "source(release-writer).content"],
+      ["release-manager", "task", "global.task"],
+      ["delivery-lead", "humanReviewComment", "global.human_review.current.comment?"],
+      ["delivery-lead", "humanReviewRound", "global.human_review.current.round?"],
+      ["delivery-lead", "previousReleaseManagerOutput", "global.human_review.current.previous_output.content?"]
+    ],
+    roles: [
+      {
+        id: "delivery-lead", label: { "zh-CN": "交付负责人", en: "Delivery lead" }, mode: "parallel_split",
+        purpose: "Frame the delivery request and distribute one bounded implementation context.", events: ["READY"],
+        prompt: "Read the product request and produce a concise delivery brief covering outcome, scope, acceptance criteria, constraints, and file ownership for implementation-engineer, quality-engineer, and release-writer. Do not invent external evidence. Return JSON with event READY and content."
+      },
+      {
+        id: "implementation-engineer", label: { "zh-CN": "实现工程师", en: "Implementation engineer" }, writesFiles: true,
+        purpose: "Implement the requested product change in the execution Workspace.", events: ["READY"],
+        prompt: "Implement the requested change in the execution Workspace using only assigned files. Keep the implementation small and testable, inspect existing files before editing, and report changed paths and real limitations. Use native file-writing tools when available. Return JSON with event READY and content; never claim a file exists unless it was checked."
+      },
+      {
+        id: "quality-engineer", label: { "zh-CN": "质量工程师", en: "Quality engineer" }, writesFiles: true,
+        purpose: "Create executable verification for the requested product change.", events: ["READY"],
+        prompt: "Create or update focused automated tests for the requested change in the execution Workspace. Cover the happy path and important boundary or failure cases. Use native file-writing tools when available and report the exact verification command and result without claiming an unrun pass. Return JSON with event READY and content."
+      },
+      {
+        id: "release-writer", label: { "zh-CN": "发布说明负责人", en: "Release writer" }, writesFiles: true,
+        purpose: "Prepare accurate release notes from the requested scope and available evidence.", events: ["READY"],
+        prompt: "Prepare release notes in the execution Workspace. State what changed, acceptance evidence, known limitations, rollback considerations, and follow-up work. Use native file-writing tools when available and do not invent test or deployment results. Return JSON with event READY and content."
+      },
+      {
+        id: "release-manager", label: { "zh-CN": "发布经理", en: "Release manager" }, backend: "qwen",
+        purpose: "Evaluate the joined delivery package and submit it to human approval or bounded rework.", controlActions: ["approve", "reject", "rework"], events: ["READY"],
+        outputDataSchema: {
+          type: "object",
+          properties: {
+            requiredChanges: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  criterionId: { type: "string" },
+                  action: { type: "string" }
+                },
+                required: ["criterionId", "action"],
+                additionalProperties: false
+              }
+            }
+          },
+          additionalProperties: false
+        },
+        prompt: "Review the projected implementation, quality, and release-note results. Keep Runtime arrival quorum separate from business approval. Submit READY with a concise gate summary when the package is ready for human approval. Include any required changes in content and data.requiredChanges when a reviewer sends the work back. Human approval, rework, and rejection are Runtime decisions, not Role events. Return JSON with event READY, content, and optional data.requiredChanges."
+      },
+      {
+        id: "release-deployer", label: { "zh-CN": "发布执行员", en: "Release deployer" }, writesFiles: true,
+        purpose: "Perform the approved release action and preserve its evidence.", events: ["SHIPPED", "ERROR"],
+        prompt: "Only act after the release manager approval is present. Perform the bounded release or packaging action assigned in the Workspace, record the exact command and result, and emit SHIPPED only when it completed. Emit ERROR with the observed failure and recovery context when it did not complete. Return JSON and do not claim deployment success without evidence."
+      },
+      {
+        id: "error-handler", label: { "zh-CN": "失败补偿处理员", en: "Failure compensation handler" }, backend: "kimi",
+        purpose: "Classify a release failure and record a bounded compensation or escalation outcome.", events: ["COMPENSATED", "ESCALATED", "ABORTED"],
+        prompt: "Handle the release failure as Runtime error context. Identify the failed action, preserve evidence, and choose COMPENSATED when a safe rollback or cleanup completed, ESCALATED when human or external intervention is required, or ABORTED when continuing would be unsafe. Do not claim a rollback or cleanup unless it was performed. Return JSON with the selected event and content."
+      }
+    ],
+    flows: [
+      ["__system_start__", "delivery-lead", "START"],
+      ["delivery-lead", "implementation-engineer", "READY"],
+      ["delivery-lead", "quality-engineer", "READY"],
+      ["delivery-lead", "release-writer", "READY"],
+      ["implementation-engineer", "release-manager", "READY"],
+      ["quality-engineer", "release-manager", "READY"],
+      ["release-writer", "release-manager", "READY"],
+      ["release-manager", "release-deployer", "READY"],
+      ["release-manager", "delivery-lead", "NEEDS_REWORK"],
+      ["release-manager", "__system_end__", "REJECTED"],
+      ["release-deployer", "__system_end__", "SHIPPED"],
+      ["release-deployer", "error-handler", "ERROR"],
+      ["error-handler", "__system_end__", "COMPENSATED"],
+      ["error-handler", "__system_end__", "ESCALATED"],
+      ["error-handler", "__system_end__", "ABORTED"]
     ]
   }
 ];

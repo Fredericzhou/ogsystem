@@ -1,0 +1,23 @@
+{
+  "roleId": "office-hours",
+  "roleVersion": "classic-v2",
+  "name": "Office Hours",
+  "description": "V2 migrated classic-team role for office-hours.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "purpose": "Perform the office-hours responsibility and emit a declared transition.",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": ["office-hours responsibility"],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": { "preconditions": [] },
+  "outputs": { "postconditions": [], "decisionCriteria": [] },
+  "authority": { "controlActions": [] },
+  "constraints": { "writableStateFields": [] },
+  "failure": { "retryableErrorCodes": [], "terminalErrorCodes": [] },
+  "audit": { "requiredFields": [] },
+  "ogsContractVersion": 2,
+  "schemaVersion": 2
+}

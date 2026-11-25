@@ -1,0 +1,23 @@
+{
+  "roleId": "investment-proposer",
+  "roleVersion": "classic-v2",
+  "name": "Investment Proposer",
+  "description": "V2 migrated classic-team role for investment-proposer.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "purpose": "Perform the investment-proposer responsibility and emit a declared transition.",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": ["investment-proposer responsibility"],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": { "preconditions": [] },
+  "outputs": { "postconditions": [], "decisionCriteria": [] },
+  "authority": { "controlActions": [] },
+  "constraints": { "writableStateFields": [] },
+  "failure": { "retryableErrorCodes": [], "terminalErrorCodes": [] },
+  "audit": { "requiredFields": [] },
+  "ogsContractVersion": 2,
+  "schemaVersion": 2
+}

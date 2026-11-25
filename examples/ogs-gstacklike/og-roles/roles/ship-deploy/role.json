@@ -1,0 +1,23 @@
+{
+  "roleId": "ship-deploy",
+  "roleVersion": "classic-v2",
+  "name": "Ship Deploy",
+  "description": "V2 migrated classic-team role for ship-deploy.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "purpose": "Perform the ship-deploy responsibility and emit a declared transition.",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": ["ship-deploy responsibility"],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": { "preconditions": [] },
+  "outputs": { "postconditions": [], "decisionCriteria": [] },
+  "authority": { "controlActions": [] },
+  "constraints": { "writableStateFields": [] },
+  "failure": { "retryableErrorCodes": [], "terminalErrorCodes": [] },
+  "audit": { "requiredFields": [] },
+  "ogsContractVersion": 2,
+  "schemaVersion": 2
+}

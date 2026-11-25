@@ -1,0 +1,23 @@
+{
+  "roleId": "test-operator",
+  "roleVersion": "classic-v2",
+  "name": "Test Operator",
+  "description": "V2 migrated classic-team role for test-operator.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "purpose": "Perform the test-operator responsibility and emit a declared transition.",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": ["test-operator responsibility"],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": { "preconditions": [] },
+  "outputs": { "postconditions": [], "decisionCriteria": [] },
+  "authority": { "controlActions": [] },
+  "constraints": { "writableStateFields": [] },
+  "failure": { "retryableErrorCodes": [], "terminalErrorCodes": [] },
+  "audit": { "requiredFields": [] },
+  "ogsContractVersion": 2,
+  "schemaVersion": 2
+}

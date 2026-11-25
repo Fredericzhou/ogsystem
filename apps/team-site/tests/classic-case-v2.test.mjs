@@ -113,7 +113,7 @@ test("every built-in case materializes machine-readable Role responsibility, inp
   }
 });
 
-test("cross-backend case uses its Codex planner for a real Markdown handoff artifact", async () => {
+test("cross-backend case uses its Codex planner for a bounded business handoff", async () => {
   const workdir = await mkdtemp(path.join(os.tmpdir(), "ogs-cross-backend-v2-materializer-"));
   try {
     const crossBackend = cases.find((item) => item.id === "cross-backend-review-loop");
@@ -132,9 +132,9 @@ test("cross-backend case uses its Codex planner for a real Markdown handoff arti
     assert.equal(Object.hasOwn(outputSchema.properties, "artifacts"), false);
     assert.match(prompt, /cross-backend-review\.md/);
     assert.equal(implementerSchema.additionalProperties, false);
-    assert.match(implementerPrompt, /workspace\.read/);
+    assert.match(implementerPrompt, /projected handoff content/);
     assert.match(systemSource, /context\.map\.implementer\.handoff=direct\.content/);
-    assert.match(systemSource, /context\.map\.implementer\.workspaceRefs=direct\.workspaceRefs/);
+    assert.doesNotMatch(systemSource, /workspaceRefs/);
     const implementerTemplate = bindings.harnessTemplates[bindings.roles.implementer.harnessTemplate];
     assert.deepEqual(implementerTemplate.allowedTools, []);
     assert.equal(implementerTemplate.environment.filesystem, "none");
@@ -152,6 +152,51 @@ test("consulting roles distinguish Runtime arrival quorum from business approval
     const review = await readFile(path.join(workdir, "team-roles", "roles", "quality-reviewer", "agent.md"), "utf8");
     assert.match(synthesis, /Runtime quorum is an arrival gate, not a vote/);
     assert.match(review, /Keep Runtime join arrival quorum separate from business approval/);
+  } finally {
+    await rm(workdir, { recursive: true, force: true });
+  }
+});
+
+test("release operations classic team covers approval, rework, and compensation semantics", async () => {
+  const release = cases.find((item) => item.id === "release-operations");
+  assert.ok(release);
+  assert.deepEqual(release.semantics, ["handoff.strict", "parallel_split", "all_of", "context.map", "human_review", "rework", "error_compensation"]);
+  assert.deepEqual(release.joins, [{
+    roleId: "release-manager",
+    mode: "all_of",
+    sources: ["implementation-engineer", "quality-engineer", "release-writer"]
+  }]);
+  assert.deepEqual(release.reviews, [{
+    roleId: "release-manager",
+    mode: "required",
+    timeout: 86400,
+    timeoutAction: "pause",
+    reworkTarget: "delivery-lead",
+    reworkMax: 2,
+    terminateScope: "run"
+  }]);
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogs-release-operations-v2-"));
+  try {
+    await caseTeamMaterializer.materialize("release-operations", workdir);
+    assert.equal(await caseTeamMaterializer.isCurrent("release-operations", workdir), true);
+    const role = JSON.parse(await readFile(path.join(workdir, "team-roles", "roles", "release-manager", "role.json"), "utf8"));
+    assert.deepEqual(role.authority.controlActions, ["approve", "reject", "rework"]);
+    const system = await readFile(path.join(workdir, "system.mmd"), "utf8");
+    assert.match(system, /handoff\.mode=strict/);
+    assert.match(system, /handoff\.contracts=contracts\/handoff\.contracts\.json/);
+    assert.match(system, /review\.mode\.release-manager=required/);
+    const contracts = JSON.parse(await readFile(path.join(workdir, "contracts", "handoff.contracts.json"), "utf8"));
+    const flowSchema = JSON.parse(await readFile(path.join(workdir, "contracts", "flow-envelope.schema.json"), "utf8"));
+    assert.equal(contracts.contracts.length, 8);
+    assert.ok(contracts.contracts.some((contract) => contract.match.eventType === "READY" && contract.match.toRoleId === "release-deployer"));
+    assert.ok(contracts.contracts.some((contract) => contract.match.eventType === "NEEDS_REWORK" && contract.match.toRoleId === "delivery-lead"));
+    assert.match(system, /context\.map\.delivery-lead\.humanReviewComment=global\.human_review\.current\.comment\?/);
+    const releaseManagerSchema = JSON.parse(await readFile(path.join(workdir, "team-roles", "roles", "release-manager", "output.schema.json"), "utf8"));
+    assert.equal(releaseManagerSchema.properties.data.properties.requiredChanges.items.required.includes("criterionId"), true);
+    assert.equal(await caseTeamMaterializer.isCurrent("release-operations", workdir), true);
+    await writeFile(path.join(workdir, "contracts", "flow-envelope.schema.json"), JSON.stringify({ ...flowSchema, required: ["event", "content"] }));
+    assert.equal(await caseTeamMaterializer.isCurrent("release-operations", workdir), false);
+    assert.match(system, /release-deployer\[Role:release-deployer\] -->\|ERROR\| error-handler/);
   } finally {
     await rm(workdir, { recursive: true, force: true });
   }

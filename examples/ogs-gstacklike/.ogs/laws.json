@@ -1,0 +1,12 @@
+{
+  "laws": [
+    {
+      "lawId": "law.gstacklike.base",
+      "constraints": {
+        "forbiddenToolRefs": [],
+        "maxTransitions": 16,
+        "allowNoopWithoutExecutionBinding": true
+      }
+    }
+  ]
+}

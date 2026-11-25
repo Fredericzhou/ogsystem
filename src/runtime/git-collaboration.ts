@@ -148,7 +148,7 @@ function parseWorktreeEntries(output: string): GitWorktreeEntry[] {
     }
     if (line.startsWith("worktree ")) {
       if (current) entries.push(current);
-      current = { path: line.slice("worktree ".length) };
+      current = { path: resolve(line.slice("worktree ".length)) };
     } else if (current && line.startsWith("HEAD ")) {
       current.head = line.slice("HEAD ".length);
     } else if (current && line.startsWith("branch ")) {
@@ -721,7 +721,11 @@ export function createGitCollaboration(options: GitCollaborationOptions) {
     for (const candidate of ordered) {
       const alreadyMerged = await runGitAllowFailure(path, ["merge-base", "--is-ancestor", candidate, "HEAD"], timeoutMs);
       if (alreadyMerged.code === 0) continue;
-      const result = await runGitAllowFailure(path, ["merge", "--no-edit", "--no-ff", candidate], timeoutMs);
+      const result = await runGitAllowFailure(path, [
+        "-c", "user.name=OGS Runtime",
+        "-c", "user.email=ogs-runtime@localhost",
+        "merge", "--no-edit", "--no-ff", candidate
+      ], timeoutMs);
       if (result.code !== 0) {
         const conflicts = parseNameOnlyPaths(await runGitAllowFailure(path, ["diff", "--name-only", "--diff-filter=U", "-z"], timeoutMs).then((item) => item.stdout));
         return {

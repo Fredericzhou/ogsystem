@@ -12,6 +12,17 @@ resolves through a v2 Harness Template; historical Profile/Tool and `exec.bind` 
 | `langgraph-debate-current/` | Parallel split, all-of Join, and bounded loop |
 | `medical-quorum-consultation/` | Quorum Join, context projection, and flow contract |
 | `legal-rag-dev-team/` | Parallel delivery planning, strict handoff, and review |
+| `ogs-gstacklike/` | High-value release pipeline: intake, review, QA, shipping, deployment, and compensation |
+
+## Validation Fixtures
+
+The following migrated graphs are retained for protocol and failure-path verification rather than
+as built-in product teams:
+
+| Fixture | Purpose |
+| --- | --- |
+| `error-flow-compensation/` | Error-event routing, compensation, escalation, and abort paths |
+| `mulit-debate-ogs/` | Legacy investment debate topology; overlaps the built-in `structured-debate` team |
 
 ## Smoke Commands
 

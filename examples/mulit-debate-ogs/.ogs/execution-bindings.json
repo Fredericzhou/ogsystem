@@ -1,0 +1,24 @@
+{
+  "ogsContractVersion": 2,
+  "schemaVersion": 1,
+  "defaults": { "harnessTemplate": "harness.codex.gpt-6-luna" },
+  "harnessTemplates": {
+    "harness.codex.gpt-6-luna": {
+      "ogsContractVersion": 2,
+      "schemaVersion": 1,
+      "kind": "harness",
+      "templateId": "harness.codex.gpt-6-luna",
+      "backend": "codex",
+      "model": "gpt-6-luna",
+      "allowedTools": [],
+      "environment": { "filesystem": { "read": true, "write": true }, "process": "allow", "network": "deny" }
+    }
+  },
+  "roles": {
+    "investment-proposer": { "kind": "harness", "harnessTemplate": "harness.codex.gpt-6-luna" },
+    "investment-critic": { "kind": "harness", "harnessTemplate": "harness.codex.gpt-6-luna" },
+    "investment-optimizer": { "kind": "harness", "harnessTemplate": "harness.codex.gpt-6-luna" },
+    "debate-judge": { "kind": "harness", "harnessTemplate": "harness.codex.gpt-6-luna" },
+    "debate-summary": { "kind": "harness", "harnessTemplate": "harness.codex.gpt-6-luna" }
+  }
+}

@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { execFile as execFileCallback } from "node:child_process";
 import { promisify } from "node:util";
 import { createGitCollaboration, probeGitCollaboration } from "../dist/runtime/adapter.js";
@@ -381,7 +381,7 @@ test("recovers a committed Role from a merge worktree checkpoint", async () => {
     assert.equal(recovered?.resultCommit, committed.resultCommit);
     assert.equal(recovered?.branch, merged.branch);
     assert.deepEqual(recovered?.changedPaths, ["join-output.txt"]);
-    assert.equal(recovered?.path.endsWith("/merge-merge-role"), true);
+    assert.equal(basename(recovered?.path ?? ""), "merge-merge-role");
   } finally {
     for (const value of created.reverse()) await collaboration.removeWorktree(value.path, true).catch(() => undefined);
     await rm(item.root, { recursive: true, force: true });
@@ -396,7 +396,11 @@ test("preserves whitespace and status-looking bytes in Git path provenance", asy
     const base = (await git(item.repo, ["rev-parse", "HEAD"])).stdout.trim();
     const role = await collaboration.addWorktree({ roleId: "role-paths", executionId: "exec-paths", baseCommit: base });
     created.push(role);
-    const paths = [" leading.txt", "ab file.txt", "trailing.txt "];
+    // NTFS does not support trailing-space filenames; an internal trailing
+    // space before the extension preserves whitespace-byte coverage.
+    const paths = process.platform === "win32"
+      ? [" leading.txt", "ab file.txt", "trailing .txt"]
+      : [" leading.txt", "ab file.txt", "trailing.txt "];
     for (const path of paths) await writeFile(join(role.path, path), "content\n", "utf8");
     const commit = await collaboration.commitWorktree(role, "preserve path bytes");
     assert.deepEqual(commit.changedPaths, paths);

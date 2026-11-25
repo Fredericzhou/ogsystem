@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { execFile as execFileCallback } from "node:child_process";
+import { execFile as execFileCallback, spawn } from "node:child_process";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -27,6 +27,19 @@ const execFile = promisify(execFileCallback);
 
 async function git(cwd, args) {
   return execFile("git", ["-c", "user.name=Workspace Test", "-c", "user.email=workspace@example.test", ...args], { cwd });
+}
+
+async function gitWithInput(cwd, args, input) {
+  return await new Promise((resolve, reject) => {
+    const child = spawn("git", ["-c", "user.name=Workspace Test", "-c", "user.email=workspace@example.test", ...args], { cwd, windowsHide: true });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => { stdout += chunk.toString(); });
+    child.stderr.on("data", (chunk) => { stderr += chunk.toString(); });
+    child.once("error", reject);
+    child.once("close", (code) => code === 0 ? resolve({ stdout, stderr }) : reject(new Error(stderr || `git exited with ${code}`)));
+    child.stdin.end(input);
+  });
 }
 
 test("WorkspaceRef accepts repository hidden files and rejects mutable or unsafe references", () => {
@@ -186,18 +199,20 @@ test("Release materialization failure is durable and does not expose a download 
   }
 });
 
-test("Release rejects Git tree paths that could escape or collide outside a portable output root", async () => {
+test("Release rejects Git tree paths that collide on a portable output root", async () => {
   const root = await mkdtemp(join(tmpdir(), "ogs-release-unsafe-path-"));
   const source = join(root, "source");
   const storeDir = join(root, "store");
   const outputRoot = join(storeDir, "materializations", "release-unsafe-path", "output");
-  const escapedTarget = join(storeDir, "materializations", "outside.txt");
   try {
     await mkdir(source, { recursive: true });
     await git(root, ["init", "--quiet", "--initial-branch=main", source]);
     await writeFile(join(source, "safe.txt"), "must not be partially materialized\n", "utf8");
-    await writeFile(join(source, "..\\..\\outside.txt"), "must never escape output root\n", "utf8");
-    await git(source, ["add", "--", "safe.txt", "..\\..\\outside.txt"]);
+    const collisionBlob = (await git(source, ["hash-object", "-w", "safe.txt"])).stdout.trim();
+    await git(source, ["add", "--", "safe.txt"]);
+    // Populate a case-colliding tree entry directly in the index. This works
+    // on Windows without creating an impossible case-distinct worktree file.
+    await git(source, ["update-index", "--add", "--cacheinfo", `100644,${collisionBlob},SAFE.TXT`]);
     await git(source, ["commit", "--quiet", "-m", "unsafe portable path"]);
     const releaseCommit = (await git(source, ["rev-parse", "HEAD"])).stdout.trim();
     const service = createWorkspaceReleaseService(storeDir);
@@ -207,9 +222,27 @@ test("Release rejects Git tree paths that could escape or collide outside a port
     const failed = await service.load("release-unsafe-path");
     assert.equal(failed?.status, "failed");
     assert.equal(failed?.failureCode, "CANDIDATE_INVALID");
-    await assert.rejects(() => readFile(escapedTarget), { code: "ENOENT" });
     await assert.rejects(() => readFile(join(outputRoot, "safe.txt")), { code: "ENOENT" });
     await assert.rejects(() => readFile(join(storeDir, "materializations", "outside.txt")), { code: "ENOENT" });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("Release rejects a Git tree path that could escape the materialization root", async () => {
+  const root = await mkdtemp(join(tmpdir(), "ogs-release-path-traversal-"));
+  const source = join(root, "source");
+  const storeDir = join(root, "store");
+  try {
+    await mkdir(source, { recursive: true });
+    await git(root, ["init", "--quiet", "--initial-branch=main", source]);
+    const blob = (await writeFile(join(root, "outside-source.txt"), "must not materialize\n").then(() => git(source, ["hash-object", "-w", "../outside-source.txt"]))).stdout.trim();
+    const tree = (await gitWithInput(source, ["mktree", "--missing"], `100644 blob ${blob}\t..\n`)).stdout.trim();
+    const releaseCommit = (await git(source, ["commit-tree", tree, "-m", "unsafe tree path"])).stdout.trim();
+    const service = createWorkspaceReleaseService(storeDir);
+    await service.prepare({ releaseId: "release-path-traversal", runId: "run-path-traversal", workspaceId: "workspace-path-traversal", releaseCommit, expectedCanonicalHead: releaseCommit });
+    await assert.rejects(() => service.materialize({ releaseId: "release-path-traversal", sourceDir: source }), /MATERIALIZATION_ENTRY_INVALID/);
+    await assert.rejects(() => readFile(join(storeDir, "outside-source.txt")), { code: "ENOENT" });
   } finally {
     await rm(root, { recursive: true, force: true });
   }

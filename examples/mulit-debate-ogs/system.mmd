@@ -1,0 +1,18 @@
+flowchart TD
+%% system.id=investment.multi-debate
+%% system.version=2.0.0
+%% law.global=law.project.base
+%% handoff.mode=transition
+%% join.mode.debate-judge=all_of
+%% join.sources.debate-judge=investment-critic,investment-optimizer
+%% role.mode.investment-proposer=parallel_split
+%% loop.max.investment-proposer=2
+
+start[开始] -->|START| investment-proposer[Role:investment-proposer]
+debate-judge[Role:debate-judge] -->|DECISION_READY| debate-summary[Role:debate-summary]
+debate-judge[Role:debate-judge] -->|REBUTTAL_NEEDED| investment-proposer[Role:investment-proposer]
+debate-summary[Role:debate-summary] -->|SUMMARY_READY| end[结束]
+investment-critic[Role:investment-critic] -->|CRITIC_DONE| debate-judge[Role:debate-judge]
+investment-optimizer[Role:investment-optimizer] -->|OPTIMIZER_DONE| debate-judge[Role:debate-judge]
+investment-proposer[Role:investment-proposer] -->|SEND_CRITIC| investment-critic[Role:investment-critic]
+investment-proposer[Role:investment-proposer] -->|SEND_OPTIMIZER| investment-optimizer[Role:investment-optimizer]

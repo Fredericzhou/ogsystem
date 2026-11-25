@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { access, mkdir, writeFile } from "node:fs/promises";
 import { constants } from "node:fs";
 import { homedir, networkInterfaces, platform } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, posix, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 export const SERVICE_LABEL = "com.ogsystem.team-site";
@@ -49,7 +49,7 @@ ${plistString(label)}
   <key>ProgramArguments</key>
   <array>
 ${plistString(node)}
-${plistString(join(app, "server.mjs"))}
+${plistString(posix.join(app, "server.mjs"))}
   </array>
   <key>WorkingDirectory</key>
 ${plistString(app)}
@@ -64,9 +64,9 @@ ${environmentXml}
   <key>ProcessType</key>
 ${plistString("Interactive")}
   <key>StandardOutPath</key>
-${plistString(join(logs, "team-site.stdout.log"))}
+${plistString(posix.join(logs, "team-site.stdout.log"))}
   <key>StandardErrorPath</key>
-${plistString(join(logs, "team-site.stderr.log"))}
+${plistString(posix.join(logs, "team-site.stderr.log"))}
 </dict>
 </plist>
 `;
