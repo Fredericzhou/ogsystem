@@ -369,13 +369,22 @@ export async function createElkLayoutProjection(viewModel: GraphViewModel, mode:
     const targetDelta = { x: targetAfter.x - targetBefore.x, y: targetAfter.y - targetBefore.y };
     if (Math.abs(sourceDelta.x) < 0.01 && Math.abs(sourceDelta.y) < 0.01 &&
         Math.abs(targetDelta.x) < 0.01 && Math.abs(targetDelta.y) < 0.01) continue;
-    geometry.points = geometry.points.map((point, index, points) => {
+    const displaced = geometry.points.map((point, index, points) => {
       const progress = index / Math.max(1, points.length - 1);
       return {
         x: point.x + sourceDelta.x + (targetDelta.x - sourceDelta.x) * progress,
         y: point.y + sourceDelta.y + (targetDelta.y - sourceDelta.y) * progress
       };
     });
+    const orthogonal: LayoutPoint[] = [];
+    for (const point of displaced) {
+      const previous = orthogonal[orthogonal.length - 1];
+      if (previous && previous.x !== point.x && previous.y !== point.y) {
+        orthogonal.push({ x: point.x, y: previous.y });
+      }
+      orthogonal.push(point);
+    }
+    geometry.points = orthogonal;
     geometry.sourcePoint = geometry.points[0];
     geometry.targetPoint = geometry.points[geometry.points.length - 1];
     if (geometry.points.length > 2) routePointsByEdgeId.set(edge.id, geometry.points.slice(1, -1));

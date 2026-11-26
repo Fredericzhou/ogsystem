@@ -154,6 +154,9 @@ const STUDIO_EDGE_FORWARD_ROUTER: LayoutRouter = {
 // non-zero final segment from which X6 can derive its direction.
 export const STUDIO_NODE_EDGE_CLEARANCE = 8;
 export const STUDIO_EDGE_TERMINAL_STUB_LENGTH = 24;
+const NEARBY_ROUTE_CLEARANCE = 12;
+const MIN_MIXED_SIDE_GAP = 16;
+const CHANNEL_TRACK_STEP = 14;
 const LOOP_ROUTE_CLEARANCE = 40;
 const LOOP_ROUTE_BEND_PENALTY = 24;
 const BUNDLE_TRUNK_LENGTH = 36;
@@ -736,11 +739,55 @@ function edgeChannel(edge: GraphViewModelEdge): string {
   return edge.channel ?? (edge.runtimeOnlyErrorFlow ? "error" : "normal");
 }
 
+function endpointNestingAngle(
+  entry: EndpointEntry,
+  nodeById: ReadonlyMap<string, LayoutProjectionNode>,
+  feedbackLanePlans?: ReadonlyMap<string, FeedbackLanePlan>
+): number {
+  const node = nodeById.get(entry.terminal.cell);
+  const counterpartId = entry.terminalName === "source" ? entry.draft.edge.target : entry.draft.edge.source;
+  const counterpart = nodeById.get(counterpartId);
+  if (!node || !counterpart) return Number.POSITIVE_INFINITY;
+
+  const faceCenter = terminalPoint({ ...entry.terminal, offset: 0 }, node) ?? edgeCenter(node);
+  const counterpartTerminal = entry.terminalName === "source" ? entry.draft.target : entry.draft.source;
+  const counterpartPoint = terminalPoint({ ...counterpartTerminal, offset: 0 }, counterpart) ?? edgeCenter(counterpart);
+
+  const side = entry.terminal.side;
+  const verticalFace = side === "left" || side === "right";
+  const dt = verticalFace ? counterpartPoint.y - faceCenter.y : counterpartPoint.x - faceCenter.x;
+
+  // Feedback edges leave on a known staircase lane. Using the signed tangential
+  // turn with the lane's outward distance orders outer rings around inner rings
+  // so nested loops do not cross at the port face.
+  const lanePlan = feedbackLanePlans?.get(entry.draft.edge.id);
+  if (lanePlan && lanePlan.side === side) {
+    const turnSign = Math.abs(dt) < 1 ? 0 : Math.sign(dt);
+    const laneDistance = STUDIO_EDGE_TERMINAL_STUB_LENGTH + 8 + lanePlan.laneIndex * FEEDBACK_LANE_STEP;
+    return turnSign === 0 ? 0 : Math.atan2(turnSign, laneDistance);
+  }
+
+  const dn = side === "right"
+    ? counterpartPoint.x - faceCenter.x
+    : side === "left"
+      ? faceCenter.x - counterpartPoint.x
+      : side === "bottom"
+        ? counterpartPoint.y - faceCenter.y
+        : faceCenter.y - counterpartPoint.y;
+
+  // When turning strictly orthogonally from a face, sorting by polar angle
+  // atan2(tangential, outward) puts negative-turn inner routes first, straight
+  // routes in the middle, and positive-turn outer routes before inner routes.
+  if (Math.abs(dt) < 1 && dn >= 0) return 0;
+  return Math.atan2(dt, dn);
+}
+
 function sharedEndpointOffset(
   draft: RoutingDraft,
   terminalName: "source" | "target",
   drafts: readonly RoutingDraft[],
-  nodeById: ReadonlyMap<string, LayoutProjectionNode>
+  nodeById: ReadonlyMap<string, LayoutProjectionNode>,
+  feedbackLanePlans?: ReadonlyMap<string, FeedbackLanePlan>
 ): number {
   const terminal = draft[terminalName];
   const endpointGroup: EndpointEntry[] = drafts.flatMap((candidate) => [
@@ -749,18 +796,9 @@ function sharedEndpointOffset(
   ])
     .filter((candidate) => candidate.terminal.cell === terminal.cell && candidate.terminal.side === terminal.side)
     .sort((left, right) => {
-      const leftCounterpartId = left.terminalName === "source" ? left.draft.edge.target : left.draft.edge.source;
-      const rightCounterpartId = right.terminalName === "source" ? right.draft.edge.target : right.draft.edge.source;
-      const leftCounterpart = nodeById.get(leftCounterpartId);
-      const rightCounterpart = nodeById.get(rightCounterpartId);
-      const verticalFace = terminal.side === "left" || terminal.side === "right";
-      const leftCoordinate = leftCounterpart
-        ? (verticalFace ? leftCounterpart.y + leftCounterpart.height / 2 : leftCounterpart.x + leftCounterpart.width / 2)
-        : Number.POSITIVE_INFINITY;
-      const rightCoordinate = rightCounterpart
-        ? (verticalFace ? rightCounterpart.y + rightCounterpart.height / 2 : rightCounterpart.x + rightCounterpart.width / 2)
-        : Number.POSITIVE_INFINITY;
-      if (leftCoordinate !== rightCoordinate) return leftCoordinate - rightCoordinate;
+      const leftAngle = endpointNestingAngle(left, nodeById, feedbackLanePlans);
+      const rightAngle = endpointNestingAngle(right, nodeById, feedbackLanePlans);
+      if (Math.abs(leftAngle - rightAngle) > 1e-6) return leftAngle - rightAngle;
 
       // Use the edge's global direction before the local in/out direction.
       // This keeps A->B and B->A in the same order at both endpoints.
@@ -1025,13 +1063,14 @@ type RouteGraphState = {
 
 function expandedRouteObstacles(
   nodeById: ReadonlyMap<string, LayoutProjectionNode>,
-  excludedNodeIds: ReadonlySet<string>
+  excludedNodeIds: ReadonlySet<string>,
+  clearance = LOOP_ROUTE_CLEARANCE
 ): LayoutRect[] {
   return [...nodeById.values()].filter((node) => !excludedNodeIds.has(node.id)).map((node) => ({
-    x: node.x - LOOP_ROUTE_CLEARANCE,
-    y: node.y - LOOP_ROUTE_CLEARANCE,
-    width: node.width + LOOP_ROUTE_CLEARANCE * 2,
-    height: node.height + LOOP_ROUTE_CLEARANCE * 2
+    x: node.x - clearance,
+    y: node.y - clearance,
+    width: node.width + clearance * 2,
+    height: node.height + clearance * 2
   }));
 }
 
@@ -1061,7 +1100,8 @@ function obstacleAwareLoopRoute(
   edge: GraphViewModelEdge,
   sourceTerminal: LayoutTerminal,
   targetTerminal: LayoutTerminal,
-  nodeById: ReadonlyMap<string, LayoutProjectionNode>
+  nodeById: ReadonlyMap<string, LayoutProjectionNode>,
+  clearance = LOOP_ROUTE_CLEARANCE
 ): LayoutPoint[] {
   const source = terminalPoint(sourceTerminal, nodeById.get(edge.source));
   const target = terminalPoint(targetTerminal, nodeById.get(edge.target));
@@ -1072,7 +1112,7 @@ function obstacleAwareLoopRoute(
   const excludedNodeIds = edge.source === edge.target
     ? new Set<string>()
     : new Set([edge.source, edge.target]);
-  const obstacles = expandedRouteObstacles(nodeById, excludedNodeIds);
+  const obstacles = expandedRouteObstacles(nodeById, excludedNodeIds, clearance);
   const sourceClearance = outsidePoint(source, sourceTerminal.side, STUDIO_EDGE_TERMINAL_STUB_LENGTH);
   const targetClearance = outsidePoint(target, targetTerminal.side, STUDIO_EDGE_TERMINAL_STUB_LENGTH);
   const xs = new Set<number>([source.x, target.x]);
@@ -1318,11 +1358,12 @@ function nearbySidePairs(
   const horizontalToVertical = [horizontalSource, verticalTarget] as [LayoutSide, LayoutSide];
   const verticalToHorizontal = [verticalSource, horizontalTarget] as [LayoutSide, LayoutSide];
 
-  // A separated axis is the only safe primary direction. This prevents an
-  // adjacent pair from choosing a route that starts by turning through a node.
-  if (sepX > 0 && sepY <= 0) return [horizontal];
-  if (sepY > 0 && sepX <= 0) return [vertical];
-  if (sepX > 0 && sepY > 0) {
+  // A separated axis is the only safe primary direction. Require meaningful
+  // separation on both axes before offering mixed horizontal/vertical pairs so
+  // slightly offset adjacent nodes stay on facing sides (e.g. right -> left).
+  if (sepX > 0 && sepY < MIN_MIXED_SIDE_GAP) return [horizontal];
+  if (sepY > 0 && sepX < MIN_MIXED_SIDE_GAP) return [vertical];
+  if (sepX >= MIN_MIXED_SIDE_GAP && sepY >= MIN_MIXED_SIDE_GAP) {
     return sepX >= sepY
       ? [horizontal, vertical, horizontalToVertical, verticalToHorizontal]
       : [vertical, horizontal, verticalToHorizontal, horizontalToVertical];
@@ -1497,7 +1538,7 @@ function nearbyOrthogonalRoutes(
   const stubDistance = terminalStubDistance(source, target, nodeById);
   const sourceClearance = outsidePoint(sourcePoint, source.side, stubDistance);
   const targetClearance = outsidePoint(targetPoint, target.side, stubDistance);
-  const obstacles = expandedRouteObstacles(nodeById, new Set([edge.source, edge.target]));
+  const obstacles = expandedRouteObstacles(nodeById, new Set([edge.source, edge.target]), NEARBY_ROUTE_CLEARANCE);
   const sourceNode = nodeById.get(edge.source);
   const targetNode = nodeById.get(edge.target);
   const candidates: LayoutPoint[][] = [];
@@ -1508,6 +1549,17 @@ function nearbyOrthogonalRoutes(
       [sourceClearance, { x: sourceClearance.x, y: targetClearance.y }, targetClearance],
       [sourceClearance, { x: targetClearance.x, y: sourceClearance.y }, targetClearance]
     );
+    const oppositeHorizontal = (source.side === "right" && target.side === "left") ||
+      (source.side === "left" && target.side === "right");
+    const oppositeVertical = (source.side === "bottom" && target.side === "top") ||
+      (source.side === "top" && target.side === "bottom");
+    if (oppositeHorizontal) {
+      const midX = Math.round((sourceClearance.x + targetClearance.x) / 2);
+      candidates.push([sourceClearance, { x: midX, y: sourceClearance.y }, { x: midX, y: targetClearance.y }, targetClearance]);
+    } else if (oppositeVertical) {
+      const midY = Math.round((sourceClearance.y + targetClearance.y) / 2);
+      candidates.push([sourceClearance, { x: sourceClearance.x, y: midY }, { x: targetClearance.x, y: midY }, targetClearance]);
+    }
   }
   const usableCandidates = candidates.map((candidate) => {
     const points = candidate.map((point) => ({ ...point }));
@@ -1520,7 +1572,169 @@ function nearbyOrthogonalRoutes(
     const backtracks = routeHasBacktrack(fullPath, source, target);
     return { points, blocked, endpointCollision, backtracks };
   }).filter((candidate) => !candidate.blocked && !candidate.endpointCollision && !candidate.backtracks).map((candidate) => candidate.points);
-  return usableCandidates.length ? usableCandidates : [obstacleAwareLoopRoute(edge, source, target, nodeById)];
+  if (usableCandidates.length) return usableCandidates;
+  const fallback = obstacleAwareLoopRoute(edge, source, target, nodeById, NEARBY_ROUTE_CLEARANCE);
+  return fallback.length ? [fallback] : [obstacleAwareLoopRoute(edge, source, target, nodeById, 2)];
+}
+
+function ensureOrthogonalRoute(
+  points: LayoutPoint[],
+  source: LayoutTerminal,
+  target: LayoutTerminal,
+  nodeById: ReadonlyMap<string, LayoutProjectionNode>
+): void {
+  const sourcePoint = terminalPoint(source, nodeById.get(source.cell));
+  const targetPoint = terminalPoint(target, nodeById.get(target.cell));
+  if (!sourcePoint || !targetPoint) return;
+  if (!points.length) {
+    if (sourcePoint.x === targetPoint.x || sourcePoint.y === targetPoint.y) return;
+    const stub = terminalStubDistance(source, target, nodeById);
+    const sourceStub = outsidePoint(sourcePoint, source.side, stub);
+    const targetStub = outsidePoint(targetPoint, target.side, stub);
+    points.push(sourceStub, targetStub);
+    orthogonalizeRoutePoints(points);
+    simplifyRoutePoints(points);
+    return;
+  }
+  const sourceHorizontal = source.side === "left" || source.side === "right";
+  if (points[0].x !== sourcePoint.x && points[0].y !== sourcePoint.y) {
+    points.unshift(sourceHorizontal
+      ? { x: points[0].x, y: sourcePoint.y }
+      : { x: sourcePoint.x, y: points[0].y });
+  }
+  const targetHorizontal = target.side === "left" || target.side === "right";
+  const last = points[points.length - 1];
+  if (last.x !== targetPoint.x && last.y !== targetPoint.y) {
+    points.push(targetHorizontal
+      ? { x: last.x, y: targetPoint.y }
+      : { x: targetPoint.x, y: last.y });
+  }
+  orthogonalizeRoutePoints(points);
+  simplifyRoutePoints(points);
+}
+
+function spreadSharedChannelTracks(
+  plans: readonly NearbyRoutePlan[],
+  finalRoutePoints: Map<string, LayoutPoint[]>,
+  nodeById: ReadonlyMap<string, LayoutProjectionNode>
+): void {
+  type TrackItem = {
+    plan: NearbyRoutePlan;
+    axis: "x" | "y";
+    coord: number;
+    minSpan: number;
+    maxSpan: number;
+    minBound: number;
+    maxBound: number;
+    direction: number;
+    sortKey: number;
+  };
+  const items: TrackItem[] = [];
+  for (const plan of plans) {
+    const sourcePoint = terminalPoint(plan.source, nodeById.get(plan.edge.source));
+    const targetPoint = terminalPoint(plan.target, nodeById.get(plan.edge.target));
+    if (!sourcePoint || !targetPoint) continue;
+    const stub = terminalStubDistance(plan.source, plan.target, nodeById);
+    const oppositeHorizontal = (plan.source.side === "right" && plan.target.side === "left") ||
+      (plan.source.side === "left" && plan.target.side === "right");
+    const oppositeVertical = (plan.source.side === "bottom" && plan.target.side === "top") ||
+      (plan.source.side === "top" && plan.target.side === "bottom");
+    const points = finalRoutePoints.get(plan.edge.id) ?? [];
+    if (oppositeHorizontal && Math.abs(sourcePoint.y - targetPoint.y) >= 1) {
+      const minX = Math.min(sourcePoint.x, targetPoint.x) + stub;
+      const maxX = Math.max(sourcePoint.x, targetPoint.x) - stub;
+      if (maxX - minX < CHANNEL_TRACK_STEP) continue;
+      // Locate the single vertical Z-segment whose x lies within [minX, maxX].
+      const full = [sourcePoint, ...points, targetPoint];
+      const verticalSegs = full.slice(1).map((end, index) => ({ start: full[index], end }))
+        .filter((seg) => seg.start.x === seg.end.x && seg.start.y !== seg.end.y && seg.start.x >= minX - 1 && seg.start.x <= maxX + 1);
+      if (verticalSegs.length !== 1) continue;
+      const seg = verticalSegs[0];
+      const forwardSign = Math.sign(targetPoint.x - sourcePoint.x);
+      const dropSign = Math.sign(targetPoint.y - sourcePoint.y);
+      items.push({
+        plan,
+        axis: "x",
+        coord: Math.round(seg.start.x),
+        minSpan: Math.min(seg.start.y, seg.end.y),
+        maxSpan: Math.max(seg.start.y, seg.end.y),
+        minBound: minX,
+        maxBound: maxX,
+        direction: forwardSign * dropSign,
+        // For LR going down (direction > 0), smaller y goes farther right so
+        // nested Z-routes stay strictly non-crossing; reverse for going up.
+        sortKey: (sourcePoint.y + targetPoint.y) / 2
+      });
+    } else if (oppositeVertical && Math.abs(sourcePoint.x - targetPoint.x) >= 1) {
+      const minY = Math.min(sourcePoint.y, targetPoint.y) + stub;
+      const maxY = Math.max(sourcePoint.y, targetPoint.y) - stub;
+      if (maxY - minY < CHANNEL_TRACK_STEP) continue;
+      const full = [sourcePoint, ...points, targetPoint];
+      const horizontalSegs = full.slice(1).map((end, index) => ({ start: full[index], end }))
+        .filter((seg) => seg.start.y === seg.end.y && seg.start.x !== seg.end.x && seg.start.y >= minY - 1 && seg.start.y <= maxY + 1);
+      if (horizontalSegs.length !== 1) continue;
+      const seg = horizontalSegs[0];
+      const forwardSign = Math.sign(targetPoint.y - sourcePoint.y);
+      const shiftSign = Math.sign(targetPoint.x - sourcePoint.x);
+      items.push({
+        plan,
+        axis: "y",
+        coord: Math.round(seg.start.y),
+        minSpan: Math.min(seg.start.x, seg.end.x),
+        maxSpan: Math.max(seg.start.x, seg.end.x),
+        minBound: minY,
+        maxBound: maxY,
+        direction: forwardSign * shiftSign,
+        sortKey: (sourcePoint.x + targetPoint.x) / 2
+      });
+    }
+  }
+
+  const groups = new Map<string, TrackItem[]>();
+  for (const item of items) {
+    const bucket = `${item.axis}:${Math.round(item.coord / 2) * 2}`;
+    groups.set(bucket, [...(groups.get(bucket) ?? []), item]);
+  }
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+    // Only spread when at least two segments actually overlap along the span axis.
+    const hasOverlap = group.some((left, leftIndex) => group.slice(leftIndex + 1).some((right) =>
+      Math.max(left.minSpan, right.minSpan) < Math.min(left.maxSpan, right.maxSpan)
+    ));
+    if (!hasOverlap) continue;
+
+    // Order left-to-right (or top-to-bottom) for non-crossing track assignment.
+    group.sort((left, right) => {
+      if (left.direction !== right.direction) return left.direction - right.direction;
+      const order = left.direction > 0 ? right.sortKey - left.sortKey : left.sortKey - right.sortKey;
+      return order || compareStable(edgeSortKey(left.plan.edge), edgeSortKey(right.plan.edge));
+    });
+    const sharedMin = Math.max(...group.map((item) => item.minBound));
+    const sharedMax = Math.min(...group.map((item) => item.maxBound));
+    const available = sharedMax - sharedMin;
+    if (available < 4) continue;
+    const step = Math.min(CHANNEL_TRACK_STEP, available / (group.length - 1));
+    const center = (sharedMin + sharedMax) / 2;
+    group.forEach((item, index) => {
+      const targetCoord = Math.round(center + (index - (group.length - 1) / 2) * step);
+      const sourcePoint = terminalPoint(item.plan.source, nodeById.get(item.plan.edge.source));
+      const targetPoint = terminalPoint(item.plan.target, nodeById.get(item.plan.edge.target));
+      const sourceNode = nodeById.get(item.plan.edge.source);
+      const targetNode = nodeById.get(item.plan.edge.target);
+      if (!sourcePoint || !targetPoint || !sourceNode || !targetNode) return;
+      const candidatePoints = item.axis === "x"
+        ? [{ x: targetCoord, y: sourcePoint.y }, { x: targetCoord, y: targetPoint.y }]
+        : [{ x: sourcePoint.x, y: targetCoord }, { x: targetPoint.x, y: targetCoord }];
+      simplifyRoutePoints(candidatePoints);
+      const fullPath = [sourcePoint, ...candidatePoints, targetPoint];
+      const obstacles = expandedRouteObstacles(nodeById, new Set([item.plan.edge.source, item.plan.edge.target]), NEARBY_ROUTE_CLEARANCE);
+      const blocked = fullPath.some((point, pointIndex) => pointIndex > 0 && routeSegmentBlocked(fullPath[pointIndex - 1], point, obstacles));
+      if (blocked || middleSegmentHitsEndpointNode(fullPath, sourceNode, targetNode) || routeHasBacktrack(fullPath, item.plan.source, item.plan.target)) {
+        return;
+      }
+      finalRoutePoints.set(item.plan.edge.id, candidatePoints);
+    });
+  }
 }
 
 function chooseNearbyRoute(
@@ -1733,8 +1947,8 @@ function buildEdgeRouting(
 
   const effectiveDrafts = drafts.map((draft) => ({
     ...draft,
-    source: { ...draft.source, offset: sharedEndpointOffset(draft, "source", drafts, nodeById) },
-    target: { ...draft.target, offset: sharedEndpointOffset(draft, "target", drafts, nodeById) }
+    source: { ...draft.source, offset: sharedEndpointOffset(draft, "source", drafts, nodeById, feedbackLanePlans) },
+    target: { ...draft.target, offset: sharedEndpointOffset(draft, "target", drafts, nodeById, feedbackLanePlans) }
   }));
   const finalRoutePoints = new Map(selectedRoutePoints);
   const finalPlannedRoutes: NearbyRoutePlan[] = [];
@@ -1766,6 +1980,7 @@ function buildEdgeRouting(
       points: selected.points
     });
   }
+  spreadSharedChannelTracks(finalPlannedRoutes, finalRoutePoints, nodeById);
   const { bundles, bundleByEdgeId } = createRoutingBundles(effectiveDrafts, nodeById);
   const bundleById = new Map(bundles.map((bundle) => [bundle.id, bundle]));
   const result = new Map<string, LayoutEdgeRouting>();
@@ -1800,7 +2015,10 @@ function buildEdgeRouting(
         routePoints.splice(0, routePoints.length, ...feedbackRoute.points);
       } else {
         const safeRoute = obstacleAwareLoopRoute(edge, sourceTerminal, targetTerminal, nodeById);
-        if (safeRoute.length > 0) routePoints.splice(0, routePoints.length, ...safeRoute);
+        const fallbackRoute = safeRoute.length > 0
+          ? safeRoute
+          : obstacleAwareLoopRoute(edge, sourceTerminal, targetTerminal, nodeById, NEARBY_ROUTE_CLEARANCE);
+        if (fallbackRoute.length > 0) routePoints.splice(0, routePoints.length, ...fallbackRoute);
       }
     } else {
       alignRouteEndpoint(routePoints, sourceTerminal, nodeById.get(edge.source), "source");
@@ -1808,7 +2026,10 @@ function buildEdgeRouting(
     }
     if (requiresObstacleAwareRoute(edge, route) && !(route.kind === "backward" && feedbackEdgeIds.has(edge.id))) {
       const safeRoute = obstacleAwareLoopRoute(edge, sourceTerminal, targetTerminal, nodeById);
-      if (safeRoute.length > 0) routePoints.splice(0, routePoints.length, ...safeRoute);
+      const fallbackRoute = safeRoute.length > 0
+        ? safeRoute
+        : obstacleAwareLoopRoute(edge, sourceTerminal, targetTerminal, nodeById, NEARBY_ROUTE_CLEARANCE);
+      if (fallbackRoute.length > 0) routePoints.splice(0, routePoints.length, ...fallbackRoute);
     }
     const edgeBundles = bundleByEdgeId.get(edge.id);
     if (edgeBundles?.source) {
@@ -1848,6 +2069,7 @@ function buildEdgeRouting(
     if (!requiresObstacleAwareRoute(edge, route) || edge.target === "output") {
       enforceTerminalNormalStubs(routePoints, sourceTerminal, targetTerminal, nodeById);
     }
+    ensureOrthogonalRoute(routePoints, sourceTerminal, targetTerminal, nodeById);
     const hasFixedRoute = routePoints.length > 0;
     result.set(edge.id, {
       kind: route.kind,

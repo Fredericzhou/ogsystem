@@ -1010,3 +1010,119 @@ test("ELK loop routes remain obstacle-free after automatic layout", async () => 
   assert.equal(loop.routing.router.name, "normal");
   assertRouteAvoidsOtherNodes(projection, "b-a");
 });
+
+test("horizontally adjacent nodes stay on right-to-left sides without diagonal segments", () => {
+  const view = graph([
+    node("left", { layout: { x: 100, y: 120, width: 180, height: 84 } }),
+    node("right", { layout: { x: 340, y: 212, width: 180, height: 84 } }),
+    // Placed within the 40px loop clearance above `left` to verify nearby routes
+    // use compact clearance instead of needlessly detouring to `right -> top`.
+    node("upper-neighbor", { layout: { x: 340, y: 8, width: 180, height: 84 } })
+  ], [edge("left-right", "left", "right")]);
+  const projection = createStoredLayoutProjection(view);
+  const projected = projection.edges[0];
+  assert.equal(projected.routing.source.side, "right");
+  assert.equal(projected.routing.target.side, "left");
+  const points = projectedRoutePoints(projection, projected);
+  for (let index = 1; index < points.length; index += 1) {
+    assert.ok(
+      points[index].x === points[index - 1].x || points[index].y === points[index - 1].y,
+      `expected orthogonal segment ${index}: ${JSON.stringify(points)}`
+    );
+  }
+  assertRouteAvoidsOtherNodes(projection, "left-right");
+});
+
+test("bottom-face fan-out to lower-left and lower-right targets orders ports without crossing", () => {
+  const view = graph([
+    node("parent", { layout: { x: 300, y: 80, width: 180, height: 84 } }),
+    // Deliberately reverse alphabetical IDs relative to X coordinates.
+    node("z-left", { layout: { x: 60, y: 280, width: 180, height: 84 } }),
+    node("a-right", { layout: { x: 540, y: 280, width: 180, height: 84 } })
+  ], [
+    edge("to-left", "parent", "z-left"),
+    edge("to-right", "parent", "a-right")
+  ]);
+  const projection = createStoredLayoutProjection(view);
+  const toLeft = projection.edges.find((item) => item.id === "to-left");
+  const toRight = projection.edges.find((item) => item.id === "to-right");
+  assert.ok(toLeft && toRight);
+  if (toLeft.routing.source.side === "bottom" && toRight.routing.source.side === "bottom") {
+    assert.ok(toLeft.routing.source.offset < toRight.routing.source.offset);
+  }
+  assert.equal(
+    routesCross(
+      { routePoints: projectedRoutePoints(projection, toLeft) },
+      { routePoints: projectedRoutePoints(projection, toRight) }
+    ),
+    false
+  );
+});
+
+test("same-row fan-out and nested feedback loops nest outer routes around inner routes without crossing", () => {
+  const fanOutView = graph([
+    node("architect", { layout: { x: 100, y: 100, width: 180, height: 84 } }),
+    node("z-near", { layout: { x: 360, y: 280, width: 180, height: 84 } }),
+    node("a-mid", { layout: { x: 600, y: 280, width: 180, height: 84 } }),
+    node("m-far", { layout: { x: 840, y: 280, width: 180, height: 84 } })
+  ], [
+    edge("e-near", "architect", "z-near"),
+    edge("e-mid", "architect", "a-mid"),
+    edge("e-far", "architect", "m-far")
+  ]);
+  const fanOut = createStoredLayoutProjection(fanOutView);
+  for (let i = 0; i < fanOut.edges.length; i += 1) {
+    for (let j = i + 1; j < fanOut.edges.length; j += 1) {
+      assert.equal(
+        routesCross(
+          { routePoints: projectedRoutePoints(fanOut, fanOut.edges[i]) },
+          { routePoints: projectedRoutePoints(fanOut, fanOut.edges[j]) }
+        ),
+        false,
+        `expected zero crossing between ${fanOut.edges[i].id} and ${fanOut.edges[j].id}`
+      );
+    }
+  }
+
+  const loopView = graph([
+    node("a", { layout: { x: 100, y: 260, width: 180, height: 84 } }),
+    node("b", { layout: { x: 360, y: 260, width: 180, height: 84 } }),
+    node("c", { layout: { x: 620, y: 260, width: 180, height: 84 } })
+  ], [
+    edge("a-b", "a", "b", { topologyOrder: "1L" }),
+    edge("b-c", "b", "c", { topologyOrder: "2L" }),
+    edge("c-a", "c", "a", { topologyOrder: "3L" })
+  ]);
+  const loopProjection = createStoredLayoutProjection(loopView);
+  for (let i = 0; i < loopProjection.edges.length; i += 1) {
+    for (let j = i + 1; j < loopProjection.edges.length; j += 1) {
+      assert.equal(
+        routesCross(
+          { routePoints: projectedRoutePoints(loopProjection, loopProjection.edges[i]) },
+          { routePoints: projectedRoutePoints(loopProjection, loopProjection.edges[j]) }
+        ),
+        false,
+        `expected concentric nesting without crossing between ${loopProjection.edges[i].id} and ${loopProjection.edges[j].id}`
+      );
+    }
+  }
+});
+
+test("shared Z-channel fan-out spreads vertical tracks without collinear overlap or crossing", () => {
+  const view = graph([
+    node("dispatch", { layout: { x: 100, y: 100, width: 180, height: 84 } }),
+    node("upper", { layout: { x: 440, y: 220, width: 180, height: 84 } }),
+    node("lower", { layout: { x: 440, y: 360, width: 180, height: 84 } })
+  ], [
+    edge("to-upper", "dispatch", "upper"),
+    edge("to-lower", "dispatch", "lower")
+  ]);
+  const projection = createStoredLayoutProjection(view);
+  const upper = projection.edges.find((item) => item.id === "to-upper");
+  const lower = projection.edges.find((item) => item.id === "to-lower");
+  assert.ok(upper && lower);
+  const upperPts = projectedRoutePoints(projection, upper);
+  const lowerPts = projectedRoutePoints(projection, lower);
+  assert.equal(routesCross({ routePoints: upperPts }, { routePoints: lowerPts }), false);
+  assert.equal(routesShareCollinearSegment(upperPts, lowerPts), false);
+});
