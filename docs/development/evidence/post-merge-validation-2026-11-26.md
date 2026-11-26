@@ -59,9 +59,10 @@ manual UAT scenarios or human sign-off in [`../release-uat-checklist.md`](../rel
   release projection now reports `not-applicable` when no V2 Release/Materialization evidence is
   present; it must not be interpreted as a published delivery. Formal Project Runs remain the
   authority for Commit, Release, Materialization, file read, and download evidence.
-- The user reported that Windows execution was completed. The OS/runtime transcript is not present
-  in this checkout, so Release UAT Scenario 4 remains `Not run` until the operator records the
-  Windows version, Node/pnpm versions, commands, readiness result, and minimal workflow output.
+- The user confirmed that Windows execution completed successfully. The OS/runtime transcript is
+  still not present in this checkout, so Release UAT Scenario 4 remains `Not run` until the operator
+  records the Windows version, Node/pnpm versions, commands, readiness result, and minimal workflow
+  output required by the row.
 - After increasing the isolated probe's whole-process budget from 10 to 30 minutes, a fresh
   `software-team` Codex run completed as `done` with all five Roles successful. Run
   `20261126-042211-707470cb` completed in `887532` ms. This confirms the earlier missing
@@ -76,14 +77,16 @@ manual UAT scenarios or human sign-off in [`../release-uat-checklist.md`](../rel
   - `management-consulting`: Run `20261126-050149-a40f13b0`, `9/9` Roles, `324145` ms.
   - `software-team`: Run `20261126-050713-aaa2b430`, `5/5` Roles, `713474` ms.
   - `structured-debate`: Run `20261126-051907-35eda146`, `5/5` Roles, `131921` ms.
-- `release-operations` failed closed before Run reservation with `MODEL_UNAVAILABLE`: its fixed
-  `qwen/gpt-6-luna` and `kimi/gpt-6-luna` bindings are not available in the refreshed catalog
-  because the shared Responses API credential is unavailable. This is a provider configuration
-  blocker, not a successful delivery. The isolated probe still does not create formal Project,
-  Task, Run, Workspace Commit, or Materialization evidence.
-- The provider error now reaches the user boundary as: `the qwen backend is installed_but_broken:
-  Shared Responses API credential is unavailable.` It no longer recommends a redundant catalog
-  refresh when discovery has already identified the provider failure.
+- After the shared Responses transport began reusing the user-level Codex gateway configuration,
+  `project sync-models` reported both Qwen and Kimi as runnable for `gpt-6-luna`. Direct real
+  adapter probes for both backends returned exit code `0` and response IDs. No token is written to
+  the project catalog or evidence.
+- A fresh release-operations probe reached the intended Human Review boundary with Codex, Qwen,
+  and Kimi bindings. The release manager completed on Qwen and the run stopped while waiting for
+  human review; the isolated probe cannot make the real reviewer decision. This removes the
+  provider-credential blocker but does not close the formal release-operations or Human Review UAT
+  rows, and the probe still does not create formal Project, Task, Run, Workspace Commit, or
+  Materialization evidence.
 
 ## Boundaries
 
@@ -107,3 +110,6 @@ manual UAT scenarios or human sign-off in [`../release-uat-checklist.md`](../rel
   `ogs doctor --online-check --system examples/target-model-binding-system.mmd --laws .ogs/laws.json`
   returned `status=ok`, no warnings or errors, and `DOCTOR_PROVIDER_CONNECTIVITY_OK` for both
   configured Codex `gpt-6-luna` bindings.
+- The shared Responses adapter regression suite passed `4/4`, including fallback to the Codex
+  gateway's configured `base_url` and `experimental_bearer_token` when explicit OpenAI variables
+  are absent.

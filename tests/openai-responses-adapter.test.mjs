@@ -1,8 +1,52 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtemp, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 
 import { qwenBackendAdapter } from "../dist/runtime/qwen-adapter.js";
 import { kimiBackendAdapter } from "../dist/runtime/kimi-adapter.js";
+import { resolveSharedResponsesConfig } from "../dist/runtime/openai-responses-adapter.js";
+
+test("shared Responses transport reuses Codex gateway configuration", async () => {
+  const previous = {
+    base: process.env.OGS_OPENAI_BASE_URL,
+    key: process.env.OGS_OPENAI_API_KEY,
+    openaiBase: process.env.OPENAI_BASE_URL,
+    openaiKey: process.env.OPENAI_API_KEY,
+    codexConfig: process.env.CODEX_CONFIG_PATH,
+    codexAuth: process.env.CODEX_AUTH_PATH
+  };
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogs-codex-config-"));
+  const configPath = path.join(tempRoot, "config.toml");
+  await writeFile(configPath, [
+    "[model_providers.custom]",
+    'base_url = "http://127.0.0.1:43123/v1"',
+    'experimental_bearer_token = "codex-test-bearer"',
+    ""
+  ].join("\n"), "utf8");
+  for (const name of ["OGS_OPENAI_BASE_URL", "OGS_OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENAI_API_KEY"]) delete process.env[name];
+  process.env.CODEX_CONFIG_PATH = configPath;
+  process.env.CODEX_AUTH_PATH = path.join(tempRoot, "missing-auth.json");
+  try {
+    assert.deepEqual(resolveSharedResponsesConfig(), {
+      baseUrl: "http://127.0.0.1:43123/v1",
+      apiKey: "codex-test-bearer"
+    });
+  } finally {
+    for (const [name, value] of Object.entries({
+      OGS_OPENAI_BASE_URL: previous.base,
+      OGS_OPENAI_API_KEY: previous.key,
+      OPENAI_BASE_URL: previous.openaiBase,
+      OPENAI_API_KEY: previous.openaiKey,
+      CODEX_CONFIG_PATH: previous.codexConfig,
+      CODEX_AUTH_PATH: previous.codexAuth
+    })) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  }
+});
 
 test("Qwen and Kimi share the Codex-compatible gpt-6-luna Responses API", async () => {
   const previous = {

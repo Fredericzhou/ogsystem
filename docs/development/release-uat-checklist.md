@@ -440,3 +440,12 @@ built-in teams and failed closed for `release-operations` because its Qwen/Kimi 
 not configured. This updates engineering and provider evidence only and does not change the UAT
 scenario count or human sign-off requirements. Details are in
 [`evidence/post-merge-validation-2026-11-26.md`](evidence/post-merge-validation-2026-11-26.md).
+
+Provider and Windows follow-up on 2026-11-26: the user confirmed that the Windows workflow had
+been verified, but did not provide the OS/runtime transcript required by Scenario 4, so that row
+remains `Not run` pending an auditable record. The shared Qwen/Kimi Responses adapter now reuses
+the configured Codex gateway `base_url` and `experimental_bearer_token` when explicit OpenAI
+variables are absent. Model sync reported Qwen and Kimi runnable for `gpt-6-luna`; direct real
+adapter probes for both returned successful responses. A fresh release-operations probe reached
+its intended Human Review pause with Codex, Qwen, and Kimi bindings. This removes the provider
+credential blocker, but does not change the formal UAT count or replace an authorized human review.

@@ -1,6 +1,6 @@
 {
   "catalogVersion": "4",
-  "generatedAt": "2026-11-25T20:44:30.556Z",
+  "generatedAt": "2026-11-26T03:00:20.109Z",
   "sources": [
     {
       "backend": "opencode",
@@ -49,8 +49,8 @@
       "transport": "http",
       "sessionKind": "logical-session",
       "processOwnership": "attached_external",
-      "status": "installed_but_broken",
-      "detail": "Shared Responses API credential is unavailable."
+      "status": "runnable",
+      "detail": "Shared Responses API ready for gpt-6-luna."
     },
     {
       "backend": "kimi",
@@ -59,8 +59,8 @@
       "transport": "http",
       "sessionKind": "logical-session",
       "processOwnership": "attached_external",
-      "status": "installed_but_broken",
-      "detail": "Shared Responses API credential is unavailable."
+      "status": "runnable",
+      "detail": "Shared Responses API ready for gpt-6-luna."
     }
   ],
   "models": [
@@ -3633,6 +3633,54 @@
         "kind": "effort",
         "levels": [
           "off"
+        ]
+      }
+    },
+    {
+      "backend": "qwen",
+      "modelId": "gpt-6-luna",
+      "runnable": true,
+      "name": "GPT-6 Luna",
+      "status": "discovered",
+      "capabilities": {
+        "textInput": true,
+        "textOutput": true,
+        "toolcall": false
+      },
+      "variants": [],
+      "reasoning": {
+        "supported": true,
+        "kind": "effort",
+        "levels": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ]
+      }
+    },
+    {
+      "backend": "kimi",
+      "modelId": "gpt-6-luna",
+      "runnable": true,
+      "name": "GPT-6 Luna",
+      "status": "discovered",
+      "capabilities": {
+        "textInput": true,
+        "textOutput": true,
+        "toolcall": false
+      },
+      "variants": [],
+      "reasoning": {
+        "supported": true,
+        "kind": "effort",
+        "levels": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
         ]
       }
     }

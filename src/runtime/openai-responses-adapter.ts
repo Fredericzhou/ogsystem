@@ -61,6 +61,11 @@ export function resolveSharedResponsesConfig(): ResponsesConfig {
     baseUrl: normalizedBaseUrl,
     apiKey: configuredValue("OGS_OPENAI_API_KEY")
       ?? configuredValue("OPENAI_API_KEY")
+      // Codex can be configured with a Responses-compatible gateway and an
+      // experimental bearer token instead of an auth.json API key. Reuse that
+      // user-level configuration for the shared Qwen/Kimi transport without
+      // copying the secret into project files or model catalog evidence.
+      ?? readCodexConfigValue("experimental_bearer_token")
       ?? readCodexAuthKey()
   };
 }
