@@ -10,7 +10,7 @@
 | :--- | :--- | :--- |
 | **[`ogsystem-paper-zh.md`](ogsystem-paper-zh.md)** | **中文版工程实践论文** (完整文稿) | 面向多角色 AI 协作、智能体运行时治理与协同工作流相关期刊或会议。 |
 | **[`ogsystem-paper-en.md`](ogsystem-paper-en.md)** | **英文版工程实践论文** (完整文稿) | 面向多智能体系统、AI 协作治理与可信工作流相关期刊或会议。 |
-| **[`ogsystem-submission-paper-en.md`](ogsystem-submission-paper-en.md)** | **英文投稿稿（V2）** | 按 RQ 组织的系统设计与工程验证论文；含先行工作归属、四层架构、共享 Workspace/Join/Release 状态、证据边界和研究限制。 |
+| **[`ogs-submission-paper-en.md`](ogs-submission-paper-en.md)** | **英文投稿稿（OGS）** | 按 RQ 与三根核心价值支柱组织的系统设计与实证验证论文（Elsevier SCICO OSP 轨道）；含同行差异化矩阵、四层架构、单工作区事务契约、四臂受控实验与 6 项确定性消融。 |
 | **[`formal-model-and-proofs.md`](formal-model-and-proofs.md)** | **形式化模型与协议安全证明附录** | 责任席位 EFSM 代数、Context Map 字段封闭性、四值 Join 粘滞失败单调性、Expected-Head CAS 无覆盖一致性与有界循环终止性证明。 |
 | **[`experiment-benchmark-design.md`](experiment-benchmark-design.md)** | **延期实验设计目录** | 文献对标、历史 VDS/效率指标和外部框架扩展的设计记录；当前论文以 `paper-experiment-master-plan.md` 与 `benchmarks/CORE-EXPERIMENT-REPRO.md` 为准。 |
 | **[`paper-experiment-master-plan.md`](paper-experiment-master-plan.md)** | **论文核心实验执行方案（独立 Worktree）** | 统一模型 `gpt-6-luna`、A/B1/B2/C 四臂、5 个专项任务 × 2 个 seed、隐藏测试后置评估、四项审计维度、EFSM 消融与 Phase 0–4 路线图。外部框架和额外基准延期。 |

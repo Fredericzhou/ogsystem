@@ -1,7 +1,7 @@
 # OGSystem V2 Formal Model and Protocol Safety Invariants
 # OGSystem V2 形式化模型与协议安全不变量
 
-> **Status / 状态:** Formal protocol specification and proof appendix supporting [`ogsystem-submission-paper-en.md`](ogsystem-submission-paper-en.md).  
+> **Status / 状态:** Formal protocol specification and proof appendix supporting [`ogs-submission-paper-en.md`](ogs-submission-paper-en.md).  
 > **Scope Boundary / 证明边界:** Every proposition below is proved over the **OGSystem V2 protocol model** under explicit system assumptions (stated in §6). These proofs establish structural safety and termination invariants of the Framework runtime; they do **not** claim semantic correctness of LLM outputs, cryptographic tamper-proofing of local disk storage, or immunity to host OS compromises.
 
 ---
@@ -158,7 +158,7 @@ where $d_{\text{DAG}}(v)$ is the longest acyclic path length from seat $v$ to a 
 
 ## 6. Explicit Formal Assumptions & Evidence Boundary / 形式化假设与证据边界
 
-To maintain strict academic rigor (aligned with [`ogsystem-submission-paper-en.md`](ogsystem-submission-paper-en.md) §8):
+To maintain strict academic rigor (aligned with [`ogs-submission-paper-en.md`](ogs-submission-paper-en.md) §8):
 
 | Assumption | What the Proof Guarantees | What Remains Outside Scope |
 | :--- | :--- | :--- |

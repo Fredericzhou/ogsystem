@@ -4,7 +4,7 @@
  * @fileoverview Zero-cost, offline reproduction and verification script for OGSystem paper.
  * 
  * Verifies all cryptographic digests, recorded evidence ledgers, and test suite
- * metrics cited in ogsystem-paper-zh.md, ogsystem-paper-en.md, and ogsystem-submission-paper-en.md.
+ * metrics cited in ogsystem-paper-zh.md, ogsystem-paper-en.md, and ogs-submission-paper-en.md.
  * 
  * No external LLM API keys or commercial dependencies required.
  * 
