@@ -435,10 +435,11 @@ Current-source validation on 2026-11-26: `pnpm run build` passed; `pnpm test` pa
 tests, one Windows-only skip, and Team Site 108/108; the example smoke, CLI regression, npm/pnpm
 package-install smoke, documentation drift check, and visualizer browser suite (Studio 17/17,
 Build 4/4, two deployment-only skips) also passed. `ogs doctor --online-check` verified both
-Codex `gpt-6-luna` bindings after the adapter probe fix; a fresh real-model probe passed four
-built-in teams and failed closed for `release-operations` because its Qwen/Kimi credentials are
-not configured. This updates engineering and provider evidence only and does not change the UAT
-scenario count or human sign-off requirements. Details are in
+Codex `gpt-6-luna` bindings after the adapter probe fix; the initial real-model probe before the
+Codex gateway fallback was added failed closed for `release-operations` because its Qwen/Kimi
+credential path was unavailable. This historical result is superseded by the Provider and Windows
+follow-up below. The engineering evidence does not change the UAT scenario count or human sign-off
+requirements. Details are in
 [`evidence/post-merge-validation-2026-11-26.md`](evidence/post-merge-validation-2026-11-26.md).
 
 Provider and Windows follow-up on 2026-11-26: the user confirmed that the Windows workflow had
