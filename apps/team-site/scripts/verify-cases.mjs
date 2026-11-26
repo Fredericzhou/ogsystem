@@ -40,6 +40,17 @@ for (const item of cases) {
       }
       return entry.backend !== expected.backend || entry.modelId !== expected.modelId;
     });
+    const expectedHumanReviewPause = item.id === "release-operations"
+      && result.status === "stopped"
+      && /waiting for human review/i.test(String(result.error || ""))
+      && successfulEntries.some((entry) => entry.roleId === "release-manager" && entry.backend === "qwen" && entry.status === "ok");
+    if (expectedHumanReviewPause) {
+      const bindings = [...new Set(successfulEntries.map((entry) => entry.profileId
+        ? `profile:${entry.profileId}`
+        : `${entry.backend}/${entry.modelId}`))].join(", ");
+      process.stdout.write(`[model-run] expected human-review pause; run=${result.runId || "unknown"}; duration=${result.durationMs} ms; completedRoles=${completedRoles.size}; audit=${bindings}; reviewer decision required\n`);
+      continue;
+    }
     if (result.status !== "done" || missing.length || wrongBindings.length) {
       const actual = [...new Set(successfulEntries.map((entry) => entry.profileId
         ? `profile:${entry.profileId}`

@@ -87,6 +87,9 @@ manual UAT scenarios or human sign-off in [`../release-uat-checklist.md`](../rel
   provider-credential blocker but does not close the formal release-operations or Human Review UAT
   rows, and the probe still does not create formal Project, Task, Run, Workspace Commit, or
   Materialization evidence.
+- `verify:cases` now classifies this exact release-operations pause as an expected Human Review
+  boundary only when the run error says `waiting for human review` and the Qwen release-manager
+  Role succeeded; other missing Roles, binding mismatches, and Provider failures remain non-zero.
 
 ## Boundaries
 
