@@ -1,5 +1,6 @@
-import { execFileSync } from "node:child_process";
-import { access, mkdir, writeFile } from "node:fs/promises";
+import { execFileSync, spawn } from "node:child_process";
+import { access, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { closeSync, openSync } from "node:fs";
 import { constants } from "node:fs";
 import { homedir, networkInterfaces, platform } from "node:os";
 import { dirname, join, posix, resolve } from "node:path";
@@ -12,6 +13,7 @@ export const appRoot = join(repoRoot, "apps", "team-site");
 export const serviceStateRoot = join(homedir(), ".ogsystem", "team-site");
 export const launchAgentPath = join(homedir(), "Library", "LaunchAgents", `${SERVICE_LABEL}.plist`);
 export const logRoot = join(serviceStateRoot, "logs");
+export const serviceStatePath = join(serviceStateRoot, "service.json");
 export const nodePath = process.execPath;
 
 function xml(value) {
@@ -97,17 +99,116 @@ export function serviceDomain(uid = process.getuid?.()) {
 
 async function ensureBuild() {
   const required = join(repoRoot, "dist", "visualizer", "project-projection.js");
+  const packageManager = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
   try {
     await access(required, constants.R_OK);
   } catch {
-    execFileSync("pnpm", ["build"], { cwd: repoRoot, stdio: "inherit" });
+    execFileSync(packageManager, ["build"], { cwd: repoRoot, stdio: "inherit" });
   }
-  execFileSync("pnpm", ["--dir", appRoot, "run", "build:assets"], { cwd: repoRoot, stdio: "inherit" });
+  execFileSync(packageManager, ["--dir", appRoot, "run", "build:assets"], { cwd: repoRoot, stdio: "inherit" });
+}
+
+function serviceEnvironment({ host, port }) {
+  return {
+    ...process.env,
+    HOST: host,
+    PORT: String(port),
+    OGS_VIS_URL: process.env.OGS_VIS_URL || "http://127.0.0.1:4177",
+    OGS_VIS_WORKDIR: process.env.OGS_VIS_WORKDIR || join(homedir(), ".ogsystem", "visualizer-workspace"),
+    OGS_SITE_PROJECTS_DIR: process.env.OGS_SITE_PROJECTS_DIR || join(homedir(), ".ogsystem", "projects")
+  };
+}
+
+async function installPortableService({ host, port }) {
+  await mkdir(logRoot, { recursive: true });
+  await mkdir(process.env.OGS_SITE_PROJECTS_DIR || join(homedir(), ".ogsystem", "projects"), { recursive: true });
+  await mkdir(process.env.OGS_VIS_WORKDIR || join(homedir(), ".ogsystem", "visualizer-workspace"), { recursive: true });
+  await stopService();
+  const stdout = openSync(join(logRoot, "team-site.stdout.log"), "a");
+  const stderr = openSync(join(logRoot, "team-site.stderr.log"), "a");
+  const child = spawn(nodePath, [join(appRoot, "server.mjs")], {
+    cwd: appRoot,
+    env: serviceEnvironment({ host, port }),
+    detached: true,
+    stdio: ["ignore", stdout, stderr]
+  });
+  closeSync(stdout);
+  closeSync(stderr);
+  child.unref();
+  await writeFile(serviceStatePath, JSON.stringify({ pid: child.pid, host, port: Number(port) }, null, 2), "utf8");
+  try {
+    await waitForReady({ port });
+  } catch (error) {
+    await stopPortableService();
+    throw error;
+  }
+  return serviceStatePath;
+}
+
+async function readPortableState() {
+  try {
+    return JSON.parse(await readFile(serviceStatePath, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function processIsAlive(pid) {
+  if (!pid) return false;
+  try {
+    process.kill(Number(pid), 0);
+    return true;
+  } catch (error) {
+    return error?.code === "EPERM";
+  }
+}
+
+function terminatePortableProcess(pid) {
+  if (!pid || !processIsAlive(pid)) return;
+  if (platform() === "win32") {
+    try {
+      execFileSync("taskkill", ["/PID", String(pid), "/T", "/F"], { stdio: "ignore" });
+    } catch {
+      // The process may have exited between the liveness check and taskkill.
+    }
+    return;
+  }
+  try {
+    process.kill(Number(pid), "SIGTERM");
+  } catch (error) {
+    if (error?.code !== "ESRCH") throw error;
+  }
+}
+
+async function stopPortableService() {
+  const state = await readPortableState();
+  if (!state) return;
+  const port = state.port || process.env.PORT || "4173";
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/_service/drain`, {
+      method: "POST",
+      signal: AbortSignal.timeout(10 * 60 * 1000 + 5000)
+    });
+    if (response.status === 404 || response.status === 405) await waitForLegacyServiceIdle(`http://127.0.0.1:${port}`);
+    else if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(payload.error || `Team Site refused to stop safely (HTTP ${response.status}).`);
+    }
+  } catch (error) {
+    if (error?.cause?.code !== "ECONNREFUSED") throw error;
+  }
+  terminatePortableProcess(state.pid);
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    if (!processIsAlive(state.pid)) break;
+    await delay(100);
+  }
+  await waitForServicePortRelease(port);
+  await rm(serviceStatePath, { force: true });
 }
 
 export async function installService({ prepare = true, host = process.env.OGS_SITE_HOST || process.env.HOST || "127.0.0.1", port = process.env.PORT || "4173" } = {}) {
-  if (platform() !== "darwin") throw new Error("team-site service management requires macOS launchd.");
   if (prepare) await ensureBuild();
+  if (platform() !== "darwin") return installPortableService({ host, port });
   await mkdir(dirname(launchAgentPath), { recursive: true });
   await mkdir(logRoot, { recursive: true });
   await mkdir(process.env.OGS_SITE_PROJECTS_DIR || join(homedir(), ".ogsystem", "projects"), { recursive: true });
@@ -119,12 +220,15 @@ export async function installService({ prepare = true, host = process.env.OGS_SI
   launchctl(["enable", serviceDomain()]);
   launchctl(["bootstrap", domain, launchAgentPath]);
   launchctl(["kickstart", "-k", serviceDomain()]);
-  await waitForReady();
+  await waitForReady({ port });
   return launchAgentPath;
 }
 
 export async function stopService() {
-  if (platform() !== "darwin") throw new Error("team-site service management requires macOS launchd.");
+  if (platform() !== "darwin") {
+    await stopPortableService();
+    return;
+  }
   const serviceDetails = launchctl(["print", serviceDomain()], { allowFailure: true });
   if (!serviceDetails) {
     await waitForServicePortRelease(process.env.PORT || "4173");
@@ -218,10 +322,10 @@ export async function probe(url = "http://127.0.0.1:4173/healthz") {
   }
 }
 
-export async function waitForReady({ timeoutMs = 15000 } = {}) {
+export async function waitForReady({ timeoutMs = 15000, port = process.env.PORT || "4173" } = {}) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const result = await probe("http://127.0.0.1:4173/readyz");
+    const result = await probe(`http://127.0.0.1:${port}/readyz`);
     if (result.ok && result.status === 200) return result;
     await delay(150);
   }
@@ -229,13 +333,21 @@ export async function waitForReady({ timeoutMs = 15000 } = {}) {
 }
 
 export async function readServiceStatus() {
+  if (platform() !== "darwin") {
+    const state = await readPortableState();
+    const host = state?.host || null;
+    const port = state?.port || Number(process.env.PORT || "4173");
+    const health = await probe(`http://127.0.0.1:${port}/healthz`);
+    const ready = await probe(`http://127.0.0.1:${port}/readyz`);
+    return { label: SERVICE_LABEL, managed: Boolean(state), pid: state?.pid || null, host, port, urls: serviceUrls(host, port), health, ready, state: serviceStatePath };
+  }
   const details = launchctl(["print", serviceDomain()], { allowFailure: true });
   const pid = Number(details.match(/\bpid\s*=\s*(\d+)/)?.[1] || 0);
   const host = details.match(/\bHOST\s*=>\s*(\S+)/)?.[1] || null;
   const port = details.match(/\bPORT\s*=>\s*(\d+)/)?.[1] || "4173";
   const health = await probe(`http://127.0.0.1:${port}/healthz`);
   const ready = await probe(`http://127.0.0.1:${port}/readyz`);
-  return { label: SERVICE_LABEL, launchd: Boolean(details), pid: pid || null, host, port: Number(port), urls: serviceUrls(host, port), health, ready, plist: launchAgentPath };
+  return { label: SERVICE_LABEL, managed: Boolean(details), pid: pid || null, host, port: Number(port), urls: serviceUrls(host, port), health, ready, plist: launchAgentPath };
 }
 
 function serviceUrls(host, port = process.env.PORT || 4173) {
@@ -287,7 +399,7 @@ async function main(command = process.argv[2] || "status", args = process.argv.s
   if (command === "status") {
     const status = await readServiceStatus();
     console.log(JSON.stringify(status, null, 2));
-    if (!status.launchd || !status.health.ok || !status.ready.ok) process.exitCode = 1;
+    if (!status.managed || !status.health.ok || !status.ready.ok) process.exitCode = 1;
     return;
   }
   throw new Error(`Unknown command: ${command}. Use start, stop, restart, or status.`);

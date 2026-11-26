@@ -64,20 +64,20 @@ Project Run 工作目录位于 `<projectId>/.ogs/runs/<runId>/`，其中保存�
 
 Team Site 使用固定应用外壳：桌面侧栏可收起并记住选择，平板默认显示图标导航，手机从顶栏打开导航抽屉；抽屉支持 Escape、遮罩关闭和焦点恢复。页面内容在各自的页面区/面板内滚动，路由切换重置当前页面滚动位置。浏览器无法访问 `localStorage` 时，导航和语言仍使用视口默认值及中文回退。
 
-列表、表单、配置与 Studio 仿真详情采用统一页头和页面框架；团队设计画布保持自己的工作台尺寸约束。手机主操作与偏好菜单分开呈现，触屏控件按 44px 目标尺寸检查。工作台与前端后续轻量演进遵循 [v2 验收清单](../../docs/development/v2-validation-and-acceptance.md)。真实设备、屏幕阅读器、Windows 与真实业务模型的人工签收仍以 [Release UAT 清单](../../docs/development/release-uat-checklist.md) 为准。
+列表、表单、配置与 Studio 仿真详情采用统一页头和页面框架；团队设计画布保持自己的工作台尺寸约束。手机主操作与偏好菜单分开呈现，触屏控件按 44px 目标尺寸检查。工作台与前端后续轻量演进遵循 [v2 验收清单](../../docs/development/v2-validation-and-acceptance.md)。真实设备、屏幕阅读器与真实业务模型的人工签收仍以 [Release UAT 清单](../../docs/development/release-uat-checklist.md) 为准。
 
 ## 本地启动
 
-在仓库根目录执行一次构建，然后使用用户级 launchd 托管 Team Site：
+在仓库根目录执行一次构建，然后使用项目服务命令启动 Team Site：
 
 ```sh
 pnpm build
 pnpm team-site:start
 ```
 
-服务由 macOS launchd 持有，不依赖启动它的终端会话。常用生命周期命令为
+服务在后台运行，不依赖启动它的终端会话。常用生命周期命令为
 `pnpm team-site:status`、`pnpm team-site:restart` 和 `pnpm team-site:stop`。状态命令同时检查
-launchd 作业、`/healthz` 和 `/readyz`；日志位于 `~/.ogsystem/team-site/logs/`。服务重启只重建进程，
+服务进程、`/healthz` 和 `/readyz`；日志位于 `~/.ogsystem/team-site/logs/`。服务重启只重建进程，
 不会清理 `.ogs/runs/` 或 Team Site 的持久化项目数据。直接运行 `pnpm --dir apps/team-site start`
 仍适合测试和临时隔离环境，但不适合作为长期本地服务启动方式。
 
@@ -90,8 +90,8 @@ pnpm team-site:status
 
 `--lan` 将服务绑定到 `0.0.0.0`，状态命令会列出当前网卡的访问地址，例如
 `http://192.168.0.109:4173/projects`。也可以使用 `pnpm team-site:restart -- --host 192.168.0.109`
-绑定到单个地址。局域网模式面向受信任网络；如果网络不受信任，应在 macOS 防火墙或路由器上限制
-4173 端口，或使用 Tailnet/HTTPS 入口，不要直接暴露到公网。
+绑定到单个地址。局域网模式面向受信任网络；如果网络不受信任，应在主机防火墙或路由器上限制
+4173 端口，或使用其他受信任的 HTTPS 入口，不要直接暴露到公网。
 
 本地宣传首页为 `http://127.0.0.1:4173/`；协作项目从 `/projects` 进入。可用 `PORT` 覆盖。项目、团队设计、运行诊断和平台配置
 都从这个 Team Site Origin 进入。Visualizer 服务默认监听本机 `4177`，由 Team Site 服务端 adapter 调用；它是
@@ -101,17 +101,10 @@ pnpm team-site:status
 Visualizer，则使用 `pnpm exec tsx src/visualizer/cli.ts --ogs-dir . --host 127.0.0.1 --port 3337`。服务重启只重建进程，
 不会清理 `.ogs/runs/` 或 Team Site 的持久化项目数据。
 
-## Tailnet 访问
+## 远程访问
 
-Windows 上从仓库根目录执行：
-
-```powershell
-pnpm start:team-site:tailnet
-```
-
-脚本会将 Team Site 绑定到 `0.0.0.0:4174`，因此可通过本机 Tailnet 地址访问，例如
-`http://100.66.215.15:4174/projects`。团队设计、平台配置和运行诊断仍从该站点入口打开；Visualizer 上游服务
-不作为单独的产品地址提供给用户。脚本会输出站点地址、当前节点信息和日志目录。
+局域网或受信任的私有网络访问都从 Team Site 的 `/projects` 入口进入。启动 LAN 模式后，
+`pnpm team-site:status` 会输出当前可访问地址；Visualizer 上游服务不作为单独的产品地址提供给用户。
 
 ## 底座与模型
 
@@ -144,7 +137,7 @@ pnpm --dir apps/team-site test --test-concurrency=1
 
 运行团队案例的真实底座验证使用对应 CLI 的 API/协议配置：
 
-```powershell
+```sh
 pnpm --dir apps/team-site verify:cases
 ```
 

@@ -10,8 +10,8 @@ record. The active package line is Contract Set v2 (currently `2.0.0`); replace 
 with the exact tarball produced for the release being deployed. Install and initialize the project
 from the target host:
 
-```powershell
-npm install -g .\ogsystem-2.0.0.tgz
+```sh
+npm install -g ./ogsystem-2.0.0.tgz
 ogs project create production-app --template minimal
 cd production-app
 ogs models sync
@@ -136,8 +136,7 @@ StandardOutput=journal
 StandardError=journal
 ```
 
-Attach a systemd timer for scheduled new runs. Do not configure automatic restart for this unit.
-For Windows Task Scheduler, set the same project directory as **Start in**, run as the account
-holding the provider CLI credentials, and capture stdout/stderr to an operator-managed log location.
-For an interrupted run, inspect its run ID and explicitly invoke `ogs run resume <run-id>` after the
+Attach a host scheduler for scheduled new runs. Do not configure automatic restart for this unit. Use
+the same project directory and the account holding the provider CLI credentials, and capture stdout/stderr
+to an operator-managed log location. For an interrupted run, inspect its run ID and explicitly invoke `ogs run resume <run-id>` after the
 recovery checks above.

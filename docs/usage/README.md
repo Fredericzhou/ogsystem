@@ -19,7 +19,7 @@ belong on flows or in run details, not as Role nodes.
 
 For the user-facing workflow start with [Team Site guide](../../apps/team-site/README.md), then use
 [Usage manual](usage-manual.md). The Team Site guide is the
-current source for team repository, team factory, collaboration project, task controls, and Tailnet
+current source for team repository, team factory, collaboration project, task controls, and private-network
 entry points.
 
 For semantic work, use the [v2 architecture](../development/role-execution-architecture.md),
