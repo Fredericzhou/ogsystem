@@ -533,6 +533,42 @@ test("same-side flow ports stay centered and within the node face", () => {
   assert.ok(offsets.every((offset) => Math.abs(offset) <= 180 / 2 - 9));
 });
 
+test("coincident same-face projections distribute endpoint offsets symmetrically", () => {
+  for (const [count, expected] of [[2, [-10, 10]], [3, [-20, 0, 20]]]) {
+    const source = node("source", { layout: { x: 100, y: 120, width: 180, height: 84 } });
+    const targets = Array.from({ length: count }, (_, index) => node(`target-${index}`, {
+      layout: { x: 420 + index * 220, y: 120, width: 180, height: 84 }
+    }));
+    const view = graph([source, ...targets], targets.map((target) =>
+      edge(`source-${target.id}`, "source", target.id)
+    ));
+    const projection = createStoredLayoutProjection(view);
+    const offsets = projection.edges
+      .map((item) => item.routing.source.offset)
+      .sort((left, right) => left - right);
+    assert.deepEqual(offsets, expected);
+  }
+});
+
+test("endpoint offset projection clamps both bounds after multiple PAVA blocks", () => {
+  const view = graph([
+    node("source-a", { layout: { x: -220, y: 87, width: 180, height: 84 } }),
+    node("source-b", { layout: { x: 0, y: 87, width: 180, height: 84 } }),
+    node("source-c", { layout: { x: 200, y: 153, width: 180, height: 84 } }),
+    node("center", { layout: { x: 420, y: 120, width: 180, height: 84 } })
+  ], [
+    edge("source-a-center", "source-a", "center"),
+    edge("source-b-center", "source-b", "center"),
+    edge("source-c-center", "source-c", "center")
+  ]);
+  const projection = createStoredLayoutProjection(view);
+  const offsets = projection.edges
+    .map((item) => item.routing.target.offset)
+    .sort((left, right) => left - right);
+  assert.deepEqual(offsets, [-20, 0, 20]);
+  assert.equal(offsets.every((offset) => offset >= -33 && offset <= 33), true);
+});
+
 test("diagonal links choose a short route from one of the two nearby sides", () => {
   const view = graph([
     node("source", { layout: { x: 100, y: 80, width: 180, height: 84 } }),
@@ -565,6 +601,66 @@ test("diagonal links choose a short route from one of the two nearby sides", () 
     true,
     "target arrow segment must enter perpendicular to its node face"
   );
+});
+
+test("horizontally separated nodes keep horizontal terminals when vertically offset", () => {
+  const view = graph([
+    node("source", { layout: { x: 100, y: 100, width: 180, height: 84 } }),
+    node("target", { layout: { x: 400, y: 130, width: 180, height: 84 } })
+  ], [edge("source-target", "source", "target")]);
+  const routing = createStoredLayoutProjection(view).edges[0].routing;
+  assert.deepEqual([routing.source.side, routing.target.side], ["right", "left"]);
+});
+
+test("vertically separated nodes keep vertical terminals when horizontally offset", () => {
+  const view = graph([
+    node("source", { layout: { x: 100, y: 100, width: 180, height: 84 } }),
+    node("target", { layout: { x: 130, y: 400, width: 180, height: 84 } })
+  ], [edge("source-target", "source", "target")]);
+  const routing = createStoredLayoutProjection(view).edges[0].routing;
+  assert.deepEqual([routing.source.side, routing.target.side], ["bottom", "top"]);
+});
+
+test("boundary edges follow the separated axis instead of wrapping around a nearby node", () => {
+  const view = graph([
+    node(STUDIO_SYSTEM_START_ROLE_ID, { layout: { x: 83, y: 373, width: 180, height: 84 }, kind: "boundary", roleSeat: false }),
+    node("analyst", { layout: { x: 108, y: 527, width: 180, height: 84 } }),
+    node(STUDIO_SYSTEM_END_ROLE_ID, { layout: { x: 113, y: 697, width: 180, height: 84 }, kind: "boundary", roleSeat: false })
+  ], [
+    edge("start-analyst", STUDIO_SYSTEM_START_ROLE_ID, "analyst"),
+    edge("analyst-end", "analyst", STUDIO_SYSTEM_END_ROLE_ID)
+  ]);
+  const projection = createStoredLayoutProjection(view);
+  const startEdge = projection.edges.find((item) => item.id === "start-analyst").routing;
+  const endEdge = projection.edges.find((item) => item.id === "analyst-end").routing;
+  assert.deepEqual([startEdge.source.side, startEdge.target.side], ["bottom", "top"]);
+  assert.deepEqual([endEdge.source.side, endEdge.target.side], ["bottom", "top"]);
+  assert.ok(startEdge.routePoints.length <= 3);
+  assert.ok(endEdge.routePoints.length <= 3);
+});
+
+test("short horizontal gaps keep terminal stubs monotonic without a turnaround", () => {
+  const view = graph([
+    node("source", { layout: { x: 100, y: 100, width: 180, height: 84 } }),
+    node("target", { layout: { x: 300, y: 130, width: 180, height: 84 } })
+  ], [edge("source-target", "source", "target")]);
+  const projection = createStoredLayoutProjection(view);
+  const routing = projection.edges[0].routing;
+  const source = projection.nodes.find((item) => item.id === "source");
+  const target = projection.nodes.find((item) => item.id === "target");
+  const point = (nodeValue, terminalValue) => terminalValue.side === "right"
+    ? { x: nodeValue.x + nodeValue.width, y: nodeValue.y + nodeValue.height / 2 + terminalValue.offset }
+    : terminalValue.side === "left"
+      ? { x: nodeValue.x, y: nodeValue.y + nodeValue.height / 2 + terminalValue.offset }
+      : terminalValue.side === "bottom"
+        ? { x: nodeValue.x + nodeValue.width / 2 + terminalValue.offset, y: nodeValue.y + nodeValue.height }
+        : { x: nodeValue.x + nodeValue.width / 2 + terminalValue.offset, y: nodeValue.y };
+  const points = [point(source, routing.source), ...routing.routePoints, point(target, routing.target)];
+  const horizontalDirections = points.slice(1).map((next, index) => {
+    const previous = points[index];
+    return previous.y === next.y ? Math.sign(next.x - previous.x) : 0;
+  }).filter(Boolean);
+  assert.ok(horizontalDirections.every((direction, index) => index === 0 || direction === horizontalDirections[index - 1]));
 });
 
 test("all nearby terminal sides keep a normal arrow segment at both ends", () => {
@@ -673,6 +769,26 @@ test("same-side incoming and outgoing flows use distinct port slots", () => {
   assert.notEqual(incoming.port, outgoing.port);
 });
 
+test("same-face incoming and outgoing terminals use a stable global direction order", () => {
+  const view = graph([
+    node("source", { layout: { x: 0, y: 120, width: 180, height: 84 } }),
+    node("center", { layout: { x: 420, y: 120, width: 180, height: 84 } }),
+    node("target", { layout: { x: 220, y: 120, width: 180, height: 84 } })
+  ], [
+    edge("source-center", "source", "center"),
+    edge("center-target", "center", "target")
+  ]);
+  const projection = createStoredLayoutProjection(view);
+  const incoming = projection.edges.find((item) => item.id === "source-center").routing.target;
+  const outgoing = projection.edges.find((item) => item.id === "center-target").routing.source;
+  assert.equal(incoming.side, "left");
+  assert.equal(outgoing.side, "left");
+  assert.notEqual(incoming.offset, outgoing.offset);
+  // Both counterparts have the same projection coordinate. The edge's global
+  // source/target direction keeps the order identical at both endpoints.
+  assert.ok(outgoing.offset < incoming.offset);
+});
+
 test("flow endpoint identities stay stable while nearby sides follow layout direction", () => {
   const view = graph([
     node("source", { layout: { x: 100, y: 120, width: 180, height: 84 } }),
@@ -710,6 +826,88 @@ test("reciprocal vertical edges use separate lateral feedback lanes", async () =
 
   assertSeparated(createStoredLayoutProjection(view));
   assertSeparated(await createElkLayoutProjection(view, "stacked"));
+});
+
+test("multiple feedback edges use short-to-long staircase lanes", () => {
+  const view = graph([
+    node("a", { layout: { x: 100, y: 260, width: 180, height: 84 } }),
+    node("b", { layout: { x: 360, y: 260, width: 180, height: 84 } }),
+    node("c", { layout: { x: 620, y: 260, width: 180, height: 84 } })
+  ], [
+    edge("a-b", "a", "b", { topologyOrder: "1L" }),
+    edge("b-c", "b", "c", { topologyOrder: "2L" }),
+    edge("c-a", "c", "a", { topologyOrder: "3L" })
+  ]);
+  const projection = createStoredLayoutProjection(view);
+  const feedback = projection.edges.map((item) => item.routing);
+  assert.equal(new Set(feedback.map((routing) => routing.lane)).size, feedback.length);
+  const outerRoutes = feedback.filter((routing) => routing.source.side === routing.target.side);
+  assert.ok(outerRoutes.length >= 2);
+  assert.equal(outerRoutes.every((routing) => routing.routePoints.length >= 2), true);
+  for (let leftIndex = 0; leftIndex < outerRoutes.length; leftIndex += 1) {
+    for (let rightIndex = leftIndex + 1; rightIndex < outerRoutes.length; rightIndex += 1) {
+      const leftEdge = projection.edges.find((item) => item.routing === outerRoutes[leftIndex]);
+      const rightEdge = projection.edges.find((item) => item.routing === outerRoutes[rightIndex]);
+      assert.equal(
+        routesShareCollinearSegment(projectedRoutePoints(projection, leftEdge), projectedRoutePoints(projection, rightEdge)),
+        false
+      );
+    }
+  }
+  assert.equal(projection.bundles.length, 0);
+});
+
+test("feedback lanes stay separated when a shared obstacle forces outer fallback tracks", () => {
+  const view = graph([
+    node("a", { layout: { x: 100, y: 260, width: 180, height: 84 } }),
+    node("b", { layout: { x: 360, y: 260, width: 180, height: 84 } }),
+    node("c", { layout: { x: 620, y: 260, width: 180, height: 84 } }),
+    node("blocker", { layout: { x: 320, y: 180, width: 180, height: 60 } })
+  ], [
+    edge("a-b", "a", "b", { topologyOrder: "1L" }),
+    edge("b-c", "b", "c", { topologyOrder: "2L" }),
+    edge("c-a", "c", "a", { topologyOrder: "3L" })
+  ]);
+  const projection = createStoredLayoutProjection(view);
+  const feedbackEdges = projection.edges.filter((item) => item.routing.kind === "backward");
+  assert.ok(feedbackEdges.length >= 2);
+  for (let leftIndex = 0; leftIndex < feedbackEdges.length; leftIndex += 1) {
+    for (let rightIndex = leftIndex + 1; rightIndex < feedbackEdges.length; rightIndex += 1) {
+      assert.equal(
+        routesShareCollinearSegment(
+          projectedRoutePoints(projection, feedbackEdges[leftIndex]),
+          projectedRoutePoints(projection, feedbackEdges[rightIndex])
+        ),
+        false
+      );
+    }
+  }
+});
+
+test("independent SCCs restart feedback lane indexes locally", () => {
+  const nodes = [
+    node("a", { layout: { x: 100, y: 260, width: 180, height: 84 } }),
+    node("b", { layout: { x: 360, y: 260, width: 180, height: 84 } }),
+    node("c", { layout: { x: 620, y: 260, width: 180, height: 84 } }),
+    node("d", { layout: { x: 980, y: 260, width: 180, height: 84 } }),
+    node("e", { layout: { x: 1240, y: 260, width: 180, height: 84 } }),
+    node("f", { layout: { x: 1500, y: 260, width: 180, height: 84 } })
+  ];
+  const edges = [
+    edge("a-b", "a", "b", { topologyOrder: "1L" }),
+    edge("b-c", "b", "c", { topologyOrder: "2L" }),
+    edge("c-a", "c", "a", { topologyOrder: "3L" }),
+    edge("d-e", "d", "e", { topologyOrder: "4L" }),
+    edge("e-f", "e", "f", { topologyOrder: "5L" }),
+    edge("f-d", "f", "d", { topologyOrder: "6L" })
+  ];
+  const projection = createStoredLayoutProjection(graph(nodes, edges));
+  const laneIndexes = (ids) => ids.map((id) => {
+    const lane = projection.edges.find((item) => item.id === id).routing.lane;
+    return Number(lane.match(/:feedback-(?:top|bottom)-(\d+)$/)?.[1]);
+  });
+  assert.deepEqual(laneIndexes(["a-b", "b-c", "c-a"]), [0, 1, 2]);
+  assert.deepEqual(laneIndexes(["d-e", "e-f", "f-d"]), [0, 1, 2]);
 });
 
 test("moving a node recalculates independent flow routes without changing business edge ids", () => {

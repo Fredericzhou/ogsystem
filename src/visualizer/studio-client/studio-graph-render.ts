@@ -77,16 +77,35 @@ const STUDIO_EDGE_ORTH_ROUTER: StudioEdgeRouting["router"] = {
 };
 const STUDIO_EDGE_CONNECTOR: StudioEdgeRouting["connector"] = {
   name: "rounded",
-  args: { radius: 4 }
+  args: { radius: 10 }
 };
 const STUDIO_BOUNDARY_CONNECTION_POINT = {
   name: "boundary",
   args: { offset: 0 }
 } as const;
+const STUDIO_PORT_BODY_RADIUS = {
+  out: 3.5,
+  in: 2.5
+} as const;
 
-function projectionRouting(routing: LayoutEdgeRouting): StudioEdgeRouting {
-  const toTerminal = (value: LayoutEdgeRouting["source"]): StudioEdgeTerminal => value.port
-    ? { cell: value.cell, port: value.port, connectionPoint: { name: "anchor" } }
+export function projectionRouting(routing: LayoutEdgeRouting): StudioEdgeRouting {
+  const toTerminal = (
+    value: LayoutEdgeRouting["source"],
+    direction: LayoutPortSpec["direction"]
+  ): StudioEdgeTerminal => value.port
+    ? {
+        cell: value.cell,
+        port: value.port,
+        // Always anchor to the port center and step outward to the visible port
+        // circle rim along the route's true normal. Omitting `anchor` falls back
+        // to X6's horizontal `midSide`, which drags top/bottom terminals 7px left
+        // to the hit-circle boundary.
+        anchor: { name: "center" },
+        connectionPoint: {
+          name: "anchor",
+          args: { offset: STUDIO_PORT_BODY_RADIUS[direction] }
+        }
+      }
     : {
         cell: value.cell,
         anchor: {
@@ -98,8 +117,8 @@ function projectionRouting(routing: LayoutEdgeRouting): StudioEdgeRouting {
         connectionPoint: STUDIO_BOUNDARY_CONNECTION_POINT
       };
   return {
-    source: toTerminal(routing.source),
-    target: toTerminal(routing.target),
+    source: toTerminal(routing.source, "out"),
+    target: toTerminal(routing.target, "in"),
     // A projection with vertices already owns the route. Letting X6 run a
     // second router here can add terminal loops or undo ELK's channel lanes.
     router: routing.routePoints.length > 0
@@ -439,7 +458,50 @@ function portPosition(side: LayoutSide, offset: number): { name: LayoutSide; arg
     : { name: side, args: { dy: offset } };
 }
 
+function dynamicPortMarkup(): {
+  tagName: "g";
+  selector: "portRoot";
+  children: [{ tagName: "circle"; selector: "hitCircle" }, { tagName: "circle"; selector: "bodyCircle" }];
+} {
+  return {
+    tagName: "g",
+    selector: "portRoot",
+    children: [
+      { tagName: "circle", selector: "hitCircle" },
+      { tagName: "circle", selector: "bodyCircle" }
+    ]
+  };
+}
+
 function portAttrs(direction: LayoutPortSpec["direction"]): Record<string, unknown> {
+  const dark = isDarkTheme();
+  const accent = direction === "out" ? (dark ? "#67e8f9" : "#168477") : "#bae6fd";
+  return {
+    portRoot: {
+      "data-studio-port": direction,
+      magnet: true,
+      "pointer-events": "none"
+    },
+    hitCircle: {
+      r: 7,
+      fill: "transparent",
+      stroke: "transparent",
+      "pointer-events": "all",
+      "data-studio-port-hit": direction
+    },
+    bodyCircle: {
+      r: STUDIO_PORT_BODY_RADIUS[direction],
+      stroke: accent,
+      strokeWidth: direction === "out" ? 1.5 : 1.25,
+      fill: direction === "out" ? accent : "transparent",
+      "pointer-events": "none",
+      "data-studio-port-body": direction,
+      "vector-effect": "non-scaling-stroke",
+    }
+  };
+}
+
+function connectionPortAttrs(direction: LayoutPortSpec["direction"]): Record<string, unknown> {
   const dark = isDarkTheme();
   return {
     circle: {
@@ -449,7 +511,7 @@ function portAttrs(direction: LayoutPortSpec["direction"]): Record<string, unkno
       strokeWidth: 1.5,
       fill: dark ? "#07111f" : "#f7faf8",
       "vector-effect": "non-scaling-stroke",
-      "data-studio-port": direction
+      "data-studio-port": "connect"
     }
   };
 }
@@ -612,13 +674,18 @@ function studioNodePorts(node: GraphViewModelNode, projectedPorts?: readonly Stu
   }
   specs.sort((left, right) => left.id.localeCompare(right.id));
   const groups = Object.fromEntries(specs.map((spec) => {
-    const attrs = portAttrs(spec.direction);
-    const circle = attrs.circle as Record<string, unknown>;
+    if (spec.id.startsWith("connect-")) {
+      const attrs = connectionPortAttrs(spec.direction);
+      const circle = attrs.circle as Record<string, unknown>;
+      return [spec.id, {
+        position: portPosition(spec.side, spec.offset),
+        attrs: { ...attrs, circle: { ...circle, "data-studio-connect-port": spec.id } }
+      }];
+    }
     return [spec.id, {
       position: portPosition(spec.side, spec.offset),
-      attrs: spec.id.startsWith("connect-")
-        ? { ...attrs, circle: { ...circle, "data-studio-port": "connect", "data-studio-connect-port": spec.id } }
-        : attrs
+      markup: dynamicPortMarkup(),
+      attrs: portAttrs(spec.direction)
     }];
   }));
   return {

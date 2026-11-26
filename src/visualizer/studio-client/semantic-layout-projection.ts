@@ -112,7 +112,7 @@ export type LayoutProjection = {
   layoutDigest: string;
 };
 
-const STUDIO_EDGE_CONNECTOR_RADIUS = 4;
+const STUDIO_EDGE_CONNECTOR_RADIUS = 10;
 const STUDIO_EDGE_CONNECTOR: LayoutConnector = {
   name: "rounded",
   args: { radius: STUDIO_EDGE_CONNECTOR_RADIUS }
@@ -157,6 +157,8 @@ export const STUDIO_EDGE_TERMINAL_STUB_LENGTH = 24;
 const LOOP_ROUTE_CLEARANCE = 40;
 const LOOP_ROUTE_BEND_PENALTY = 24;
 const BUNDLE_TRUNK_LENGTH = 36;
+// Keep the first three feedback lanes within the default SCC frame padding.
+const FEEDBACK_LANE_STEP = 16;
 
 function edgeSortKey(edge: GraphViewModelEdge): string {
   return [edge.source, edge.target, edge.eventType, edge.id].join(":");
@@ -718,6 +720,18 @@ type RoutingDraft = {
   target: LayoutTerminal;
 };
 
+type EndpointEntry = {
+  draft: RoutingDraft;
+  terminalName: "source" | "target";
+  terminal: LayoutTerminal;
+};
+
+type FeedbackLanePlan = {
+  side: LayoutSide;
+  laneIndex: number;
+  preferLateralLane: boolean;
+};
+
 function edgeChannel(edge: GraphViewModelEdge): string {
   return edge.channel ?? (edge.runtimeOnlyErrorFlow ? "error" : "normal");
 }
@@ -729,11 +743,16 @@ function sharedEndpointOffset(
   nodeById: ReadonlyMap<string, LayoutProjectionNode>
 ): number {
   const terminal = draft[terminalName];
-  const endpointGroup = drafts
-    .filter((candidate) => candidate[terminalName].cell === terminal.cell && candidate[terminalName].side === terminal.side)
+  const endpointGroup: EndpointEntry[] = drafts.flatMap((candidate) => [
+    { draft: candidate, terminalName: "source" as const, terminal: candidate.source },
+    { draft: candidate, terminalName: "target" as const, terminal: candidate.target }
+  ])
+    .filter((candidate) => candidate.terminal.cell === terminal.cell && candidate.terminal.side === terminal.side)
     .sort((left, right) => {
-      const leftCounterpart = nodeById.get(terminalName === "source" ? left.edge.target : left.edge.source);
-      const rightCounterpart = nodeById.get(terminalName === "source" ? right.edge.target : right.edge.source);
+      const leftCounterpartId = left.terminalName === "source" ? left.draft.edge.target : left.draft.edge.source;
+      const rightCounterpartId = right.terminalName === "source" ? right.draft.edge.target : right.draft.edge.source;
+      const leftCounterpart = nodeById.get(leftCounterpartId);
+      const rightCounterpart = nodeById.get(rightCounterpartId);
       const verticalFace = terminal.side === "left" || terminal.side === "right";
       const leftCoordinate = leftCounterpart
         ? (verticalFace ? leftCounterpart.y + leftCounterpart.height / 2 : leftCounterpart.x + leftCounterpart.width / 2)
@@ -741,42 +760,28 @@ function sharedEndpointOffset(
       const rightCoordinate = rightCounterpart
         ? (verticalFace ? rightCounterpart.y + rightCounterpart.height / 2 : rightCounterpart.x + rightCounterpart.width / 2)
         : Number.POSITIVE_INFINITY;
-      return leftCoordinate - rightCoordinate || compareStable(edgeSortKey(left.edge), edgeSortKey(right.edge));
+      if (leftCoordinate !== rightCoordinate) return leftCoordinate - rightCoordinate;
+
+      // Use the edge's global direction before the local in/out direction.
+      // This keeps A->B and B->A in the same order at both endpoints.
+      const directionOrder = compareStable(left.draft.edge.source, left.draft.edge.target) -
+        compareStable(right.draft.edge.source, right.draft.edge.target);
+      return directionOrder ||
+        compareStable(edgeSortKey(left.draft.edge), edgeSortKey(right.draft.edge)) ||
+        (left.terminalName === right.terminalName ? 0 : left.terminalName === "source" ? -1 : 1);
     });
   if (endpointGroup.length <= 1) return 0;
   const node = nodeById.get(terminal.cell);
   const verticalFace = terminal.side === "left" || terminal.side === "right";
   const nodeSpan = verticalFace ? node?.height : node?.width;
-  const index = Math.max(0, endpointGroup.findIndex((candidate) => candidate.edge.id === draft.edge.id));
+  const index = Math.max(0, endpointGroup.findIndex((candidate) =>
+    candidate.draft.edge.id === draft.edge.id && candidate.terminalName === terminalName
+  ));
   const availableHalfSpan = Math.max(0, (nodeSpan ?? 0) / 2 - 9);
-  if (terminal.cell === STUDIO_SYSTEM_START_ROLE_ID || terminal.cell === STUDIO_SYSTEM_END_ROLE_ID) {
-    const center = node
-      ? (verticalFace ? node.y + node.height / 2 : node.x + node.width / 2)
-      : 0;
-    const maxOffset = availableHalfSpan;
-    const minimumSpacing = endpointGroup.length > 1
-      ? Math.min(24, (maxOffset * 2) / (endpointGroup.length - 1))
-      : 0;
-    const offsets = endpointGroup.map((candidate) => {
-      const counterpart = nodeById.get(terminalName === "source" ? candidate.edge.target : candidate.edge.source);
-      if (!counterpart) return 0;
-      const coordinate = verticalFace
-        ? counterpart.y + counterpart.height / 2
-        : counterpart.x + counterpart.width / 2;
-      return Math.max(-maxOffset, Math.min(maxOffset, Math.round(coordinate - center)));
-    });
-    for (let offsetIndex = 1; offsetIndex < offsets.length; offsetIndex += 1) {
-      offsets[offsetIndex] = Math.max(offsets[offsetIndex], offsets[offsetIndex - 1] + minimumSpacing);
-    }
-    if (offsets.length && offsets[offsets.length - 1] > maxOffset) {
-      offsets[offsets.length - 1] = maxOffset;
-      for (let offsetIndex = offsets.length - 2; offsetIndex >= 0; offsetIndex -= 1) {
-        offsets[offsetIndex] = Math.min(offsets[offsetIndex], offsets[offsetIndex + 1] - minimumSpacing);
-      }
-    }
-    return offsets[index] ?? 0;
-  }
-  const spacing = Math.min(24, availableHalfSpan * 2 / (endpointGroup.length - 1));
+  const maxOffset = availableHalfSpan;
+  const spacing = endpointGroup.length > 1
+    ? Math.min(20, (maxOffset * 2) / (endpointGroup.length - 1))
+    : 0;
   return Math.round((index - (endpointGroup.length - 1) / 2) * spacing);
 }
 
@@ -827,10 +832,11 @@ function terminalConnectionPoint(
 
 function terminalMarkerStubPoint(
   value: LayoutTerminal,
-  node: LayoutProjectionNode | undefined
+  node: LayoutProjectionNode | undefined,
+  distance = STUDIO_EDGE_TERMINAL_STUB_LENGTH
 ): LayoutPoint | undefined {
   const boundary = terminalPoint(value, node);
-  return boundary ? outsidePoint(boundary, value.side, STUDIO_EDGE_TERMINAL_STUB_LENGTH) : undefined;
+  return boundary ? outsidePoint(boundary, value.side, distance) : undefined;
 }
 
 function outsidePoint(point: LayoutPoint, side: LayoutSide, distance: number): LayoutPoint {
@@ -1185,18 +1191,27 @@ function backwardFeedbackRoute(
   sourceTerminal: LayoutTerminal,
   targetTerminal: LayoutTerminal,
   nodeById: ReadonlyMap<string, LayoutProjectionNode>,
-  preferLateralLane = false,
-  preferredSide?: LayoutSide
+  options: {
+    preferLateralLane?: boolean;
+    preferredSide?: LayoutSide;
+    lockedSide?: LayoutSide;
+    laneIndex?: number;
+  } = {}
 ): { source: LayoutTerminal; target: LayoutTerminal; points: LayoutPoint[] } | undefined {
   const sourceNode = nodeById.get(edge.source);
   const targetNode = nodeById.get(edge.target);
   if (!sourceNode || !targetNode) return undefined;
 
+  const preferLateralLane = options.preferLateralLane === true;
   const obstacles = expandedRouteObstacles(nodeById, new Set([edge.source, edge.target]));
   const candidates: Array<{ source: LayoutTerminal; target: LayoutTerminal; points: LayoutPoint[]; length: number; order: number }> = [];
   const defaultSides = preferLateralLane ? (["left", "right"] as const) : (["top", "bottom"] as const);
-  const candidateSides = preferredSide && defaultSides.includes(preferredSide as (typeof defaultSides)[number])
-    ? [preferredSide, ...defaultSides.filter((side) => side !== preferredSide)]
+  const laneIndex = Math.max(0, options.laneIndex ?? 0);
+  const preferredSide = options.lockedSide ?? options.preferredSide;
+  const candidateSides = options.lockedSide
+    ? [options.lockedSide]
+    : preferredSide && defaultSides.includes(preferredSide as (typeof defaultSides)[number])
+      ? [preferredSide, ...defaultSides.filter((side) => side !== preferredSide)]
     : defaultSides;
   for (const [order, side] of candidateSides.entries()) {
     const source = { ...sourceTerminal, side };
@@ -1209,18 +1224,20 @@ function backwardFeedbackRoute(
     if (!sourceStub || !targetStub) continue;
 
     const before = side === "top" || side === "left";
-    const baseLane = preferLateralLane
+    const laneShift = (before ? -1 : 1) * laneIndex * FEEDBACK_LANE_STEP;
+    const baseLane = (preferLateralLane
       ? before
         ? Math.min(sourceNode.x, targetNode.x) - STUDIO_EDGE_TERMINAL_STUB_LENGTH - 8
         : Math.max(sourceNode.x + sourceNode.width, targetNode.x + targetNode.width) + STUDIO_EDGE_TERMINAL_STUB_LENGTH + 8
       : before
         ? Math.min(sourceNode.y, targetNode.y) - STUDIO_EDGE_TERMINAL_STUB_LENGTH - 8
-        : Math.max(sourceNode.y + sourceNode.height, targetNode.y + targetNode.height) + STUDIO_EDGE_TERMINAL_STUB_LENGTH + 8;
+        : Math.max(sourceNode.y + sourceNode.height, targetNode.y + targetNode.height) + STUDIO_EDGE_TERMINAL_STUB_LENGTH + 8)
+      + laneShift;
     const lanes = new Set([baseLane]);
     for (const obstacle of obstacles) {
       lanes.add(preferLateralLane
-        ? before ? obstacle.x - 2 : obstacle.x + obstacle.width + 2
-        : before ? obstacle.y - 2 : obstacle.y + obstacle.height + 2);
+        ? before ? obstacle.x - 2 + laneShift : obstacle.x + obstacle.width + 2 + laneShift
+        : before ? obstacle.y - 2 + laneShift : obstacle.y + obstacle.height + 2 + laneShift);
     }
     const usableLanes = [...lanes]
       .filter((lane) => preferLateralLane
@@ -1283,31 +1300,43 @@ function nearbySidePairs(
   const targetCenter = edgeCenter(target);
   const dx = targetCenter.x - sourceCenter.x;
   const dy = targetCenter.y - sourceCenter.y;
+  const sepX = Math.abs(dx) - (source.width + target.width) / 2;
+  const sepY = Math.abs(dy) - (source.height + target.height) / 2;
   if (source.id === STUDIO_SYSTEM_START_ROLE_ID || target.id === STUDIO_SYSTEM_END_ROLE_ID) {
+    if (sepX > 0 && sepY <= 0) return [dx >= 0 ? ["right", "left"] : ["left", "right"]];
+    if (sepY > 0 && sepX <= 0) return [dy >= 0 ? ["bottom", "top"] : ["top", "bottom"]];
     return profile === "stacked"
       ? dy >= 0 ? [["bottom", "top"]] : [["top", "bottom"]]
       : dx >= 0 ? [["right", "left"]] : [["left", "right"]];
   }
-  const alignedY = Math.abs(dy) <= Math.max(8, Math.min(source.height, target.height) * 0.1);
-  const alignedX = Math.abs(dx) <= Math.max(8, Math.min(source.width, target.width) * 0.1);
-  if (alignedY && !alignedX) return dx >= 0 ? [["right", "left"]] : [["left", "right"]];
-  if (alignedX && !alignedY) return dy >= 0 ? [["bottom", "top"]] : [["top", "bottom"]];
-
   const horizontalSource: LayoutSide = dx >= 0 ? "right" : "left";
   const horizontalTarget: LayoutSide = dx >= 0 ? "left" : "right";
   const verticalSource: LayoutSide = dy >= 0 ? "bottom" : "top";
   const verticalTarget: LayoutSide = dy >= 0 ? "top" : "bottom";
-  const horizontalGap = Math.max(0, Math.abs(dx) - (source.width + target.width) / 2);
-  const verticalGap = Math.max(0, Math.abs(dy) - (source.height + target.height) / 2);
-  const horizontalFirst = horizontalGap <= verticalGap;
-  const pairs: Array<[LayoutSide, LayoutSide]> = [
-    [horizontalSource, horizontalTarget],
-    [verticalSource, verticalTarget],
-    [horizontalSource, verticalTarget],
-    [verticalSource, horizontalTarget]
-  ];
-  if (!horizontalFirst) pairs.splice(0, pairs.length, pairs[1], pairs[0], pairs[3], pairs[2]);
-  return pairs;
+  const horizontal = [horizontalSource, horizontalTarget] as [LayoutSide, LayoutSide];
+  const vertical = [verticalSource, verticalTarget] as [LayoutSide, LayoutSide];
+  const horizontalToVertical = [horizontalSource, verticalTarget] as [LayoutSide, LayoutSide];
+  const verticalToHorizontal = [verticalSource, horizontalTarget] as [LayoutSide, LayoutSide];
+
+  // A separated axis is the only safe primary direction. This prevents an
+  // adjacent pair from choosing a route that starts by turning through a node.
+  if (sepX > 0 && sepY <= 0) return [horizontal];
+  if (sepY > 0 && sepX <= 0) return [vertical];
+  if (sepX > 0 && sepY > 0) {
+    return sepX >= sepY
+      ? [horizontal, vertical, horizontalToVertical, verticalToHorizontal]
+      : [vertical, horizontal, verticalToHorizontal, horizontalToVertical];
+  }
+
+  // Overlapping or nearly aligned nodes are invalid as a normal layout, but
+  // retain deterministic fallback ordering for partially edited graphs.
+  const alignedY = Math.abs(dy) <= Math.max(8, Math.min(source.height, target.height) * 0.1);
+  const alignedX = Math.abs(dx) <= Math.max(8, Math.min(source.width, target.width) * 0.1);
+  if (alignedY && !alignedX) return [horizontal];
+  if (alignedX && !alignedY) return [vertical];
+  return Math.abs(dx) >= Math.abs(dy)
+    ? [horizontal, vertical, horizontalToVertical, verticalToHorizontal]
+    : [vertical, horizontal, verticalToHorizontal, horizontalToVertical];
 }
 
 function orthogonalPathPoints(
@@ -1347,14 +1376,92 @@ function routeLength(points: readonly LayoutPoint[]): number {
   return length;
 }
 
+function terminalStubDistance(
+  source: LayoutTerminal,
+  target: LayoutTerminal,
+  nodeById: ReadonlyMap<string, LayoutProjectionNode>
+): number {
+  const sourcePoint = terminalPoint(source, nodeById.get(source.cell));
+  const targetPoint = terminalPoint(target, nodeById.get(target.cell));
+  if (!sourcePoint || !targetPoint) return STUDIO_EDGE_TERMINAL_STUB_LENGTH;
+  const sourceHorizontal = source.side === "left" || source.side === "right";
+  const targetHorizontal = target.side === "left" || target.side === "right";
+  const gap = sourceHorizontal === targetHorizontal
+    ? sourceHorizontal
+      ? Math.abs(targetPoint.x - sourcePoint.x)
+      : Math.abs(targetPoint.y - sourcePoint.y)
+    : Math.min(Math.abs(targetPoint.x - sourcePoint.x), Math.abs(targetPoint.y - sourcePoint.y));
+  const halfGap = Math.floor(Math.max(0, gap) / 2);
+  // Keep the normal clearance in ordinary layouts, but shrink below it when
+  // the nodes are too close for two full stubs to fit without crossing.
+  return gap >= STUDIO_NODE_EDGE_CLEARANCE * 2
+    ? Math.min(STUDIO_EDGE_TERMINAL_STUB_LENGTH, Math.max(STUDIO_NODE_EDGE_CLEARANCE, halfGap))
+    : Math.max(1, halfGap);
+}
+
+function terminalSegmentIsNormal(
+  from: LayoutPoint,
+  to: LayoutPoint,
+  side: LayoutSide,
+  entering: boolean
+): boolean {
+  const horizontal = side === "left" || side === "right";
+  const delta = horizontal ? to.x - from.x : to.y - from.y;
+  if (delta === 0 || (horizontal ? to.y !== from.y : to.x !== from.x)) return false;
+  const outward = side === "left" || side === "top" ? -1 : 1;
+  return Math.sign(delta) === (entering ? -outward : outward);
+}
+
+function routeHasBacktrack(
+  points: readonly LayoutPoint[],
+  source: LayoutTerminal,
+  target: LayoutTerminal
+): boolean {
+  if (points.length < 2) return true;
+  if (!terminalSegmentIsNormal(points[0], points[1], source.side, false)) return true;
+  if (!terminalSegmentIsNormal(points[points.length - 2], points[points.length - 1], target.side, true)) return true;
+  for (let index = 2; index < points.length; index += 1) {
+    const previous = points[index - 2];
+    const current = points[index - 1];
+    const next = points[index];
+    const previousHorizontal = previous.y === current.y;
+    const nextHorizontal = current.y === next.y;
+    if (previousHorizontal && nextHorizontal && Math.sign(current.x - previous.x) !== Math.sign(next.x - current.x)) return true;
+    if (!previousHorizontal && !nextHorizontal && Math.sign(current.y - previous.y) !== Math.sign(next.y - current.y)) return true;
+  }
+  return false;
+}
+
+function insetNodeRect(node: LayoutProjectionNode, inset = 1): LayoutRect {
+  return {
+    x: node.x + inset,
+    y: node.y + inset,
+    width: Math.max(0, node.width - inset * 2),
+    height: Math.max(0, node.height - inset * 2)
+  };
+}
+
+function middleSegmentHitsEndpointNode(
+  path: readonly LayoutPoint[],
+  sourceNode: LayoutProjectionNode,
+  targetNode: LayoutProjectionNode
+): boolean {
+  const endpointRects = [insetNodeRect(sourceNode), insetNodeRect(targetNode)];
+  for (let index = 2; index < path.length - 1; index += 1) {
+    if (endpointRects.some((rect) => segmentIntersectsRect(path[index - 1], path[index], rect))) return true;
+  }
+  return false;
+}
+
 function enforceTerminalNormalStubs(
   points: LayoutPoint[],
   source: LayoutTerminal,
   target: LayoutTerminal,
   nodeById: ReadonlyMap<string, LayoutProjectionNode>
 ): void {
-  const sourceStub = terminalMarkerStubPoint(source, nodeById.get(source.cell));
-  const targetStub = terminalMarkerStubPoint(target, nodeById.get(target.cell));
+  const stubDistance = terminalStubDistance(source, target, nodeById);
+  const sourceStub = terminalMarkerStubPoint(source, nodeById.get(source.cell), stubDistance);
+  const targetStub = terminalMarkerStubPoint(target, nodeById.get(target.cell), stubDistance);
   if (!sourceStub || !targetStub) return;
   const remainsOutsideStub = (point: LayoutPoint, stub: LayoutPoint, side: LayoutSide): boolean => {
     if (side === "left") return point.x <= stub.x;
@@ -1387,9 +1494,12 @@ function nearbyOrthogonalRoutes(
   const sourcePoint = terminalPoint(source, nodeById.get(edge.source));
   const targetPoint = terminalPoint(target, nodeById.get(edge.target));
   if (!sourcePoint || !targetPoint) return [[]];
-  const sourceClearance = outsidePoint(sourcePoint, source.side, STUDIO_NODE_EDGE_CLEARANCE);
-  const targetClearance = outsidePoint(targetPoint, target.side, STUDIO_NODE_EDGE_CLEARANCE);
+  const stubDistance = terminalStubDistance(source, target, nodeById);
+  const sourceClearance = outsidePoint(sourcePoint, source.side, stubDistance);
+  const targetClearance = outsidePoint(targetPoint, target.side, stubDistance);
   const obstacles = expandedRouteObstacles(nodeById, new Set([edge.source, edge.target]));
+  const sourceNode = nodeById.get(edge.source);
+  const targetNode = nodeById.get(edge.target);
   const candidates: LayoutPoint[][] = [];
   if (sourceClearance.x === targetClearance.x || sourceClearance.y === targetClearance.y) {
     candidates.push([sourceClearance, targetClearance]);
@@ -1404,8 +1514,12 @@ function nearbyOrthogonalRoutes(
     simplifyRoutePoints(points);
     const fullPath = [sourcePoint, ...points, targetPoint];
     const blocked = fullPath.some((point, index) => index > 0 && routeSegmentBlocked(fullPath[index - 1], point, obstacles));
-    return { points, blocked };
-  }).filter((candidate) => !candidate.blocked).map((candidate) => candidate.points);
+    const endpointCollision = sourceNode && targetNode
+      ? middleSegmentHitsEndpointNode(fullPath, sourceNode, targetNode)
+      : false;
+    const backtracks = routeHasBacktrack(fullPath, source, target);
+    return { points, blocked, endpointCollision, backtracks };
+  }).filter((candidate) => !candidate.blocked && !candidate.endpointCollision && !candidate.backtracks).map((candidate) => candidate.points);
   return usableCandidates.length ? usableCandidates : [obstacleAwareLoopRoute(edge, source, target, nodeById)];
 }
 
@@ -1544,6 +1658,60 @@ function buildEdgeRouting(
     });
   }
 
+  // Select feedback sides with zero offsets first. The selected side becomes
+  // part of endpoint grouping; final paths are regenerated after offsets and
+  // lanes have been allocated.
+  const feedbackLaneCandidates: Array<{
+    draft: RoutingDraft;
+    side: LayoutSide;
+    preferLateralLane: boolean;
+    span: number;
+  }> = [];
+  const feedbackDrafts = drafts
+    .filter((draft) => draft.route.kind === "backward" && feedbackEdgeIds.has(draft.edge.id))
+    .sort((left, right) => compareStable(edgeSortKey(left.edge), edgeSortKey(right.edge)));
+  for (const draft of feedbackDrafts) {
+    const preferLateralLane = profile === "stacked" || (
+      reciprocalBackwards.has(draft.edge.id) &&
+      naturalRoutes.get(draft.edge.id)?.kind === "vertical"
+    );
+    const probe = backwardFeedbackRoute(draft.edge, draft.source, draft.target, nodeById, {
+      preferLateralLane,
+      preferredSide: reciprocalRouting.lanes.get(draft.edge.id)
+    });
+    const fallbackSide = preferLateralLane
+      ? reciprocalRouting.lanes.get(draft.edge.id) === "right" ? "right" : "left"
+      : reciprocalRouting.lanes.get(draft.edge.id) === "bottom" ? "bottom" : "top";
+    const side = probe?.source.side ?? fallbackSide;
+    draft.source = { ...draft.source, side, offset: 0 };
+    draft.target = { ...draft.target, side, offset: 0 };
+    const sourceCenter = edgeCenter(nodeById.get(draft.edge.source));
+    const targetCenter = edgeCenter(nodeById.get(draft.edge.target));
+    feedbackLaneCandidates.push({
+      draft,
+      side,
+      preferLateralLane,
+      span: Math.abs(targetCenter.x - sourceCenter.x) + Math.abs(targetCenter.y - sourceCenter.y)
+    });
+  }
+  const feedbackLanePlans = new Map<string, FeedbackLanePlan>();
+  const feedbackGroups = new Map<string, typeof feedbackLaneCandidates>();
+  for (const candidate of feedbackLaneCandidates) {
+    const component = topologyComponents.get(candidate.draft.edge.source) ?? "unscoped";
+    const key = `${component}:${candidate.preferLateralLane ? "lateral" : "outer"}:${candidate.side}`;
+    feedbackGroups.set(key, [...(feedbackGroups.get(key) ?? []), candidate]);
+  }
+  for (const group of feedbackGroups.values()) {
+    group.sort((left, right) => left.span - right.span || compareStable(edgeSortKey(left.draft.edge), edgeSortKey(right.draft.edge)));
+    group.forEach((candidate, laneIndex) => {
+      feedbackLanePlans.set(candidate.draft.edge.id, {
+        side: candidate.side,
+        laneIndex,
+        preferLateralLane: candidate.preferLateralLane
+      });
+    });
+  }
+
   const selectedRoutePoints = new Map(routePointsByEdgeId ?? []);
   const plannedRoutes: NearbyRoutePlan[] = [];
   const channelPriority = (edge: GraphViewModelEdge): number => {
@@ -1608,14 +1776,23 @@ function buildEdgeRouting(
     const sourceOffset = sourceTerminal.offset;
     const targetOffset = targetTerminal.offset;
     const routePoints = projectedRoutePoints(edge, route, nodeById, finalRoutePoints);
+    const lanePlan = feedbackLanePlans.get(edge.id);
     if (route.kind === "backward" && feedbackEdgeIds.has(edge.id)) {
       const feedbackRoute = backwardFeedbackRoute(
         edge,
         sourceTerminal,
         targetTerminal,
         nodeById,
-        reciprocalBackwards.has(edge.id) && naturalRoutes.get(edge.id)?.kind === "vertical",
-        reciprocalRouting.lanes.get(edge.id)
+        {
+          preferLateralLane: lanePlan?.preferLateralLane ?? (
+            profile === "stacked" || (
+              reciprocalBackwards.has(edge.id) &&
+              naturalRoutes.get(edge.id)?.kind === "vertical"
+            )
+          ),
+          lockedSide: lanePlan?.side,
+          laneIndex: lanePlan?.laneIndex ?? 0
+        }
       );
       if (feedbackRoute) {
         Object.assign(sourceTerminal, feedbackRoute.source);
@@ -1679,7 +1856,7 @@ function buildEdgeRouting(
       router: hasFixedRoute ? { name: "normal", args: {} } : routerFor(edge, route, nodeById, geometryByEdgeId?.has(edge.id)),
       connector: STUDIO_EDGE_CONNECTOR,
       routePoints,
-      lane: `${edgeChannel(edge)}:${route.kind}:${sourceOffset}:${targetOffset}${reciprocalBackwards.has(edge.id) ? ":reciprocal" : ""}`,
+      lane: `${edgeChannel(edge)}:${route.kind}:${sourceOffset}:${targetOffset}${reciprocalBackwards.has(edge.id) ? ":reciprocal" : ""}${lanePlan ? `:feedback-${lanePlan.side}-${lanePlan.laneIndex}` : ""}`,
       ...(edgeBundles ? { bundleIds: edgeBundles } : {})
     });
   }

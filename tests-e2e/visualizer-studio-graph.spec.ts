@@ -1726,13 +1726,18 @@ test("fan-out projection uses nearby ports without replacing business edges", as
     await expect(root.locator('[data-cell-id^="__ogs-layout-bundle:"]')).toHaveCount(0);
     await expect(root.locator('[data-cell-id^="__ogs-layout-junction:"]')).toHaveCount(0);
     await expect(root.locator('[data-cell-id="source"] [data-studio-port="out"]')).toHaveCount(2);
-    await expect(root.locator('[data-cell-id="source"] [data-studio-port="out"]').first()).toHaveAttribute("r", "4");
+    await expect(root.locator('[data-cell-id="source"] [data-studio-port-body="out"]')).toHaveCount(2);
+    await expect(root.locator('[data-cell-id="source"] [data-studio-port-body="out"]').first()).toHaveAttribute("r", "3.5");
+    await expect(root.locator('[data-cell-id="source"] [data-studio-port-hit="out"]')).toHaveCount(2);
+    await expect(root.locator('[data-cell-id="source"] [data-studio-port-hit="out"]').first()).toHaveAttribute("r", "7");
+    await expect(root.locator('[data-cell-id="left"] [data-studio-port-body="in"]').first()).toHaveAttribute("fill", "transparent");
+    await expect(root.locator('[data-cell-id="left"] [data-studio-port-hit="in"]').first()).toHaveAttribute("r", "7");
     await expect.poll(async () => root.evaluate((element) => {
       return ["flow.source.left", "flow.source.right"].map((edgeId) => {
         const path = element.querySelector<SVGPathElement>(`[data-cell-id="${edgeId}"] path[marker-end]`);
         const targetId = edgeId === "flow.source.left" ? "left" : "right";
-        const sourcePorts = element.querySelectorAll<SVGElement>('[data-cell-id="source"] [data-studio-port="out"]');
-        const targetPorts = element.querySelectorAll<SVGElement>(`[data-cell-id="${targetId}"] [data-studio-port="in"]`);
+        const sourcePorts = element.querySelectorAll<SVGElement>('[data-cell-id="source"] [data-studio-port-body="out"]');
+        const targetPorts = element.querySelectorAll<SVGElement>(`[data-cell-id="${targetId}"] [data-studio-port-body="in"]`);
         if (!path || sourcePorts.length === 0 || targetPorts.length === 0) {
           return { edgeId, hasTargetMarker: false, hasVisibleTerminalSegment: false, sourcePortAttached: false, targetPortAttached: false };
         }
@@ -1806,6 +1811,105 @@ test("fan-out projection uses nearby ports without replacing business edges", as
       pressed: element.querySelector('[data-studio-graph-action="add-edge"]')?.getAttribute("aria-pressed")
     }))).toEqual({ connecting: false, pressed: "false" });
     await expect(root.locator('[data-studio-graph-action="validate"]')).toBeEnabled();
+  } finally {
+    await new Promise<void>((resolve) => started.server.close(() => resolve()));
+  }
+});
+
+test("cyclic flow and stacked layouts align every dynamic edge terminal with its visible port normal", async ({ page }) => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-studio-port-normal-uat-"));
+  await seedCyclicProject(workdir);
+  const started = await startBrowserCompatibleVisualizationServer(workdir);
+  try {
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.goto(started.url);
+    const designTabName = await resolveLifecycleTabName(page, ["Build", "Design"]);
+    await page.getByRole("tab", { name: designTabName }).click();
+    await expect(page.locator("#studio-graph-root")).toBeVisible();
+
+    const auditPorts = () => page.locator("#studio-graph-root").evaluate((root) => {
+      const readPortCircle = (roleId: string, portSelector: string) =>
+        Array.from(root.querySelectorAll<SVGElement>(`[data-cell-id="${roleId}"] ${portSelector}`)).map((port) => {
+          const bounds = port.getBoundingClientRect();
+          return {
+            x: bounds.left + bounds.width / 2,
+            y: bounds.top + bounds.height / 2,
+            r: Math.min(bounds.width, bounds.height) / 2
+          };
+        });
+      const checkTerminal = (
+        ports: Array<{ x: number; y: number; r: number }>,
+        endpoint: DOMPoint,
+        next: DOMPoint
+      ) => {
+        const nearest = ports.slice().sort((left, right) =>
+          Math.hypot(endpoint.x - left.x, endpoint.y - left.y) - Math.hypot(endpoint.x - right.x, endpoint.y - right.y)
+        )[0];
+        if (!nearest) return { rimError: 999, dot: -1 };
+        const radialX = endpoint.x - nearest.x;
+        const radialY = endpoint.y - nearest.y;
+        const radialLen = Math.hypot(radialX, radialY);
+        const tangentX = next.x - endpoint.x;
+        const tangentY = next.y - endpoint.y;
+        const tangentLen = Math.hypot(tangentX, tangentY);
+        return {
+          rimError: Math.abs(radialLen - nearest.r),
+          dot: radialLen > 0 && tangentLen > 0 ? (radialX * tangentX + radialY * tangentY) / (radialLen * tangentLen) : -1
+        };
+      };
+
+      const roleEdges = Array.from(root.querySelectorAll<SVGGElement>(".x6-edge[data-cell-id]")).flatMap((edgeEl) => {
+        const edgeId = edgeEl.getAttribute("data-cell-id") || "";
+        const path = edgeEl.querySelector<SVGPathElement>("path[marker-end]");
+        if (!path || edgeId.startsWith("__ogs-")) return [];
+        const parts = edgeId.split(":");
+        const sourceId = parts[1];
+        const targetId = parts[3];
+        if (!sourceId || !targetId || sourceId === "start" || targetId === "end") return [];
+        const sourcePorts = readPortCircle(sourceId, '[data-studio-port-body="out"]');
+        const targetPorts = readPortCircle(targetId, '[data-studio-port-body="in"]');
+        const length = path.getTotalLength();
+        const matrix = path.getScreenCTM();
+        if (!matrix || length <= 4 || !sourcePorts.length || !targetPorts.length) return [];
+        const toScreen = (distance: number) => {
+          const point = path.getPointAtLength(distance);
+          return new DOMPoint(point.x, point.y).matrixTransform(matrix);
+        };
+        const start = toScreen(0);
+        const afterStart = toScreen(Math.min(4, length));
+        const end = toScreen(length);
+        const beforeEnd = toScreen(Math.max(0, length - 4));
+        const src = checkTerminal(sourcePorts, start, afterStart);
+        const tgt = checkTerminal(targetPorts, end, beforeEnd);
+        return [{
+          edgeId,
+          src,
+          tgt,
+          // X6 retracts the path end by ~strokeWidth (up to ~2.2px on loop edges)
+          // so the block arrowhead tip lands flush on the visible port rim.
+          sourceAligned: src.rimError <= 1.5 && src.dot > 0.99,
+          targetAligned: tgt.rimError <= 3 && tgt.dot > 0.99
+        }];
+      });
+      return roleEdges;
+    });
+
+    const layoutSelect = page.locator("#studio-graph-root [data-studio-graph-layout]");
+    for (const mode of ["flow", "stacked"] as const) {
+      await layoutSelect.selectOption(mode);
+      await expect(layoutSelect).toHaveValue(mode);
+      await expect.poll(async () => auditPorts()).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ sourceAligned: true, targetAligned: true })
+        ])
+      );
+      const audited = await auditPorts();
+      expect(audited.length, `${mode}: ${JSON.stringify(audited)}`).toBeGreaterThanOrEqual(2);
+      for (const item of audited) {
+        expect(item.sourceAligned, `${mode} ${item.edgeId} src=${JSON.stringify(item.src)}`).toBe(true);
+        expect(item.targetAligned, `${mode} ${item.edgeId} tgt=${JSON.stringify(item.tgt)}`).toBe(true);
+      }
+    }
   } finally {
     await new Promise<void>((resolve) => started.server.close(() => resolve()));
   }
@@ -2471,7 +2575,7 @@ test("deployed visualizer UAT keeps flow layout, browse return, and wheel zoom w
   await expect(page.locator("#studio-graph-root")).toBeVisible();
   await expect(page.locator("#studio-graph-root [data-studio-graph-layout]")).toHaveValue("flow");
   const readPortAttachmentAudit = () => page.locator("#studio-graph-root").evaluate((root) => {
-    const ports = Array.from(root.querySelectorAll<SVGElement>("[data-studio-port]"));
+    const ports = Array.from(root.querySelectorAll<SVGElement>("[data-studio-port-body]"));
     const rimDistance = (point: DOMPoint) => Math.min(...ports.map((port) => {
       const bounds = port.getBoundingClientRect();
       const radius = Math.min(bounds.width, bounds.height) / 2;
@@ -2493,7 +2597,7 @@ test("deployed visualizer UAT keeps flow layout, browse return, and wheel zoom w
       });
     return {
       roleToRoleEdgeCount: matchedEdges.length,
-      unattachedTerminalCount: matchedEdges.filter((edge) => edge.sourceDistance > 2 || edge.targetDistance > 2).length
+      unattachedTerminalCount: matchedEdges.filter((edge) => edge.sourceDistance > 2 || edge.targetDistance > 3).length
     };
   });
   await expect.poll(async () => (await readPortAttachmentAudit()).roleToRoleEdgeCount).toBeGreaterThan(0);

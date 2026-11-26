@@ -246,6 +246,12 @@ export function injectStudioGraphStyles(): void {
     .studio-graph-canvas .x6-node .x6-port-body {
       transition: stroke 140ms ease, fill 140ms ease, opacity 140ms ease;
     }
+    .studio-graph-canvas .x6-node [data-studio-port-body] {
+      transition: stroke 140ms ease, fill 140ms ease, opacity 140ms ease;
+    }
+    .studio-graph-canvas .x6-node [data-studio-port-hit] {
+      cursor: crosshair;
+    }
     .studio-graph-canvas .x6-node .x6-port-body,
     .studio-graph-canvas .x6-node [data-studio-port] {
       vector-effect: non-scaling-stroke;

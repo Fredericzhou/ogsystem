@@ -15,7 +15,7 @@ import {
 import { addTopologyFlowOrder, topologyComponentIds } from "../src/visualizer/topology-order.ts";
 import { formatStudioEdgeLabel, studioEdgeGlyph, studioEdgeSemanticColor, studioEdgeSemanticBg } from "../src/visualizer/studio-edge-semantics.ts";
 import { studioRoleMarkerVisible, studioRoleMonogram } from "../src/visualizer/studio-client/studio-role-marker.ts";
-import { studioSccGroupGeometry } from "../src/visualizer/studio-client/studio-graph-render.ts";
+import { projectionRouting, studioSccGroupGeometry } from "../src/visualizer/studio-client/studio-graph-render.ts";
 import { buildGraphViewModel } from "../src/visualizer/graph-view-model.ts";
 import { deriveStudioRuntimeVisualState } from "../src/visualizer/studio-client/studio-graph-runtime.ts";
 
@@ -637,7 +637,7 @@ test("stored projection preserves positions while renderer stays library-indepen
   assert.doesNotMatch(renderer, /from ["']elkjs(?:\/|["'])/);
   assert.match(renderer, /renderStudioGraphViewModel\([\s\S]*?projection: LayoutProjection,[\s\S]*?showTechnicalDetails\?: boolean/);
   assert.doesNotMatch(labelProjection, /Role:/);
-  assert.match(labelProjection, /STUDIO_EDGE_CONNECTOR_RADIUS = 4/);
+  assert.match(labelProjection, /STUDIO_EDGE_CONNECTOR_RADIUS = 10/);
   assert.match(renderer, /name: "boundary",\r?\n\s+args: \{ offset: 0 \}/);
   const styles = await readFile(new URL("../src/visualizer/studio-client/styles.ts", import.meta.url), "utf8");
   assert.match(styles, /\.studio-graph-canvas \.x6-edge-label \{\r?\n\s+pointer-events: none;/);
@@ -715,4 +715,55 @@ test("Studio edge semantics map glyphs, colors, and backgrounds into semantic ca
   assert.equal(studioEdgeSemanticBg({ ...baseEdge, eventType: "ERROR" }, false), "#fef2f2");
   assert.equal(studioEdgeSemanticBg({ ...baseEdge, eventType: "REJECTED" }, false), "#fff1f2");
   assert.equal(studioEdgeSemanticBg({ ...baseEdge, eventType: "APPROVED" }, false), "#f0fdf4");
+});
+
+test("projectionRouting anchors dynamic ports to center with visible rim offsets", () => {
+  const routed = projectionRouting({
+    kind: "backward",
+    source: { cell: "a", port: "out-flow-a-b", side: "top", offset: -10 },
+    target: { cell: "b", port: "in-flow-a-b", side: "top", offset: 10 },
+    router: { name: "normal", args: {} },
+    connector: { name: "rounded", args: { radius: 10 } },
+    routePoints: [{ x: 100, y: 40 }, { x: 200, y: 40 }],
+    lane: "loop:backward:-10:10"
+  });
+  assert.deepEqual(routed.source, {
+    cell: "a",
+    port: "out-flow-a-b",
+    anchor: { name: "center" },
+    connectionPoint: { name: "anchor", args: { offset: 3.5 } }
+  });
+  assert.deepEqual(routed.target, {
+    cell: "b",
+    port: "in-flow-a-b",
+    anchor: { name: "center" },
+    connectionPoint: { name: "anchor", args: { offset: 2.5 } }
+  });
+});
+
+test("stacked ELK layout routes SCC feedback edges on lateral sides instead of vertical faces", async () => {
+  const systemPath = new URL("../examples/langgraph-debate-current/system.mmd", import.meta.url);
+  const source = await readFile(systemPath, "utf8");
+  const system = parseSystemFromMermaidSource(source);
+  const authoring = importSystemToAuthoring({
+    workdir: "examples/langgraph-debate-current",
+    systemPath: "examples/langgraph-debate-current/system.mmd",
+    system,
+    systemSource: source
+  });
+  const viewModel = buildGraphViewModel({ authoring, mode: "edit" });
+  const projection = await createElkLayoutProjection(viewModel, "stacked");
+  const feedbackEdges = projection.edges.filter((edge) => edge.routing.kind === "backward");
+  assert.ok(feedbackEdges.length > 0);
+  for (const edge of feedbackEdges) {
+    assert.ok(
+      ["left", "right"].includes(edge.routing.source.side) && ["left", "right"].includes(edge.routing.target.side),
+      `expected stacked feedback edge ${edge.id} to use lateral sides, received ${edge.routing.source.side} -> ${edge.routing.target.side}`
+    );
+  }
+  assert.equal(
+    projection.diagnostics.some((item) => ["NODE_OVERLAP", "EDGE_NODE_COLLISION", "ROUTE_LOSS"].includes(item.code)),
+    false,
+    JSON.stringify(projection.diagnostics)
+  );
 });
