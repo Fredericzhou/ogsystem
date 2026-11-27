@@ -29,6 +29,10 @@ try {
   # as the project a user is editing from the workbench.
   $frameworkWorkdir = Join-Path $env:LOCALAPPDATA "OGSystem\visualizer-workspace"
   New-Item -ItemType Directory -Path $frameworkWorkdir -Force | Out-Null
+  # Keep Team Site projects isolated from legacy metadata in ~/.ogsystem/projects.
+  # This also makes the Tailnet launcher repeatable on machines with older data.
+  $projectsRoot = Join-Path $env:LOCALAPPDATA "OGSystem\team-site-projects"
+  New-Item -ItemType Directory -Path $projectsRoot -Force | Out-Null
 
   foreach ($service in @(
     @{ Name = "team-site"; Port = 4174; Marker = "server.mjs" },
@@ -54,6 +58,7 @@ try {
   $env:PORT = "4174"
   $env:OGS_VIS_URL = "http://127.0.0.1:4177"
   $env:OGS_VIS_WORKDIR = $frameworkWorkdir
+  $env:OGS_SITE_PROJECTS_DIR = $projectsRoot
   $site = Start-Process -FilePath $node -ArgumentList @("server.mjs") -WorkingDirectory (Join-Path $repoRoot "apps/team-site") -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $logDir "team-site.log") -RedirectStandardError (Join-Path $logDir "team-site.err.log")
   $framework = Start-Process -FilePath $node -ArgumentList @("node_modules/tsx/dist/cli.mjs", "src/visualizer/cli.ts", "--ogs-dir", $frameworkWorkdir, "--host", "127.0.0.1", "--port", "4177") -WorkingDirectory $repoRoot -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $logDir "framework.log") -RedirectStandardError (Join-Path $logDir "framework.err.log")
 
@@ -74,16 +79,19 @@ try {
 
   $serveLog = Join-Path $logDir "tailscale-serve.log"
   $serveErrorLog = Join-Path $logDir "tailscale-serve.err.log"
-  $serveProcess = Start-Process -FilePath $tailscale -ArgumentList @("serve", "--bg", "http://127.0.0.1:4174") -WindowStyle Hidden -PassThru -RedirectStandardOutput $serveLog -RedirectStandardError $serveErrorLog
+  # Keep the Tailnet entry plain HTTP. Direct IP access remains available on
+  # the service port below, while this host-based entry avoids exposing HTTPS
+  # when the caller explicitly requested HTTP-only access.
+  $serveProcess = Start-Process -FilePath $tailscale -ArgumentList @("serve", "--bg", "--http=80", "http://127.0.0.1:4174") -WindowStyle Hidden -PassThru -RedirectStandardOutput $serveLog -RedirectStandardError $serveErrorLog
   $serveCompleted = $serveProcess.WaitForExit(10000)
   if (-not $serveCompleted) { Stop-Process -Id $serveProcess.Id -Force -ErrorAction SilentlyContinue }
   $serveStatus = (& $tailscale serve status 2>$null | Out-String)
   $serveConfigured = ($serveCompleted -and $serveProcess.ExitCode -eq 0) -or ($serveStatus -match "proxy http://127\.0\.0\.1:4174")
   Write-Output "Team site: http://${tailnetIp}:4174/"
   if ($serveConfigured) {
-    Write-Output "Tailnet product entry: https://${tailnetHost}/"
+    Write-Output "Tailnet HTTP entry: http://${tailnetHost}/"
   } else {
-    Write-Warning "Team Site is running locally at http://127.0.0.1:4174/. Enable Tailscale Serve in the admin console to publish https://${tailnetHost}/."
+    Write-Warning "Team Site is running locally at http://127.0.0.1:4174/. Enable Tailscale Serve in the admin console to publish http://${tailnetHost}/."
     if (Test-Path $serveErrorLog) { Get-Content $serveErrorLog }
     if (Test-Path $serveLog) { Get-Content $serveLog }
   }

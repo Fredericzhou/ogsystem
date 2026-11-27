@@ -16,6 +16,10 @@ export const logRoot = join(serviceStateRoot, "logs");
 export const serviceStatePath = join(serviceStateRoot, "service.json");
 export const nodePath = process.execPath;
 
+function packageManagerExecOptions() {
+  return process.platform === "win32" ? { shell: true } : {};
+}
+
 function xml(value) {
   return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&apos;");
 }
@@ -103,9 +107,17 @@ async function ensureBuild() {
   try {
     await access(required, constants.R_OK);
   } catch {
-    execFileSync(packageManager, ["build"], { cwd: repoRoot, stdio: "inherit" });
+    execFileSync(packageManager, ["build"], {
+      cwd: repoRoot,
+      stdio: "inherit",
+      ...packageManagerExecOptions()
+    });
   }
-  execFileSync(packageManager, ["--dir", appRoot, "run", "build:assets"], { cwd: repoRoot, stdio: "inherit" });
+  execFileSync(packageManager, ["--dir", appRoot, "run", "build:assets"], {
+    cwd: repoRoot,
+    stdio: "inherit",
+    ...packageManagerExecOptions()
+  });
 }
 
 function serviceEnvironment({ host, port }) {
