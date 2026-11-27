@@ -4,6 +4,7 @@ import type {
   GraphViewModelNode,
   StudioAuthoringDocument,
 } from "../studio-contracts.js";
+import { isCycleTopologyEdge } from "../studio-edge-semantics.js";
 
 export type StudioRuntimeExecutionRecord = {
   iteration: number;
@@ -265,7 +266,7 @@ export function deriveStudioRuntimeEdgeState(args: {
     loopBack: args.edge.source === args.edge.target
       || args.edge.channel === "loop"
       || args.edge.channel === "feedback"
-      || args.edge.topologyOrder?.endsWith("L") === true,
+      || isCycleTopologyEdge(args.edge),
     handoffCount: 0,
     activeHandoffCount: 0,
     waitingHandoffCount: 0

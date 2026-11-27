@@ -10,9 +10,17 @@ export function estimateStudioEdgeSummaryLabelWidth(value: string): number {
   }, 0);
 }
 
+export function isCycleTopologyEdge(
+  edge: Pick<GraphViewModelEdge, "topologyOrder" | "topologyCycle">
+): boolean {
+  return edge.topologyCycle === true
+    || edge.topologyOrder?.includes(".") === true
+    || edge.topologyOrder?.endsWith("L") === true;
+}
+
 function formatStudioEdgeDetails(edge: GraphViewModelEdge, includeTopology: boolean): string[] {
   return [
-    includeTopology && edge.topologyOrder ? `#${edge.topologyOrder}` : "",
+    includeTopology && edge.topologyOrder ? edge.topologyOrder : "",
     edge.channel,
     edge.priority === undefined ? "" : `p${edge.priority}`,
     edge.conditionSummary ? `when:${edge.conditionSummary}` : ""
@@ -32,7 +40,7 @@ export function formatStudioEdgeSummaryLabel(edge: GraphViewModelEdge): string {
 }
 
 export function formatStudioEdgeTopologyLabel(edge: GraphViewModelEdge): string {
-  return edge.topologyOrder ? `#${edge.topologyOrder}` : "";
+  return edge.topologyOrder ?? "";
 }
 
 export function studioEdgeGlyph(edge: GraphViewModelEdge): string {
@@ -71,7 +79,7 @@ export function studioEdgeSemanticColor(edge: GraphViewModelEdge, isDark: boolea
 
   if (edge.condition && typeof edge.condition === "object" && Object.keys(edge.condition).length > 0) return isDark ? "#38bdf8" : "#0284c7";
   if (edge.conditionSummary) return isDark ? "#38bdf8" : "#0284c7";
-  if (edge.channel === "loop" || edge.channel === "feedback" || edge.topologyOrder?.endsWith("L")) return isDark ? "#38bdf8" : "#55798c";
+  if (edge.channel === "loop" || edge.channel === "feedback" || isCycleTopologyEdge(edge)) return isDark ? "#38bdf8" : "#55798c";
   if (edge.participatesInJoin) return isDark ? "#34d399" : "#1b7662";
   return isDark ? "#94a3b8" : "#82998e";
 }

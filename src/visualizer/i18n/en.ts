@@ -117,7 +117,7 @@ export const en = {
   "studio.debugNoRun": "Start a dry run to see role handoffs, human reviews, and role outputs here.",
   "studio.resultsTab": "Results",
   "studio.topologyOrder": "authoring order",
-  "studio.topologyOrderHint": "Cycles are listed after the acyclic path so the authoring order stays stable.",
+  "studio.topologyOrderHint": "Cycle bodies take a top-level index and use secondary numbering (e.g. 2.1, 2.2) inside.",
   "studio.filterGraphItems": "Filter roles or flows",
   "studio.noFilteredItems": "No matching graph items.",
   "hero.runs": "Runs",

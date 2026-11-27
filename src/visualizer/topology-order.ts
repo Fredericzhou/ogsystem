@@ -58,12 +58,45 @@ function stableEdgeKey(edge: GraphViewModelEdge): string {
   return `${edge.source}:${edge.target}:${edge.eventType}:${edge.id}`;
 }
 
+function edgeExecutionChannelRank(edge: GraphViewModelEdge): number {
+  if (
+    edge.runtimeOnlyErrorFlow ||
+    edge.channel === "error" ||
+    (typeof edge.eventType === "string" && (edge.eventType === "ERROR" || edge.eventType.startsWith("ERROR.")))
+  ) return 3;
+  if (edge.channel === "loop" || edge.channel === "feedback") return 2;
+  if (edge.channel === "join" || edge.participatesInJoin) return 1;
+  return 0;
+}
+
+function edgeRouteOrderRank(
+  edge: GraphViewModelEdge,
+  nodeById: ReadonlyMap<string, GraphViewModelNode>
+): number {
+  const index = nodeById.get(edge.source)?.structure?.routeOrder?.indexOf(edge.target) ?? -1;
+  return index >= 0 ? index : Number.MAX_SAFE_INTEGER;
+}
+
+function compareEdgesByExecutionOrder(
+  left: GraphViewModelEdge,
+  right: GraphViewModelEdge,
+  nodeById: ReadonlyMap<string, GraphViewModelNode>
+): number {
+  return edgeExecutionChannelRank(left) - edgeExecutionChannelRank(right) ||
+    edgeRouteOrderRank(left, nodeById) - edgeRouteOrderRank(right, nodeById) ||
+    (right.priority ?? 0) - (left.priority ?? 0) ||
+    stableEdgeKey(left).localeCompare(stableEdgeKey(right));
+}
+
 /**
- * Compresses cycles before assigning one global order to every valid flow.
- * Forward handoffs are numbered first; cycle edges are numbered afterwards
- * with an `L` suffix so the main path remains easy to scan.
+ * Compresses cycles (SCCs) before assigning a hierarchical topology order to
+ * every valid flow. Cross-component handoffs receive sequential top-level
+ * numbers (`1`, `2`, `3`, ...); each cycle body occupies one top-level number
+ * `k` at its topological position, and its internal edges receive secondary
+ * numbers (`k.1`, `k.2`, ...) ordered from entry forward before back-edges.
  */
 export function addTopologyFlowOrder(args: TopologyEdgeOrderArgs): GraphViewModelEdge[] {
+  const nodeById = new Map(args.nodes.map((node) => [node.id, node]));
   const nodeIds = args.nodes.map((node) => node.id);
   const nodeSet = new Set(nodeIds);
   const edges = args.edges.filter((edge) => nodeSet.has(edge.source) && nodeSet.has(edge.target));
@@ -166,31 +199,90 @@ export function addTopologyFlowOrder(args: TopologyEdgeOrderArgs): GraphViewMode
   for (const componentIndex of components.map((_, index) => index)) {
     if (!orderedComponents.includes(componentIndex)) orderedComponents.push(componentIndex);
   }
-  const orderedComponentIndex = new Map(orderedComponents.map((component, index) => [component, index]));
-  const forwardEdges: GraphViewModelEdge[] = [];
-  const cycleEdges: GraphViewModelEdge[] = [];
+
+  const orderByEdge = new Map<GraphViewModelEdge, { topologyOrder: string; topologyCycle: boolean }>();
+  const earliestIncomingMajorByNode = new Map<string, number>();
+  let nextMajor = 1;
+
   for (const componentIndex of orderedComponents) {
-    const componentEdgesForSource = edges
-      .filter((edge) => componentByNode.get(edge.source) === componentIndex)
-      .sort((left, right) => stableEdgeKey(left).localeCompare(stableEdgeKey(right)));
-    for (const edge of componentEdgesForSource) {
-      if (componentByNode.get(edge.target) === componentIndex) cycleEdges.push(edge);
-      else forwardEdges.push(edge);
+    const componentSourceEdges = edges.filter((edge) => componentByNode.get(edge.source) === componentIndex);
+    const internalEdges = componentSourceEdges.filter((edge) => componentByNode.get(edge.target) === componentIndex);
+    const outgoingEdges = componentSourceEdges
+      .filter((edge) => componentByNode.get(edge.target) !== componentIndex)
+      .sort((left, right) => compareEdgesByExecutionOrder(left, right, nodeById));
+
+    if (internalEdges.length > 0) {
+      const cycleMajor = nextMajor;
+      nextMajor += 1;
+      const members = components[componentIndex] ?? [];
+      const incomingEntryMembers = members
+        .filter((id) => earliestIncomingMajorByNode.has(id) || id === args.entryNodeId)
+        .sort((left, right) =>
+          (earliestIncomingMajorByNode.get(left) ?? Number.MAX_SAFE_INTEGER) -
+            (earliestIncomingMajorByNode.get(right) ?? Number.MAX_SAFE_INTEGER) ||
+          left.localeCompare(right)
+        );
+      const seeds = incomingEntryMembers.length > 0 ? incomingEntryMembers : members.slice(0, 1);
+      const internalOutgoing = new Map<string, GraphViewModelEdge[]>();
+      for (const edge of internalEdges) {
+        internalOutgoing.set(edge.source, [...(internalOutgoing.get(edge.source) ?? []), edge]);
+      }
+      for (const list of internalOutgoing.values()) {
+        list.sort((left, right) => compareEdgesByExecutionOrder(left, right, nodeById));
+      }
+      const memberDepth = new Map<string, number>();
+      const bfsQueue: string[] = [];
+      for (const seed of seeds) {
+        if (memberDepth.has(seed)) continue;
+        memberDepth.set(seed, 0);
+        bfsQueue.push(seed);
+      }
+      for (let cursor = 0; cursor < bfsQueue.length; cursor += 1) {
+        const current = bfsQueue[cursor]!;
+        const depth = memberDepth.get(current) ?? 0;
+        for (const edge of internalOutgoing.get(current) ?? []) {
+          if (memberDepth.has(edge.target)) continue;
+          memberDepth.set(edge.target, depth + 1);
+          bfsQueue.push(edge.target);
+        }
+      }
+      const depthOf = (id: string): number => memberDepth.get(id) ?? Number.MAX_SAFE_INTEGER;
+      internalEdges.sort((left, right) => {
+        const leftSourceDepth = depthOf(left.source);
+        const leftTargetDepth = depthOf(left.target);
+        const rightSourceDepth = depthOf(right.source);
+        const rightTargetDepth = depthOf(right.target);
+        const leftBackRank = left.source === left.target ? 2 : leftSourceDepth >= leftTargetDepth ? 1 : 0;
+        const rightBackRank = right.source === right.target ? 2 : rightSourceDepth >= rightTargetDepth ? 1 : 0;
+        return leftBackRank - rightBackRank ||
+          leftSourceDepth - rightSourceDepth ||
+          leftTargetDepth - rightTargetDepth ||
+          compareEdgesByExecutionOrder(left, right, nodeById);
+      });
+      internalEdges.forEach((edge, minorIndex) => {
+        orderByEdge.set(edge, {
+          topologyOrder: `${cycleMajor}.${minorIndex + 1}`,
+          topologyCycle: true
+        });
+      });
+    }
+
+    for (const edge of outgoingEdges) {
+      const assigned = nextMajor;
+      nextMajor += 1;
+      orderByEdge.set(edge, { topologyOrder: String(assigned), topologyCycle: false });
+      const prior = earliestIncomingMajorByNode.get(edge.target);
+      if (prior === undefined || assigned < prior) {
+        earliestIncomingMajorByNode.set(edge.target, assigned);
+      }
     }
   }
-  cycleEdges.sort((left, right) => {
-    const leftComponent = orderedComponentIndex.get(componentByNode.get(left.source)! ) ?? 0;
-    const rightComponent = orderedComponentIndex.get(componentByNode.get(right.source)! ) ?? 0;
-    return leftComponent - rightComponent || stableEdgeKey(left).localeCompare(stableEdgeKey(right));
-  });
-  const orderByEdge = new Map<GraphViewModelEdge, string>();
-  [...forwardEdges, ...cycleEdges].forEach((edge, index) => {
-    const component = componentByNode.get(edge.source);
-    const isCycle = component !== undefined && component === componentByNode.get(edge.target);
-    orderByEdge.set(edge, `${index + 1}${isCycle ? "L" : ""}`);
-  });
+
   return args.edges.map((edge) => {
-    const topologyOrder = orderByEdge.get(edge);
-    return topologyOrder ? { ...edge, topologyOrder } : edge;
+    const entry = orderByEdge.get(edge);
+    if (!entry) return edge;
+    return entry.topologyCycle
+      ? { ...edge, topologyOrder: entry.topologyOrder, topologyCycle: true }
+      : { ...edge, topologyOrder: entry.topologyOrder };
   });
 }

@@ -131,7 +131,7 @@ export const zhCN = {
   "studio.debugNoRun": "启动试运行后，可在此查看角色交接、人工评审和角色产物。",
   "studio.resultsTab": "结果",
   "studio.topologyOrder": "编排顺序",
-  "studio.topologyOrderHint": "循环部分会在无环路径之后列出，以保持编排顺序稳定。",
+  "studio.topologyOrderHint": "循环体作为一个整体占用一级序号，内部流转按执行主路径依次使用二级编号（如 2.1、2.2）。",
   "studio.filterGraphItems": "筛选角色或流转",
   "studio.noFilteredItems": "没有匹配的图元素。",
   "hero.runs": "运行",

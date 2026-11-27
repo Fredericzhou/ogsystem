@@ -1506,7 +1506,7 @@ export function renderStudioBridgeStructureHtml(args: {
     flowButtons.join("") + "</details>";
   return '<div class="studio-bridge-index structure-list" data-studio-bridge-region="index"><div class="studio-bridge-index-controls">' +
     filterControl + modeControl + '<div class="hint">' +
-    escapeText(t("studio.topologyOrderHint", undefined, "Cycles are listed after the acyclic path so the authoring order stays stable.")) +
+    escapeText(t("studio.topologyOrderHint", undefined, "Cycle bodies take a top-level index and use secondary numbering (e.g. 2.1, 2.2) inside.")) +
     '</div></div><div class="studio-index-stack">' + roleSection + flowSection + "</div></div>";
 }
 

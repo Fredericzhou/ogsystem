@@ -1384,10 +1384,10 @@ test("SCC container drag moves every member node with the container", async ({ p
       };
     })).toEqual({ boundaryOverlaps: 0, memberContainment: true, borderVisible: true });
     await expect.poll(async () => page.locator("#studio-graph-root .x6-edge-label text").allTextContents())
-      .toEqual(expect.arrayContaining(["#3L", "#4L"]));
+      .toEqual(expect.arrayContaining(["2.1", "2.2"]));
     await expect.poll(async () => page.evaluate(() => {
       const badges = Array.from(document.querySelectorAll<SVGGElement>("#studio-graph-root .x6-edge-label"))
-        .filter((label) => label.textContent?.trim().startsWith("#"))
+        .filter((label) => Boolean(label.querySelector(".studio-edge-topology-label")))
         .map((label) => label.getBoundingClientRect());
       const nodes = Array.from(document.querySelectorAll<SVGGElement>("#studio-graph-root .x6-node[data-cell-id]"))
         .filter((node) => !node.getAttribute("data-cell-id")?.startsWith("__ogs-scc-"))
@@ -1400,7 +1400,7 @@ test("SCC container drag moves every member node with the container", async ({ p
       const group = document.querySelector<HTMLElement>('#studio-graph-root [data-cell-id^="__ogs-scc-"]')?.getBoundingClientRect();
       if (!group) return -1;
       const labels = Array.from(document.querySelectorAll<SVGGElement>("#studio-graph-root .x6-edge.is-loop-back .x6-edge-label"))
-        .filter((label) => label.textContent?.trim() && !label.textContent.trim().startsWith("#"));
+        .filter((label) => label.textContent?.trim() && !label.querySelector(".studio-edge-topology-label"));
       return labels.filter((label) => {
         const bounds = label.getBoundingClientRect();
         return bounds.left < group.left || bounds.right > group.right || bounds.top < group.top || bounds.bottom > group.bottom;

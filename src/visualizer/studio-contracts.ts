@@ -259,6 +259,7 @@ export type GraphViewModelEdge = {
   diagnostic?: GraphViewModelDiagnostic;
   editable: boolean;
   topologyOrder?: string;
+  topologyCycle?: boolean;
 };
 
 export type GraphViewModel = {

@@ -6,6 +6,7 @@ import {
   type GraphViewModelNode
 } from "../studio-contracts.js";
 import { topologyComponentIds } from "../topology-order.js";
+import { isCycleTopologyEdge } from "../studio-edge-semantics.js";
 import { formatStudioRuntimeNodeBadges } from "./studio-graph-runtime.js";
 
 export type StudioLayoutMode = "flow" | "compact" | "stacked";
@@ -617,7 +618,7 @@ function resolveRoute(
   if (edge.source === edge.target) {
     return { kind: "self", sourceSide: "right", targetSide: "top", verticalGap: 0 };
   }
-  if (respectTopologyOrder && edge.topologyOrder?.endsWith("L")) {
+  if (respectTopologyOrder && isCycleTopologyEdge(edge)) {
     return { kind: "backward", sourceSide: "left", targetSide: "right", verticalGap: 0 };
   }
   const sourceCenter = edgeCenter(nodeById.get(edge.source));

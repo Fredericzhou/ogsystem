@@ -7,6 +7,7 @@ import {
   formatStudioEdgeSummaryLabel,
   formatStudioEdgeTopologyLabel,
   formatStudioEdgeDisplayLabel,
+  isCycleTopologyEdge,
   studioEdgeSemanticColor,
   studioEdgeSemanticBg,
   estimateStudioEdgeSummaryLabelWidth,
@@ -55,7 +56,7 @@ function edgeStroke(edge: GraphViewModelEdge): string {
 function isLoopEdge(edge: GraphViewModelEdge): boolean {
   return edge.channel === "loop"
     || edge.channel === "feedback"
-    || edge.topologyOrder?.endsWith("L") === true
+    || isCycleTopologyEdge(edge)
     || edge.source === edge.target;
 }
 
@@ -145,7 +146,7 @@ export function renderStudioGraphViewModel(
   const portsByNodeId = projectionPortsByNode(projection);
   graph.batchUpdate("studio-projection", () => {
     const nextNodeIds = new Set(projectedViewModel.nodes.map((node) => node.id));
-    const sccGroups = buildSccGroups(projectedViewModel.nodes, graph);
+    const sccGroups = buildSccGroups(projectedViewModel.nodes, projectedViewModel.edges, graph);
     for (const group of sccGroups) nextNodeIds.add(group.id);
     const nextEdgeIds = new Set(viewModel.edges.map((edge) => edge.id));
     for (const bundle of projection.bundles) nextEdgeIds.add(bundle.id);
@@ -329,14 +330,23 @@ const SCC_DARK_COLORS = [
   { fill: "rgba(192, 132, 252, 0.035)", stroke: "rgba(192, 132, 252, 0.34)", label: "#b39acb" }
 ];
 
-function buildSccGroups(nodes: readonly GraphViewModelNode[], graph: Graph): SccGroup[] {
+function buildSccGroups(
+  nodes: readonly GraphViewModelNode[],
+  edges: readonly GraphViewModelEdge[],
+  graph: Graph
+): SccGroup[] {
   const groups = new Map<string, GraphViewModelNode[]>();
   for (const node of nodes) {
     if (!node.topologyComponentId?.startsWith("SCC-")) continue;
     groups.set(node.topologyComponentId, [...(groups.get(node.topologyComponentId) ?? []), node]);
   }
-  return [...groups.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([label, members], index) => {
+  return [...groups.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([componentId, members], index) => {
     const memberIds = members.map((node) => node.id).sort();
+    const memberSet = new Set(memberIds);
+    const majorOrder = edges
+      .find((edge) => memberSet.has(edge.source) && memberSet.has(edge.target) && edge.topologyOrder?.includes("."))
+      ?.topologyOrder?.split(".", 1)[0];
+    const label = majorOrder ? `${componentId} · ${majorOrder}` : componentId;
     const geometry = studioSccGroupGeometry({
       members: members.map((node) => ({ id: node.id, ...node.layout })),
       obstacles: nodes
@@ -344,7 +354,7 @@ function buildSccGroups(nodes: readonly GraphViewModelNode[], graph: Graph): Scc
         .map((node) => ({ id: node.id, ...node.layout }))
     })!;
     return {
-      id: `__ogs-scc-${label}`,
+      id: `__ogs-scc-${componentId}`,
       label,
       ...geometry,
       memberIds,
@@ -931,7 +941,7 @@ function findStudioEdgeLabelPosition(
   const fractions = [0.5, 0.4, 0.6, 0.3, 0.7, 0.2, 0.8, 0.1, 0.9, 0.05, 0.95, 0.02, 0.98];
   // Keep labels attached to their route. Long-range offsets avoid collisions
   // visually, but make a flow label read as if it belongs to another edge.
-  const offsetRange = edge.topologyOrder?.endsWith("L") ? 12 : 24;
+  const offsetRange = isCycleTopologyEdge(edge) ? 12 : 24;
   const offsets = [...new Set([
     preferredOffset,
     0,
@@ -1070,7 +1080,7 @@ function studioEdgeLabels(
     distance: hasWrappedSummaryLabel ? 0.8 : 0.5,
     offset: summaryLabelOffset
   };
-  const isCycle = edge.topologyOrder?.endsWith("L") === true;
+  const isCycle = isCycleTopologyEdge(edge);
   if (separateTopologyLabel) {
     labels.push({
       position: {
@@ -1078,22 +1088,31 @@ function studioEdgeLabels(
         offset: positions?.topology?.offset ?? -topologyLabelOffset
       },
       markup: [
-        { tagName: "rect", selector: "body", className: "studio-edge-label-body" },
-        { tagName: "text", selector: "label" }
+        { tagName: "rect", selector: "body", className: "studio-edge-label-body studio-edge-topology-body" },
+        { tagName: "text", selector: "label", className: "studio-edge-topology-label" }
       ],
       attrs: {
         label: {
           text: topologyLabel,
-          fill: isCycle ? (dark ? "#7dd3fc" : "#165f50") : (dark ? "#cbd5e1" : "#426b7a"),
+          fill: isCycle ? (dark ? "#7dd3fc" : "#0f594b") : (dark ? "#e2e8f0" : "#274c5e"),
           fontSize: 10,
-          fontWeight: 800
+          fontWeight: 700,
+          textAnchor: "middle",
+          textVerticalAnchor: "middle"
         },
         body: {
-          fill: dark ? "#172337" : "#f1f7f3",
-          stroke: isCycle ? (dark ? "#38bdf8" : "#1b7662") : (dark ? "#52677e" : "#9fc3b1"),
-          strokeWidth: 1,
-          rx: 5,
-          ry: 5
+          ref: "label",
+          refWidth: "100%",
+          refWidth2: 10,
+          refHeight: "100%",
+          refHeight2: 4,
+          refX: -5,
+          refY: -2,
+          fill: isCycle ? (dark ? "#122b3a" : "#e6f7f3") : (dark ? "#1a283d" : "#eef4f7"),
+          stroke: isCycle ? (dark ? "#38bdf8" : "#1b7662") : (dark ? "#64748b" : "#7fa5b6"),
+          strokeWidth: 1.15,
+          rx: 8,
+          ry: 8
         }
       }
     });

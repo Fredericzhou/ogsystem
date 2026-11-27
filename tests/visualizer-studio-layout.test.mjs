@@ -467,7 +467,7 @@ test("SCC topology separates independent cycles and merges mutually reachable ne
   assert.equal(nested.get("b"), nested.get("c"));
 });
 
-test("topology flow order is globally unique and places cycles after forward handoffs", () => {
+test("topology flow order uses plain numbers and hierarchical secondary numbering inside cycle bodies", () => {
   const nodes = ["__system_start__", "a", "b", "c", "__system_end__"].map((id) => node(id, 0, 0));
   const edges = [
     edge("entry", "__system_start__", "a"),
@@ -478,13 +478,64 @@ test("topology flow order is globally unique and places cycles after forward han
   ];
   const ordered = addTopologyFlowOrder({ nodes, edges, entryNodeId: "__system_start__" });
   const orderById = new Map(ordered.map((item) => [item.id, item.topologyOrder]));
+  const cycleById = new Map(ordered.map((item) => [item.id, item.topologyCycle === true]));
   assert.equal(orderById.get("entry"), "1");
   assert.equal(orderById.get("a-b"), "2");
   assert.equal(orderById.get("a-c"), "3");
   assert.equal(orderById.get("b-end"), "4");
-  assert.equal(orderById.get("c-self"), "5L");
+  assert.equal(orderById.get("c-self"), "5.1");
+  assert.equal(cycleById.get("c-self"), true);
+  assert.equal(cycleById.get("a-b"), false);
   assert.equal(new Set(orderById.values()).size, edges.length);
-  assert.match(formatStudioEdgeLabel({ ...edges[1], topologyOrder: orderById.get("a-b") }), /#2/);
+  const formatted = formatStudioEdgeLabel({ ...edges[1], topologyOrder: orderById.get("a-b") });
+  assert.doesNotMatch(formatted, /#/);
+  assert.match(formatted, /\[2\b/);
+
+  // Multi-node cycle body occupies one top-level index (2), numbers forward
+  // cycle edges before back-edges (2.1, 2.2, 2.3), and resumes at 3 on exit.
+  const cycleNodes = ["__system_start__", "plan", "build", "verify", "__system_end__"].map((id) => node(id, 0, 0));
+  const cycleEdges = [
+    edge("start-plan", "__system_start__", "plan", { eventType: "START" }),
+    edge("plan-build", "plan", "build"),
+    edge("build-verify", "build", "verify"),
+    edge("verify-plan", "verify", "plan", { eventType: "NEEDS_REWORK" }),
+    edge("verify-end", "verify", "__system_end__")
+  ];
+  const cycleOrdered = addTopologyFlowOrder({ nodes: cycleNodes, edges: cycleEdges, entryNodeId: "__system_start__" });
+  const cycleOrderById = new Map(cycleOrdered.map((item) => [item.id, item.topologyOrder]));
+  assert.equal(cycleOrderById.get("start-plan"), "1");
+  assert.equal(cycleOrderById.get("plan-build"), "2.1");
+  assert.equal(cycleOrderById.get("build-verify"), "2.2");
+  assert.equal(cycleOrderById.get("verify-plan"), "2.3");
+  assert.equal(cycleOrderById.get("verify-end"), "3");
+
+  // Outgoing edges respect execution priority signals: normal before error,
+  // explicit routeOrder, and higher condition priority first.
+  const priorityNodes = [
+    node("__system_start__", 0, 0),
+    { ...node("router", 0, 0), structure: { routeOrder: ["second", "first"] } },
+    node("first", 0, 0),
+    node("second", 0, 0),
+    node("err", 0, 0),
+    node("__system_end__", 0, 0)
+  ];
+  const priorityEdges = [
+    edge("s-r", "__system_start__", "router", { eventType: "START" }),
+    edge("r-err", "router", "err", { eventType: "ERROR", runtimeOnlyErrorFlow: true, channel: "error" }),
+    edge("r-first", "router", "first"),
+    edge("r-second-low", "router", "second", { eventType: "LOW", priority: 1 }),
+    edge("r-second-high", "router", "second", { eventType: "HIGH", priority: 10 }),
+    edge("first-end", "first", "__system_end__"),
+    edge("second-end", "second", "__system_end__"),
+    edge("err-end", "err", "__system_end__")
+  ];
+  const priorityOrdered = addTopologyFlowOrder({ nodes: priorityNodes, edges: priorityEdges, entryNodeId: "__system_start__" });
+  const prioMap = new Map(priorityOrdered.map((item) => [item.id, item.topologyOrder]));
+  assert.equal(prioMap.get("s-r"), "1");
+  assert.equal(prioMap.get("r-second-high"), "2");
+  assert.equal(prioMap.get("r-second-low"), "3");
+  assert.equal(prioMap.get("r-first"), "4");
+  assert.equal(prioMap.get("r-err"), "5");
 });
 
 test("stacked loop routes use ELK's vertical geometry without a second router", async () => {
