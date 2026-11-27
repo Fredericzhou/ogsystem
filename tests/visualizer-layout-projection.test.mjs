@@ -1126,3 +1126,316 @@ test("shared Z-channel fan-out spreads vertical tracks without collinear overlap
   assert.equal(routesCross({ routePoints: upperPts }, { routePoints: lowerPts }), false);
   assert.equal(routesShareCollinearSegment(upperPts, lowerPts), false);
 });
+
+test("horizontal and vertical blocked skip-edges use outer rings while adjacent links stay inner without crossings", async () => {
+  const horizontalView = graph([
+    node("a", { layout: { x: 100, y: 160, width: 180, height: 84 } }),
+    node("b", { layout: { x: 380, y: 160, width: 180, height: 84 } }),
+    node("c", { layout: { x: 660, y: 160, width: 180, height: 84 } })
+  ], [
+    edge("ab", "a", "b"),
+    edge("bc", "b", "c"),
+    edge("ac", "a", "c")
+  ]);
+
+  for (const projection of [createStoredLayoutProjection(horizontalView), await createElkLayoutProjection(horizontalView, "flow")]) {
+    const ab = projection.edges.find((item) => item.id === "ab");
+    const bc = projection.edges.find((item) => item.id === "bc");
+    const ac = projection.edges.find((item) => item.id === "ac");
+    assert.ok(ab && bc && ac);
+    assert.deepEqual([ab.routing.source.side, ab.routing.target.side], ["right", "left"]);
+    assert.deepEqual([bc.routing.source.side, bc.routing.target.side], ["right", "left"]);
+    assert.ok(["top", "bottom"].includes(ac.routing.source.side));
+    assert.equal(ac.routing.source.side, ac.routing.target.side);
+    const paths = [ab, bc, ac].map((item) => projectedRoutePoints(projection, item));
+    for (let i = 0; i < paths.length; i += 1) {
+      for (let j = i + 1; j < paths.length; j += 1) {
+        assert.equal(routesCross({ routePoints: paths[i] }, { routePoints: paths[j] }), false);
+        assert.equal(routesShareCollinearSegment(paths[i], paths[j]), false);
+      }
+    }
+    assertRouteAvoidsOtherNodes(projection, "ac");
+  }
+
+  const verticalView = graph([
+    node("a", { layout: { x: 200, y: 80, width: 180, height: 84 } }),
+    node("b", { layout: { x: 200, y: 260, width: 180, height: 84 } }),
+    node("c", { layout: { x: 200, y: 440, width: 180, height: 84 } })
+  ], [
+    edge("ab", "a", "b"),
+    edge("bc", "b", "c"),
+    edge("ac", "a", "c")
+  ]);
+  const verticalProjection = createStoredLayoutProjection(verticalView);
+  const vAb = verticalProjection.edges.find((item) => item.id === "ab");
+  const vBc = verticalProjection.edges.find((item) => item.id === "bc");
+  const vAc = verticalProjection.edges.find((item) => item.id === "ac");
+  assert.ok(vAb && vBc && vAc);
+  assert.deepEqual([vAb.routing.source.side, vAb.routing.target.side], ["bottom", "top"]);
+  assert.deepEqual([vBc.routing.source.side, vBc.routing.target.side], ["bottom", "top"]);
+  assert.ok(["left", "right"].includes(vAc.routing.source.side));
+  assert.equal(vAc.routing.source.side, vAc.routing.target.side);
+  assert.equal(
+    routesCross({ routePoints: projectedRoutePoints(verticalProjection, vAb) }, { routePoints: projectedRoutePoints(verticalProjection, vAc) }),
+    false
+  );
+  assert.equal(
+    routesCross({ routePoints: projectedRoutePoints(verticalProjection, vBc) }, { routePoints: projectedRoutePoints(verticalProjection, vAc) }),
+    false
+  );
+});
+
+test("multiple blocked skip-edges nest concentrically on outer staircase lanes without crossing", () => {
+  const view = graph([
+    node("a", { layout: { x: 100, y: 220, width: 180, height: 84 } }),
+    node("b", { layout: { x: 360, y: 220, width: 180, height: 84 } }),
+    node("c", { layout: { x: 620, y: 220, width: 180, height: 84 } }),
+    node("d", { layout: { x: 880, y: 220, width: 180, height: 84 } })
+  ], [
+    edge("ab", "a", "b"),
+    edge("bc", "b", "c"),
+    edge("cd", "c", "d"),
+    edge("ac", "a", "c"),
+    edge("ad", "a", "d")
+  ]);
+  const projection = createStoredLayoutProjection(view);
+  const paths = projection.edges.map((item) => ({ id: item.id, points: projectedRoutePoints(projection, item) }));
+  for (let i = 0; i < paths.length; i += 1) {
+    for (let j = i + 1; j < paths.length; j += 1) {
+      assert.equal(
+        routesCross({ routePoints: paths[i].points }, { routePoints: paths[j].points }),
+        false,
+        `expected zero crossing between ${paths[i].id} and ${paths[j].id}`
+      );
+      assert.equal(
+        routesShareCollinearSegment(paths[i].points, paths[j].points),
+        false,
+        `expected no collinear overlap between ${paths[i].id} and ${paths[j].id}`
+      );
+    }
+  }
+});
+
+test("collinear boundary detour aligns its source port with the bypass side to avoid crossing adjacent edges", () => {
+  const view = graph([
+    node("a", { layout: { x: 100, y: 160, width: 180, height: 84 } }),
+    node("b", { layout: { x: 380, y: 160, width: 180, height: 84 } }),
+    node(STUDIO_SYSTEM_END_ROLE_ID, { layout: { x: 660, y: 167, width: 170, height: 70 } })
+  ], [
+    edge("ab", "a", "b"),
+    edge("b-end", "b", STUDIO_SYSTEM_END_ROLE_ID),
+    edge("a-end", "a", STUDIO_SYSTEM_END_ROLE_ID)
+  ]);
+  const projection = createStoredLayoutProjection(view);
+  const ab = projection.edges.find((item) => item.id === "ab");
+  const aEnd = projection.edges.find((item) => item.id === "a-end");
+  assert.ok(ab && aEnd);
+  assert.equal(aEnd.routing.target.side, "left");
+  assert.equal(
+    routesCross({ routePoints: projectedRoutePoints(projection, ab) }, { routePoints: projectedRoutePoints(projection, aEnd) }),
+    false
+  );
+});
+
+test("cyclic flow outer lanes keep monotonic staircase bounds when intermediate cycle nodes are staggered vertically", async () => {
+  // Stored staggered geometry where middle node `b` sits higher than `a` and `c`.
+  const staggeredStored = graph([
+    node("a", { layout: { x: 100, y: 260, width: 180, height: 84 } }),
+    node("b", { layout: { x: 360, y: 64, width: 180, height: 84 } }),
+    node("c", { layout: { x: 620, y: 260, width: 180, height: 84 } })
+  ], [
+    edge("a-b", "a", "b", { topologyOrder: "1L" }),
+    edge("b-c", "b", "c", { topologyOrder: "2L" }),
+    edge("a-c", "a", "c", { topologyOrder: "3L" }),
+    edge("c-a", "c", "a", { topologyOrder: "4L" })
+  ]);
+  const storedProjection = createStoredLayoutProjection(staggeredStored);
+  const storedPaths = storedProjection.edges.map((item) => ({ id: item.id, points: projectedRoutePoints(storedProjection, item) }));
+  for (let i = 0; i < storedPaths.length; i += 1) {
+    for (let j = i + 1; j < storedPaths.length; j += 1) {
+      assert.equal(
+        routesCross({ routePoints: storedPaths[i].points }, { routePoints: storedPaths[j].points }),
+        false,
+        `expected zero crossing between ${storedPaths[i].id} and ${storedPaths[j].id}`
+      );
+    }
+  }
+
+  // ELK flow layout with a cyclic diamond + skip edge (s7 topology) where `b` is
+  // positioned above `a` and `c`.
+  const elkCyclicView = graph([
+    node(STUDIO_SYSTEM_START_ROLE_ID),
+    node("a"),
+    node("b"),
+    node("c"),
+    node("d"),
+    node(STUDIO_SYSTEM_END_ROLE_ID)
+  ], [
+    edge("start-a", STUDIO_SYSTEM_START_ROLE_ID, "a", { eventType: "START", topologyOrder: "1" }),
+    edge("a-b", "a", "b", { eventType: "E1", topologyOrder: "3L" }),
+    edge("a-d", "a", "d", { eventType: "E2", topologyOrder: "4L" }),
+    edge("b-c", "b", "c", { eventType: "E3", topologyOrder: "5L" }),
+    edge("d-c", "d", "c", { eventType: "E4", topologyOrder: "6L" }),
+    edge("a-c", "a", "c", { eventType: "SKIP", topologyOrder: "7L" }),
+    edge("c-a", "c", "a", { eventType: "BACK", topologyOrder: "8L" }),
+    edge("c-end", "c", STUDIO_SYSTEM_END_ROLE_ID, { eventType: "DONE", topologyOrder: "2" })
+  ]);
+  const elkFlow = await createElkLayoutProjection(elkCyclicView, "flow");
+  const elkPaths = elkFlow.edges.map((item) => ({ id: item.id, points: projectedRoutePoints(elkFlow, item) }));
+  for (let i = 0; i < elkPaths.length; i += 1) {
+    for (let j = i + 1; j < elkPaths.length; j += 1) {
+      assert.equal(
+        routesCross({ routePoints: elkPaths[i].points }, { routePoints: elkPaths[j].points }),
+        false,
+        `expected zero flow crossing between ${elkPaths[i].id} and ${elkPaths[j].id}`
+      );
+    }
+  }
+});
+
+test("cyclic flow staircase lanes sort by tangential axis span so short hops stay inside long skips", () => {
+  const view = graph([
+    node("a", { layout: { x: 100, y: 64, width: 180, height: 84 } }),
+    node("b", { layout: { x: 360, y: 360, width: 180, height: 84 } }),
+    node("c", { layout: { x: 620, y: 64, width: 180, height: 84 } })
+  ], [
+    edge("a-b", "a", "b", { topologyOrder: "1L" }),
+    edge("b-c", "b", "c", { topologyOrder: "2L" }),
+    edge("a-c", "a", "c", { topologyOrder: "3L" }),
+    edge("c-a", "c", "a", { topologyOrder: "4L" })
+  ]);
+  const projection = createStoredLayoutProjection(view);
+  const ab = projection.edges.find((item) => item.id === "a-b");
+  const bc = projection.edges.find((item) => item.id === "b-c");
+  const ac = projection.edges.find((item) => item.id === "a-c");
+  assert.ok(ab && bc && ac);
+  assert.equal(
+    routesCross({ routePoints: projectedRoutePoints(projection, ab) }, { routePoints: projectedRoutePoints(projection, ac) }),
+    false
+  );
+  assert.equal(
+    routesCross({ routePoints: projectedRoutePoints(projection, bc) }, { routePoints: projectedRoutePoints(projection, ac) }),
+    false
+  );
+});
+
+test("role-to-role edges entering a cycle avoid crossing existing cycle outer lanes in flow layout", async () => {
+  const view = graph([
+    node(STUDIO_SYSTEM_START_ROLE_ID),
+    node("p"),
+    node("a"),
+    node("b"),
+    node("c"),
+    node("q"),
+    node(STUDIO_SYSTEM_END_ROLE_ID)
+  ], [
+    edge("start-p", STUDIO_SYSTEM_START_ROLE_ID, "p", { eventType: "START", topologyOrder: "1" }),
+    edge("p-a", "p", "a", { eventType: "E0", topologyOrder: "2" }),
+    edge("a-b", "a", "b", { eventType: "E1", topologyOrder: "3" }),
+    edge("a-c", "a", "c", { eventType: "E3", topologyOrder: "4" }),
+    edge("b-c", "b", "c", { eventType: "E2", topologyOrder: "7L" }),
+    edge("c-b", "c", "b", { eventType: "E4", topologyOrder: "8L" }),
+    edge("c-q", "c", "q", { eventType: "E5", topologyOrder: "5" }),
+    edge("q-end", "q", STUDIO_SYSTEM_END_ROLE_ID, { eventType: "DONE", topologyOrder: "6" })
+  ]);
+  for (const mode of ["flow", "stacked"]) {
+    const projection = await createElkLayoutProjection(view, mode);
+    const paths = projection.edges.map((item) => ({ id: item.id, points: projectedRoutePoints(projection, item) }));
+    for (let i = 0; i < paths.length; i += 1) {
+      for (let j = i + 1; j < paths.length; j += 1) {
+        assert.equal(
+          routesCross({ routePoints: paths[i].points }, { routePoints: paths[j].points }),
+          false,
+          `expected zero ${mode} crossing between ${paths[i].id} and ${paths[j].id}`
+        );
+      }
+    }
+  }
+});
+
+test("self-loop and obstacle-tight feedback routes never backtrack 180 degrees or invert rounded corner arcs", async () => {
+  const assertNo180Backtrack = (projection, label) => {
+    const nodeById = new Map(projection.nodes.map((item) => [item.id, item]));
+    const rimPoint = (terminal, node, offset) => {
+      const base = terminal.side === "left"
+        ? { x: node.x, y: node.y + node.height / 2 + terminal.offset }
+        : terminal.side === "right"
+          ? { x: node.x + node.width, y: node.y + node.height / 2 + terminal.offset }
+          : terminal.side === "top"
+            ? { x: node.x + node.width / 2 + terminal.offset, y: node.y }
+            : { x: node.x + node.width / 2 + terminal.offset, y: node.y + node.height };
+      if (!offset) return base;
+      if (terminal.side === "left") return { x: base.x - offset, y: base.y };
+      if (terminal.side === "right") return { x: base.x + offset, y: base.y };
+      if (terminal.side === "top") return { x: base.x, y: base.y - offset };
+      return { x: base.x, y: base.y + offset };
+    };
+    for (const projectedEdge of projection.edges) {
+      const sourceNode = nodeById.get(projectedEdge.source);
+      const targetNode = nodeById.get(projectedEdge.target);
+      if (!sourceNode || !targetNode) continue;
+      const start = rimPoint(projectedEdge.routing.source, sourceNode, projectedEdge.routing.source.port ? 3.5 : 0);
+      const end = rimPoint(projectedEdge.routing.target, targetNode, projectedEdge.routing.target.port ? 2.5 : 0);
+      const full = [start, ...projectedEdge.routing.routePoints, end];
+      for (let index = 1; index < full.length - 1; index += 1) {
+        const prev = full[index - 1];
+        const curr = full[index];
+        const next = full[index + 1];
+        const v1x = curr.x - prev.x;
+        const v1y = curr.y - prev.y;
+        const v2x = next.x - curr.x;
+        const v2y = next.y - curr.y;
+        const cross = v1x * v2y - v1y * v2x;
+        const dot = v1x * v2x + v1y * v2y;
+        assert.equal(
+          Math.abs(cross) < 0.01 && dot < -0.01,
+          false,
+          `${label}: edge ${projectedEdge.id} has a 180-degree backtrack at vertex ${index} (${JSON.stringify(full)})`
+        );
+      }
+    }
+  };
+
+  // Self-loop stored projection (previously backtracked 12px at right clearance).
+  const selfLoopView = graph([
+    node("ship", { layout: { x: 200, y: 200, width: 196, height: 84 } })
+  ], [
+    edge("ship-rework", "ship", "ship", { channel: "loop" })
+  ]);
+  const selfLoopProj = createStoredLayoutProjection(selfLoopView);
+  assertNo180Backtrack(selfLoopProj, "stored self-loop");
+  const selfLoopEdge = selfLoopProj.edges[0];
+  assert.ok(selfLoopEdge.routing.routePoints.length >= 3);
+  assert.equal(selfLoopEdge.routing.routePoints[0].x, selfLoopEdge.routing.routePoints[1].x);
+
+  // Feedback edge with an obstacle whose expanded top edge falls inside the 24px stub band.
+  const tightFeedbackView = graph([
+    node("a", { layout: { x: 100, y: 100, width: 180, height: 84 } }),
+    node("c", { layout: { x: 620, y: 100, width: 180, height: 84 } }),
+    node("top-blocker", { layout: { x: 360, y: -16, width: 180, height: 84 } }),
+    node("stub-band-obstacle", { layout: { x: 900, y: 126, width: 180, height: 84 } })
+  ], [
+    edge("a-c", "a", "c", { topologyOrder: "1L" }),
+    edge("c-a", "c", "a", { topologyOrder: "2L" })
+  ]);
+  assertNo180Backtrack(createStoredLayoutProjection(tightFeedbackView), "tight-stub feedback");
+
+  // Also verify ELK flow and stacked modes on a cyclic + self-loop graph.
+  const cyclicView = graph([
+    node(STUDIO_SYSTEM_START_ROLE_ID),
+    node("a"),
+    node("b"),
+    node("c"),
+    node(STUDIO_SYSTEM_END_ROLE_ID)
+  ], [
+    edge("start-a", STUDIO_SYSTEM_START_ROLE_ID, "a", { eventType: "START", topologyOrder: "1" }),
+    edge("a-b", "a", "b", { eventType: "E1", topologyOrder: "3L" }),
+    edge("b-c", "b", "c", { eventType: "E2", topologyOrder: "4L" }),
+    edge("a-c", "a", "c", { eventType: "SKIP", topologyOrder: "5L" }),
+    edge("c-a", "c", "a", { eventType: "BACK", topologyOrder: "6L" }),
+    edge("b-b", "b", "b", { eventType: "RETRY", channel: "loop", topologyOrder: "7L" }),
+    edge("c-end", "c", STUDIO_SYSTEM_END_ROLE_ID, { eventType: "DONE", topologyOrder: "2" })
+  ]);
+  assertNo180Backtrack(await createElkLayoutProjection(cyclicView, "flow"), "elk flow cyclic+self-loop");
+  assertNo180Backtrack(await createElkLayoutProjection(cyclicView, "stacked"), "elk stacked cyclic+self-loop");
+});
