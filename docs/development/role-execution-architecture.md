@@ -121,8 +121,9 @@ Harness Template
 Resolved Run Policy
   Run-frozen Backend/Model, Harness `allowedTools`, Snapshot `verifiedTools`,
   EffectiveEnvironmentPolicy, policy digest, capability digest, and recovery identity. Runtime
-  computes `allowedTools ∩ verifiedTools` in memory after resource checks; it is not persisted as a
-  third tool-set fact.
+  validates `allowedTools ⊆ verifiedTools` (failing closed with `V2_READINESS_TOOL_MISSING` if any
+  configured tool lacks verification) and checks resources before computing the effective tool set
+  in memory; it is not persisted as a third tool-set fact.
 
 Business Review semantics
   Review triggers and business actions owned by the Business layer.
@@ -156,8 +157,8 @@ Alternate evidence stores and other non-core integrations
 Service Agent, Human Agent, and Remote Agent bindings
 ```
 
-These extensions must project into the core `allowedTools`, `verifiedTools`, the in-memory executable
-intersection, EnvironmentPolicy, PermissionDecision, ReviewRequest, and Evidence contracts rather than create
+These extensions must project into the core `allowedTools`, `verifiedTools`, the in-memory verified
+executable tool set, EnvironmentPolicy, PermissionDecision, ReviewRequest, and Evidence contracts rather than create
 parallel product objects.
 
 ## 1. Goal
@@ -228,8 +229,9 @@ The following rules are fixed:
    approval behavior within the frozen Harness environment; for Codex, `process: allow` maps to
    `approvalPolicy: never`. Users can narrow tools and resources in the Harness Template.
 9. A Resolved Model Role plan must contain Backend, Model, Run Capability Snapshot,
-  `allowedTools`, `verifiedTools`, and EffectiveEnvironmentPolicy. Runtime computes the executable
-  `allowedTools ∩ verifiedTools` set in memory. `adapterVersion` is read from the
+  `allowedTools`, `verifiedTools`, and EffectiveEnvironmentPolicy. Runtime enforces fail-closed
+  subset validation (`allowedTools ⊆ verifiedTools`, rejecting unverified tools) and computes the
+  executable tool set (`allowedTools`) in memory. `adapterVersion` is read from the
    snapshot and is not duplicated on the plan node.
 10. Every Graph node remains a Responsibility Role. The v2 Harness binding describes how a
     Responsibility Role executes; it is not a new Graph node type.
@@ -243,11 +245,11 @@ The following rules are fixed:
    may record and restore both, but never owns Graph definitions or Policy logic.
 14. The EffectiveExecutionPolicy applies to every v2 Harness execution. There is no separate
     API/Cmd or `local_shell` execution path in Contract Set v2.
-15. The executable tool set is the in-memory intersection of `allowedTools` and `verifiedTools`
-    after capability, environment,
-    Law, staging, quota, and readiness filtering. It is not the template's selection set. The
-    selected intent is the `allowedTools` stored on the Harness Template; generated defaults
-    populate it with all verified candidates before policy filtering.
+15. The executable tool set is the Runtime-verified `allowedTools` set after fail-closed subset
+    validation (`allowedTools ⊆ verifiedTools`) and capability, environment,
+    Law, staging, quota, and readiness filtering. It is not a permissive intersection that silently
+    drops unverified `allowedTools`. The selected intent is the `allowedTools` stored on the Harness
+    Template; generated defaults populate it with all verified candidates before policy filtering.
 16. Core Permission is only `allow` or `deny`. Backend permission protocol variants are
     Adapter implementation details and Deferred RFCs. Native approval prompts never become OGS
     Human Review. A dynamic, unverified, or unforceable capability fails closed and cannot enter
@@ -338,12 +340,13 @@ workspace.*
 
 EffectiveExecutionPolicy
   The coordinated Runtime result for one Harness Run:
-  an in-memory `allowedTools ∩ verifiedTools` set + EffectiveEnvironmentPolicy.
+  an in-memory verified `allowedTools` set (`allowedTools ⊆ verifiedTools`) + EffectiveEnvironmentPolicy.
 
 Tool set stages
   The persisted/contract collections are `allowedTools` (Harness Template user selection) and
-  `verifiedTools` (Run Capability Snapshot Backend facts). Runtime computes their intersection
-  in memory after resource checks. It does not persist a third tool-set fact.
+  `verifiedTools` (Run Capability Snapshot Backend facts). Runtime enforces `allowedTools ⊆ verifiedTools`
+  (failing closed with `V2_READINESS_TOOL_MISSING` otherwise) and checks resources in memory. It
+  does not persist a third tool-set fact.
 
 EffectiveEnvironmentPolicy
   The final filesystem, process, network, staging, and limit constraints.
@@ -366,8 +369,8 @@ Capability
   + allowedTools
   + EnvironmentIntent
   + Law / quota / staging
-  -> Runtime-local candidate intersection
-  -> in-memory executable intersection + EffectiveEnvironmentPolicy
+  -> Runtime-local verified subset check (`allowedTools ⊆ verifiedTools`)
+  -> in-memory executable tool set (`allowedTools`) + EffectiveEnvironmentPolicy
   -> PermissionDecision
 ```
 
@@ -1139,10 +1142,10 @@ Import Team
 
 Import does not create a Run staging root, bind Run-specific Law/quota state, or produce an
 `EffectiveExecutionPolicy`. It only reports whether the Harness Template can become executable.
-The actual `EffectiveExecutionPolicy` and executable intersection are calculated when a Run is
+The actual `EffectiveExecutionPolicy` and verified executable tool set are calculated when a Run is
 created, after Run context, staging, Law, and quota are available. The Run freezes the source facts
-(`allowedTools`, `verifiedTools`, and environment policy); the intersection is recomputed from
-those facts during execution and recovery.
+(`allowedTools`, `verifiedTools`, and environment policy); this verified executable tool set is
+recomputed after fail-closed subset validation (`allowedTools ⊆ verifiedTools`) during execution and recovery.
 
 When a target environment does not have a referenced Backend or Model, the Team can still be imported. The Harness Template is marked unresolved and the Team cannot be trained or run until the binding is repaired.
 
@@ -1603,10 +1606,10 @@ Persistence rule:
 Harness Template                  -> allowedTools
 Run Capability Snapshot           -> verifiedTools
 resolved-config.json              -> allowedTools + verifiedTools (frozen source facts)
-Runtime memory                    -> allowedTools ∩ verifiedTools (after resource checks)
+Runtime memory                    -> verified allowedTools (allowedTools ⊆ verifiedTools, after resource checks)
 ```
 
-`EffectiveExecutionPolicy` may carry the executable intersection in Runtime memory while resolving
+`EffectiveExecutionPolicy` may carry the verified executable tool set in Runtime memory while resolving
 and executing. Persisting it separately would create a third tool-set fact that could drift from
 the frozen Harness selection and Capability Snapshot.
 
@@ -2181,8 +2184,8 @@ Law digest
 
 Recovery must reuse this snapshot. It must not rediscover capabilities and silently change the technical decision for the same Run.
 `resolved-config.json` freezes the technical decision; `state.json.graphState`, checkpoints,
-and the session index remain the Runtime recovery authority. The in-memory executable intersection
-is recomputed from the frozen `allowedTools` and `verifiedTools` during recovery.
+and the session index remain the Runtime recovery authority. The in-memory executable set
+is recomputed and subset-validated (`allowedTools ⊆ verifiedTools`) from the frozen `allowedTools` and `verifiedTools` during recovery.
 
 ## 15. Audit
 

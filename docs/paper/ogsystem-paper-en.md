@@ -288,7 +288,7 @@ Based on the current related-work review and repository implementation, this pap
 | --- | --- | --- | --- |
 | Semantic contract boundaries and four-layer responsibility model | RQ1 | V2 design contracts, runtime configuration resolution, and regression tests | Implemented domain model and engineering boundary; not a standalone academic novelty, proof of superiority, or validation of portability to another graph engine. |
 | Single-Workspace state model | RQ2 | Workspace contracts, commit/WorkspaceRef/Evidence/Release implementation, and fault-injection records | Implemented V2 engineering integration; matched protocol comparisons with OpenHands, Orca, and related systems remain incomplete. |
-| Four-valued Join source state and Join/Release state connection | RQ2 | Join policy implementation, Workspace/Release contracts, and selected failure-path tests | The source implements a sticky `failed` invariant, but no dedicated test asserting that a later `skipped` cannot overwrite `failed` was found; general Join and the four-value enum are not claimed as novel, and academic novelty is unconfirmed. |
+| Four-valued Join source state and Join/Release state connection | RQ2 | Join policy implementation, Workspace/Release contracts, `tests/join-source-snapshot.test.mjs`, and `benchmarks/run-efsm-ablation.mjs` | The `failed` sticky-absorption invariant is asserted across all `4×4` transitions in `tests/join-source-snapshot.test.mjs` and `sticky-failed-join` in the EFSM ablation; general Join and the four-value enum are not claimed as novel. |
 | Engineering feasibility and backend boundary | RQ3 | Current 596-test run, recorded Python-calculator runs, and one cross-Agent-Backend Project Run | Supports limited engineering feasibility, not performance, security-effectiveness, cross-model generalization, or graph-engine portability. |
 
 The four-layer architecture, adapter wiring, test counts, and recorded Python-calculator runs are engineering evidence. They do not by themselves establish academic novelty, cross-system superiority, long-term stability, or standards compliance.
@@ -406,7 +406,7 @@ OGS Studio, Team Site, and the CLI are configuration and operational projections
 layers, not a fifth layer. `WorkspaceRef` is a cross-layer read-only value object, not another content-version model.
 
 #### 6.1 Tool authorization and workspace projection
-Each executable Role must bind to a Harness Template. Technical Binding configures Backend, Model, `allowedTools`, and `EnvironmentIntent`. Before Backend startup, Runtime resolves and freezes `verifiedTools`, `allowedTools`, `EffectiveEnvironmentPolicy`, and their digests; the Adapter maps the effective policy to backend-native configuration. The executable set is `allowedTools ∩ verifiedTools` and exists only in Runtime memory. Unknown, dynamic, unavailable, or unenforceable capabilities are denied. V1 fields such as `allowedToolsByRoleId` and `constraints.allowedTools` and compatibility reads are not part of Contract Set v2.
+Each executable Role must bind to a Harness Template. Technical Binding configures Backend, Model, `allowedTools`, and `EnvironmentIntent`. Before Backend startup, Runtime resolves and freezes `verifiedTools`, `allowedTools`, `EffectiveEnvironmentPolicy`, and their digests; the Adapter maps the effective policy to backend-native configuration. Runtime enforces a fail-closed subset check (`allowedTools ⊆ verifiedTools`, raising `V2_READINESS_TOOL_MISSING` if any tool lacks independent verification) so that the effective executable tool set is $\mathcal{T}_{\text{eff}} = \text{allowedTools}$ in Runtime memory. Unknown, dynamic, unavailable, or unenforceable capabilities are denied. V1 fields such as `allowedToolsByRoleId` and `constraints.allowedTools` and compatibility reads are not part of Contract Set v2.
 
 ---
 
@@ -427,7 +427,7 @@ The current repository-wide `pnpm test` run discovers **596 tests (488 core pass
 *Table 3: Comprehensive automated regression test suite and invariant verification metrics.*
 
 #### 7.2 Fault Injection and Crash Consistency Mechanisms
-The runtime implements fault-injection and recovery hooks (note: the corresponding legacy test suites `runtime-fault-injection.test.mjs` and `resume-session.test.mjs` are currently archived under `tests/archive/v1/` and are not executed by active `pnpm test`; non-archive V2 end-to-end interrupt/resume proof remains open):
+The runtime implements fault-injection and recovery hooks (note: the corresponding legacy v1 suites `runtime-fault-injection.test.mjs` and `resume-session.test.mjs` are archived under `tests/archive/v1/` and are excluded from active `pnpm test`; active V2 replay and idempotent release recovery are covered by `tests/runtime-replay-threshold.test.mjs` and `crash-resume-replay` in `benchmarks/run-efsm-ablation.mjs`):
 1. **Crash After Execution Outcome:** Leveraging the runtime hook `OGSYSTEM_TEST_CRASH_AFTER_EXECUTION_OUTCOME=1`, the runtime can trigger an abrupt child process termination (Exit Code 91) at the critical boundary where a role outcome has been produced and state transitions are in-flight, paired with `run resume <runId>`, buffered append recovery, and process lockfiles (`RESUME_RUN_LOCK_FILE`).
 2. **Semantic Fingerprint Matching:** Resumption strictly enforces plan fingerprint matching via `plan-fingerprint.ts`: modifying `system.mmd` or runtime configurations out-of-band while paused triggers an integrity rejection, preventing speculative execution under semantic drift.
 
@@ -453,14 +453,14 @@ The corrected experiment uses five frozen multi-file Python tasks, one fixed mod
 
 The primary outcomes are hidden `RawPass`, `claimedComplete`, `FCR = claimedComplete && !RawPass`, four protocol-independent audit dimensions (`RoleAttribution`, `CanonicalIntegrity`, `VerifiedArtifactDigest`, and `FailClosedOnError`), their conjunction `VerifiedDelivery`, and wall time. Role-level LLM calls are recorded, including bounded C recovery calls.
 
-| Arm | RawPass | Claimed | FCR | VerifiedDelivery | Mean wall time | Mean LLM calls |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| A | 10/10 | 10/10 | 0/10 | 0/10 | 112.8 s | 1.00 |
-| B1 | 10/10 | 10/10 | 0/10 | 0/10 | 184.6 s | 2.40 |
-| B2 | 5/10 | 10/10 | 5/10 | 3/10 | 183.4 s | 2.40 |
-| C | 9/10 | 9/10 | 0/10 | 9/10 | 190.3 s | 3.00 |
+| Arm | RawPass | Claimed | FCR | VerifiedDelivery | Role attribution | Canonical integrity | Verified digest | Fail-closed | Mean wall time | Mean LLM calls |
+| :-- | :--: | :--: | :--: | :--: | :--: | :--: | :--: | :--: | --: | --: |
+| A | 10/10 | 10/10 | 0/10 | 0/10 | 0/10 | 0/10 | 10/10 | 10/10 | 112.8 s | 1.00 |
+| B1 | 10/10 | 10/10 | 0/10 | 0/10 | 0/10 | 0/10 | 10/10 | 10/10 | 184.6 s | 2.40 |
+| B2 | 5/10 | 10/10 | 5/10 | 3/10 | 10/10 | 10/10 | 3/10 | 3/10 | 183.4 s | 2.40 |
+| C | 9/10 | 9/10 | 0/10 | 9/10 | 10/10 | 9/10 | 9/10 | 10/10 | 190.3 s | 3.00 |
 
-On this task set and model, C had no false completion and met all four audit dimensions in 9/10 units; B2 had 5/10 false completions and 3/10 VerifiedDelivery. A and B1 passed all hidden tests in this sample but did not produce the complete role-level delivery audit chain. One C unit correctly stopped at a merge conflict and did not publish. These descriptive results do not establish model improvement, cross-model generalization, external-framework superiority, or a general cost advantage.
+On this task set and model, C had no false completion and met all four audit dimensions in 9/10 units; B2 had 5/10 false completions and 3/10 VerifiedDelivery. We explicitly disentangle the two causal mechanisms driving Arm C's gains: (1) false completion elimination (`5/10 → 0/10` FCR) is strictly enforced by the fail-closed release gate (withholding completion declaration whenever visible verification fails or merge conflicts remain unresolved); and (2) verified delivery improvement (`3/10 → 9/10` VerifiedDelivery) is jointly driven by isolated merge staging, visible-gate feedback, and the bounded LLM reconciler resolving overlapping diffs without canonical corruption. A and B1 passed all hidden tests in this sample but did not produce the complete role-level delivery audit chain. One C unit correctly stopped at a merge conflict and did not publish. These descriptive results do not establish model improvement, cross-model generalization, external-framework superiority, or a general cost advantage.
 
 The zero-LLM EFSM ablation covers six deterministic failure traces: stale-head TOCTOU, crash-resume replay, sticky failed Join, illegal transitions/references, loop-budget exhaustion, and repeated publication after digest failure. The imperative baseline violated all six target invariants; C-full violated none in the recorded traces. Raw JSON, delivery snapshots, and reproduction commands are documented in [`benchmarks/CORE-EXPERIMENT-REPRO.md`](../../benchmarks/CORE-EXPERIMENT-REPRO.md). Commit0-Lite, external framework comparisons, office tasks, and cross-model runs are deferred extensions.
 

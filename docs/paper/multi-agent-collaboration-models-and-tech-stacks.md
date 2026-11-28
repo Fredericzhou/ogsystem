@@ -306,7 +306,7 @@ Join 在独立 merge worktree 中按候选集合、顺序、祖先关系、工�
 expected-head CAS；冲突产生 `join_conflict` 并保留在 Run evidence。Release 从 release commit
 生成 Materialization manifest 与 output digest，只有 published 状态暴露 download reference。
 
-每个可执行 Role 必须绑定 Harness Template；Technical Binding 配置 Backend、Model、`allowedTools` 与 `EnvironmentIntent`。Runtime 在 Backend 启动前解析并冻结 `verifiedTools`、`allowedTools`、`EffectiveEnvironmentPolicy` 及其摘要，Adapter 再映射为 backend-native 配置；可执行工具集合为 `allowedTools ∩ verifiedTools`，只存在于 Runtime 内存中。未知、动态、不可用或无法执行授权策略的能力按拒绝处理。V1 字段和兼容读取不属于 Contract Set v2。
+每个可执行 Role 必须绑定 Harness Template；Technical Binding 配置 Backend、Model、`allowedTools` 与 `EnvironmentIntent`。Runtime 在 Backend 启动前解析并冻结 `verifiedTools`、`allowedTools`、`EffectiveEnvironmentPolicy` 及其摘要，Adapter 再映射为 backend-native 配置；Runtime 执行 fail-closed 子集强校验（`allowedTools ⊆ verifiedTools`，若任一工具未通过独立核验则抛出 `V2_READINESS_TOOL_MISSING` 拒绝启动），可执行工具集合为 `allowedTools` 且只存在于 Runtime 内存中。未知、动态、不可用或无法执行授权策略的能力按拒绝处理。V1 字段和兼容读取不属于 Contract Set v2。
 
 2026-11-15 的真实模型 Python 计算器验收在同一 `gpt-6-luna` 配置下连续 3 次通过 `dispatch -> implementation/tests -> join`，每次完成 4 个 Role commit、Join/final merge、fast-forward publish 和 8 项 unittest。该结果证明端到端链路可用，不足以证明跨模型或长期稳定性。并行同路径冲突、陈旧 canonical head 的 CAS 拒绝和 whitespace 拒绝属于已验证边界；确定性 local-shell 回归测试不计入真实模型证据。
 
@@ -321,7 +321,7 @@ expected-head CAS；冲突产生 `join_conflict` 并保留在 Run evidence。Rel
 | **1. 节点本体论** | 各系统以不同方式表示 Agent、Role、会话和执行器；职责边界依实现而异。 | **责任席位优先 (Role-First Seat)**<br>OGS 将 Role Contract 与运行时 Backend/模型绑定分别建模；角色化协作本身已有先例。 |
 | **2. 控制与转移代数**| **自然语言交接或自由字符串路由**<br>Prompt 自主输出 `handoff_to("tester")`，路由约束依实现而异。 | **标记转移系统 (LTS) 离散业务事件代数**<br>OGS 将控制事件限制在声明字典（$\Sigma_{\text{fixed}}$），并以 Schema 校验业务数据。 |
 | **3. 上下文与数据安全**| 不同系统采用不同的上下文传递和授权策略；本文不将其归为单一行业模式。 | **Fail-Closed 字段级 Context Map 显式投影**<br>按声明投影跨席位字段和只读文件引用；安全效果尚未作对照测量。 |
-| **4. 并发分支汇聚** | 通用 Join 与同步模式已有工作流理论和框架实现；失败处理取决于具体实现。 | **四值源状态跟踪与防静默降级（候选组合）**<br>追踪 $S_{\text{src}} \in \{pending, arrived, skipped, failed\}$；源码实现 `failed` 粘滞不变量，但未找到专门断言其不会被后续 `skipped` 覆盖的测试。 |
+| **4. 并发分支汇聚** | **Join / Synchronization 模式**<br>通用 Join 与同步模式已有工作流理论和框架实现；失败处理取决于具体实现。 | **四值源状态跟踪与防静默降级（候选组合）**<br>追踪 $S_{\text{src}} \in \{pending, arrived, skipped, failed\}$；源码实现 `failed` 粘滞吸收不变量，并已由 [`tests/join-source-snapshot.test.mjs`](../../tests/join-source-snapshot.test.mjs)（`4×4` 全状态转移断言）与 [`benchmarks/run-efsm-ablation.mjs`](../../benchmarks/run-efsm-ablation.mjs)（`sticky-failed-join`）验证。 |
 | **5. 循环与博弈收敛**| 循环和回退支持依赖工作流模型及具体运行时实现；预算策略也各不相同。 | **血缘绑定有界配额与 CAS 决策凭证**<br>OGS 为循环配置整数预算 $maxIterations$；预算耗尽时进入人工审核路径，决策与 Run、血缘和状态版本绑定。 |
 | **6. 代码与产物交付**| Agent 工具对工作区的修改边界依产品和权限配置而异；本文未作逐产品比较。 | **WorkspaceRef 与 Release Materialization**<br>Git/LFS commit 是内容事实；只读 `WorkspaceRef` 经内容验证，Release 生成 manifest、output digest 和受控下载引用。 |
 | **7. 社会技术学分权**| 不同产品以各自方式组织设计、配置、执行和审计界面；本文不作统一优劣判断。 | **四层产品架构**<br>Business、Technical Binding、Execution、Evidence 分离职责；Studio、Team Site、CLI 是跨层投影。 |

@@ -721,9 +721,17 @@ export function createGitCollaboration(options: GitCollaborationOptions) {
     for (const candidate of ordered) {
       const alreadyMerged = await runGitAllowFailure(path, ["merge-base", "--is-ancestor", candidate, "HEAD"], timeoutMs);
       if (alreadyMerged.code === 0) continue;
-      const result = await runGitAllowFailure(path, ["merge", "--no-edit", "--no-ff", candidate], timeoutMs);
+      const result = await runGitAllowFailure(
+        path,
+        ["-c", "user.name=OGS Runtime", "-c", "user.email=ogs-runtime@localhost", "merge", "--no-edit", "--no-ff", candidate],
+        timeoutMs
+      );
       if (result.code !== 0) {
         const conflicts = parseNameOnlyPaths(await runGitAllowFailure(path, ["diff", "--name-only", "--diff-filter=U", "-z"], timeoutMs).then((item) => item.stdout));
+        if (conflicts.length === 0) {
+          const detail = (result.stderr || result.stdout || "unknown git merge error").trim().slice(0, 2000);
+          throw new Error(`GIT_COLLABORATION_MERGE_FAILED: ${detail}`);
+        }
         return {
           mergeId, path, branch, baseCommit, candidateCommits, status: "conflict", conflictPaths: conflicts,
           provenance: { ogsContractVersion: 2, schemaVersion: 1, version: 1, kind: "merge", runId, mergeId, baseCommit, candidateCommits, status: "conflict", conflictPaths: conflicts }

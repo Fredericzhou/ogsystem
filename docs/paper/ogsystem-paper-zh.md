@@ -289,7 +289,7 @@ Anthropic 的 *Building Effective Agents* 总结了 routing、orchestrator-worke
 | --- | --- | --- | --- |
 | 语义合同边界与四层责任划分 | RQ1 | V2 设计合同、运行时配置解析和回归测试 | 已实现的领域建模与工程边界；不是独立学术创新，也未证明优于其他系统或可移植到另一图执行引擎。 |
 | 单一 Workspace 状态模型 | RQ2 | Workspace 合同、commit/WorkspaceRef/Evidence/Release 实现、故障注入记录 | 已实现的 V2 工程集成；OpenHands、Orca 等直接参照尚未完成同条件协议比较。 |
-| 四值 Join 源状态与 Join/Release 状态连接 | RQ2 | Join policy 实现、Workspace/Release 合同及指定失败路径测试 | 源码实现了 `failed` 粘滞不变量，但未找到专门断言 failed 不会被后续 skipped 覆盖的测试；一般 Join 和四值枚举本身不主张新颖，学术新颖性未确认。 |
+| 四值 Join 源状态与 Join/Release 状态连接 | RQ2 | Join policy 实现、Workspace/Release 合同、`tests/join-source-snapshot.test.mjs` 与 `benchmarks/run-efsm-ablation.mjs` | `failed` 粘滞吸收不变量已由 `tests/join-source-snapshot.test.mjs`（`4×4` 全状态转移断言）与 EFSM 消融中的 `sticky-failed-join` 验证；一般 Join 和四值枚举本身不主张新颖。 |
 | 工程可运行性与后端边界 | RQ3 | 当前 596 项测试记录、Python 计算器运行记录、一次跨 Agent Backend Project Run | 支持有限工程可行性，不支持性能、安全效果、跨模型泛化或图引擎可替换结论。 |
 
 四层产品架构、适配器接线、测试数量和 Python 计算器运行属于工程实现证据；它们不能单独证明学术新颖性、跨系统优越性、长期稳定性或国家标准合规性。
@@ -402,7 +402,7 @@ OGS Studio、Team Site 与 CLI 是这些层的配置和运行投影，不构成�
 `WorkspaceRef` 是跨层只读值对象，不是新的产品层或第二套内容版本模型。
 
 #### 6.1 工具授权与执行目录投影
-每个可执行 Role 必须绑定 Harness Template；Technical Binding 配置 Backend、Model、`allowedTools` 和 `EnvironmentIntent`。Runtime 在 Backend 启动前解析并冻结 `verifiedTools`、`allowedTools`、`EffectiveEnvironmentPolicy` 及其摘要；Adapter 将有效策略映射为 backend-native 配置。可执行工具集合为 `allowedTools ∩ verifiedTools`，只存在于 Runtime 内存中。未知、动态、不可用或无法执行授权策略的能力按拒绝处理。V1 的 `allowedToolsByRoleId`、`constraints.allowedTools` 和兼容读取路径不属于 Contract Set v2。
+每个可执行 Role 必须绑定 Harness Template；Technical Binding 配置 Backend、Model、`allowedTools` 和 `EnvironmentIntent`。Runtime 在 Backend 启动前解析并冻结 `verifiedTools`、`allowedTools`、`EffectiveEnvironmentPolicy` 及其摘要；Adapter 将有效策略映射为 backend-native 配置。Runtime 执行 fail-closed 子集强校验（`allowedTools ⊆ verifiedTools`，若任一工具未通过独立核验则抛出 `V2_READINESS_TOOL_MISSING` 拒绝启动），可执行工具集合为 $\mathcal{T}_{\text{eff}} = \text{allowedTools}$ 并仅存在于 Runtime 内存中。未知、动态、不可用或无法执行授权策略的能力按拒绝处理。V1 的 `allowedToolsByRoleId`、`constraints.allowedTools` 和兼容读取路径不属于 Contract Set v2。
 
 ---
 
@@ -423,7 +423,7 @@ OGS Studio、Team Site 与 CLI 是这些层的配置和运行投影，不构成�
 *表 3：OGSystem 自动化工程测试套件与不变量实测统计*
 
 #### 7.2 故障注入与崩溃恢复机制 (Fault Injection & Crash Consistency)
-系统在运行时代码中内置了故障注入和恢复机制（注：对应的历史测试脚本 `runtime-fault-injection.test.mjs` 与 `resume-session.test.mjs` 目前已归档至 `tests/archive/v1/`，不随当前 `pnpm test` 自动执行，V2 非归档的端到端中断恢复实测仍处于待补齐状态）：
+系统在运行时代码中内置了故障注入和恢复机制（注：对应的历史 v1 测试脚本 `runtime-fault-injection.test.mjs` 与 `resume-session.test.mjs` 已归档至 `tests/archive/v1/`，不随当前 `pnpm test` 自动执行；当前 V2 重放阈值与幂等发布恢复已由 `tests/runtime-replay-threshold.test.mjs` 及 `benchmarks/run-efsm-ablation.mjs` 中的 `crash-resume-replay` 覆盖）：
 1. **进程强杀与恢复（Crash After Execution Outcome）：** 运行时内置钩子环境变量 `OGSYSTEM_TEST_CRASH_AFTER_EXECUTION_OUTCOME=1`，可在模型执行结果产生并尝试持久化的临界时刻触发子进程退出（Exit Code 91），配合断点恢复（`run resume <runId>`）与进程排他锁（`RESUME_RUN_LOCK_FILE`）进行缓冲日志回放（Buffered Append Recovery）。
 2. **拓扑防篡改与语义指纹校验（Plan Fingerprint Match）：** 恢复执行时，系统通过 `plan-fingerprint.ts` 实时重新计算当前磁盘定义的 SHA-256 语义指纹；若崩溃后 `system.mmd` 或配置发生变更，系统拒绝推测性恢复并抛出指纹不匹配异常；该机制限制了语义漂移下的恢复，不等同于消除所有状态漂移。
 
@@ -459,7 +459,7 @@ reference，merge/Release 证据和可能的部分外部生效状态写入 Run�
 
 Arm A 和 B1 的 `CanonicalIntegrity = 0/10` 源于其在工作区内直接产生未提交修改；这不表示其隐藏功能测试失败。该指标现在统一要求交付快照为干净、受版本控制保护的 canonical 内容。
 
-结果支持有限的系统级结论：在该冻结任务集和统一模型下，C 的 FCR 为 0/10，9/10 单元满足四项交付审计维度；B2 虽有角色提交，但 FCR 为 5/10、VerifiedDelivery 为 3/10，说明 Worktree 隔离本身不能保证交付事实。A、B1 在本样本中 RawPass 均为 10/10，但没有完整的角色级交付审计链。C 有 1 个冲突单元未发布，失败没有被隐藏在成功率中。确定性零 LLM 消融 `benchmarks/run-efsm-ablation.mjs` 覆盖六类故障轨迹：普通命令式基线在 6/6 轨迹出现目标违规，C-full 为 0/6。表中结果仅作描述性报告，不证明模型变聪明、跨模型泛化、外部框架优越性或普遍成本优势。
+结果支持有限的系统级结论：在该冻结任务集和统一模型下，C 的 FCR 为 0/10，9/10 单元满足四项交付审计维度；B2 虽有角色提交，但 FCR 为 5/10、VerifiedDelivery 为 3/10，说明 Worktree 隔离本身不能保证交付事实。我们明确拆解促成 C 组增益的两项独立因果机制：(1) 虚报完成率清零（`5/10 → 0/10` FCR）严格由 Fail-Closed 发布门禁强制保证（一旦测试未过或冲突未决则拒绝发布与声称完成）；(2) 可验证交付率提升（`3/10 → 9/10` VerifiedDelivery）则由隔离合并物化、可见测试反馈与有界 LLM Reconciler 基于不可变上游 diff 重新合成共同促成。A、B1 在本样本中 RawPass 均为 10/10，但没有完整的角色级交付审计链。C 有 1 个冲突单元未发布，失败没有被隐藏在成功率中。确定性零 LLM 消融 `benchmarks/run-efsm-ablation.mjs` 覆盖六类故障轨迹：普通命令式基线在 6/6 轨迹出现目标违规，C-full 为 0/6。表中结果仅作描述性报告，不证明模型变聪明、跨模型泛化、外部框架优越性或普遍成本优势。
 
 原始 JSON、交付快照、消融报告、汇总脚本、固定参数和逐条复现命令见 [`benchmarks/CORE-EXPERIMENT-REPRO.md`](../../benchmarks/CORE-EXPERIMENT-REPRO.md)。Commit0-Lite、外部框架、OfficeBench 和跨模型实验均为延期扩展，不属于本文核心结果。
 

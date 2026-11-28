@@ -189,7 +189,7 @@ OGS v2 不提供工具级三档安全模式。技术执行使用：
 ```text
 Capability + allowedTools + EnvironmentIntent + Law / quota / staging
   -> Runtime-local candidate set (not persisted)
-  -> in-memory executable intersection (not persisted)
+  -> in-memory verified executable tool set (`allowedTools ⊆ verifiedTools`, not persisted)
   -> PermissionDecision: allow | deny
 ```
 

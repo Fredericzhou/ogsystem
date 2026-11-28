@@ -35,7 +35,7 @@ on a Role.
 At Run start, Runtime discovers the selected Backend, verifies the model and native tools, creates
 staging, calculates the effective policy, and writes a frozen `resolved-config.json`. The snapshot
 contains `allowedTools`, `verifiedTools`, EffectiveEnvironmentPolicy, adapter/capability/policy
-digests, and recovery identity. Runtime computes the executable intersection in memory. Resume uses
+digests, and recovery identity. Runtime enforces fail-closed subset validation (`allowedTools ⊆ verifiedTools`) and checks resources in memory. Resume uses
 those records and does not rediscover or widen access.
 
 ## Evidence and Review

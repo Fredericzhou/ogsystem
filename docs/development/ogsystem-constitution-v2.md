@@ -32,8 +32,10 @@ execution evidence and sign-off against that baseline; it does not define anothe
 - Technical execution is configured through Harness Templates. `allowedTools` belongs only there.
 - Flow is the only source of routable events. HandoffProjection is read-only and explicit.
 - Runtime computes and freezes `verifiedTools`, `allowedTools`, EffectiveEnvironmentPolicy,
-  capability/policy digests, staging identity, and recovery identity before Backend startup.
-  The `allowedTools ∩ verifiedTools` executable set exists only in Runtime memory.
+  capability/policy digests, staging identity, and recovery identity before Backend startup,
+  enforcing a fail-closed subset check (`allowedTools ⊆ verifiedTools`, rejecting unverified tools with
+  `V2_READINESS_TOOL_MISSING`) and resource checks; the effective executable tool set (`allowedTools`)
+  exists only in Runtime memory.
 - Permission decisions are only `allow` or `deny`; tool approval never becomes Human Review.
 - Unknown, dynamic, unavailable, or unenforceable capabilities fail closed.
 - Evidence is append-only. Review decisions are CAS-bound to run, lineage, branch, loop, and state.

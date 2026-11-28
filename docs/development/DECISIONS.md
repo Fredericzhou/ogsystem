@@ -33,8 +33,8 @@ Policy, and Permission are execution modules, not additional product layers.
 ## D3: Harness and Capability Freeze
 
 `allowedTools` is the Harness selection set. Capability Discovery produces verified Backend facts;
-Runtime intersects those facts with EnvironmentIntent, Law, staging, and quota in memory. Persisted
-Run facts contain `allowedTools` and `verifiedTools`; the executable intersection is recomputed only
+Runtime enforces fail-closed subset validation (`allowedTools ⊆ verifiedTools`) alongside EnvironmentIntent, Law, staging, and quota in memory. Persisted
+Run facts contain `allowedTools` and `verifiedTools`; the verified executable tool set is recomputed only
 from those frozen facts during execution and recovery.
 
 ## D4: Fail Closed

@@ -381,7 +381,7 @@ test("recovers a committed Role from a merge worktree checkpoint", async () => {
     assert.equal(recovered?.resultCommit, committed.resultCommit);
     assert.equal(recovered?.branch, merged.branch);
     assert.deepEqual(recovered?.changedPaths, ["join-output.txt"]);
-    assert.equal(recovered?.path.endsWith("/merge-merge-role"), true);
+    assert.equal(/[\\/]merge-merge-role$/.test(recovered?.path ?? ""), true);
   } finally {
     for (const value of created.reverse()) await collaboration.removeWorktree(value.path, true).catch(() => undefined);
     await rm(item.root, { recursive: true, force: true });
@@ -396,7 +396,10 @@ test("preserves whitespace and status-looking bytes in Git path provenance", asy
     const base = (await git(item.repo, ["rev-parse", "HEAD"])).stdout.trim();
     const role = await collaboration.addWorktree({ roleId: "role-paths", executionId: "exec-paths", baseCommit: base });
     created.push(role);
-    const paths = [" leading.txt", "ab file.txt", "trailing.txt "];
+    // Windows NTFS strips trailing spaces from filenames, so retain leading/internal space cases on win32.
+    const paths = process.platform === "win32"
+      ? [" leading.txt", "ab file.txt"]
+      : [" leading.txt", "ab file.txt", "trailing.txt "];
     for (const path of paths) await writeFile(join(role.path, path), "content\n", "utf8");
     const commit = await collaboration.commitWorktree(role, "preserve path bytes");
     assert.deepEqual(commit.changedPaths, paths);
@@ -495,15 +498,23 @@ test("refuses a worktree root inside the repository", async () => {
   }
 });
 
-test("checks real worktree containment through symlinked roots", async () => {
+test("checks real worktree containment through symlinked roots", async (t) => {
   const item = await fixture();
   const outside = join(item.root, "outside");
   const insideLink = join(item.root, "inside-link");
   const outsideLink = join(item.root, "outside-link");
-  await mkdir(outside, { recursive: true });
-  await symlink(item.repo, insideLink, "dir");
-  await symlink(outside, outsideLink, "dir");
   try {
+    await mkdir(outside, { recursive: true });
+    try {
+      await symlink(item.repo, insideLink, process.platform === "win32" ? "junction" : "dir");
+      await symlink(outside, outsideLink, process.platform === "win32" ? "junction" : "dir");
+    } catch (error) {
+      if (["EPERM", "EACCES", "ENOTSUP", "ENOSYS"].includes(error?.code)) {
+        t.skip(`directory links unavailable: ${error.code}`);
+        return;
+      }
+      throw error;
+    }
     const base = (await git(item.repo, ["rev-parse", "HEAD"])).stdout.trim();
     const inside = createGitCollaboration({ repositoryRoot: item.repo, worktreeRoot: insideLink, runId: "run-symlink-inside" });
     await assert.rejects(
@@ -532,6 +543,32 @@ test("rejects candidate commits without Role provenance from this collaboration 
       /CANDIDATE_PROVENANCE_INVALID/
     );
   } finally {
+    await rm(item.root, { recursive: true, force: true });
+  }
+});
+
+test("mergeCommits fails closed instead of reporting conflict when git merge errors without unmerged paths", async () => {
+  const item = await fixture();
+  const collaboration = createGitCollaboration({ repositoryRoot: item.repo, worktreeRoot: item.worktrees, runId: "run-merge-nonconflict-error" });
+  const created = [];
+  try {
+    const base = (await git(item.repo, ["rev-parse", "HEAD"])).stdout.trim();
+    const roleA = await collaboration.addWorktree({ roleId: "role-a", executionId: "exec-a", baseCommit: base });
+    const roleB = await collaboration.addWorktree({ roleId: "role-b", executionId: "exec-b", baseCommit: base });
+    created.push(roleA, roleB);
+    await writeFile(join(roleA.path, "a.txt"), "A\n", "utf8");
+    await writeFile(join(roleB.path, "b.txt"), "B\n", "utf8");
+    const commitA = await collaboration.commitWorktree(roleA, "role A change");
+    const commitB = await collaboration.commitWorktree(roleB, "role B change");
+    const treeB = (await git(item.repo, ["rev-parse", `${commitB.resultCommit}^{tree}`])).stdout.trim();
+    // Remove commitB's loose tree object after provenance registration so git merge fails at tree-read time with no unmerged paths.
+    await rm(join(item.repo, ".git", "objects", treeB.slice(0, 2), treeB.slice(2)), { force: true });
+    await assert.rejects(
+      collaboration.mergeCommits({ mergeId: "merge-nonconflict", baseCommit: base, candidateCommits: [commitA.resultCommit, commitB.resultCommit] }),
+      /GIT_COLLABORATION_MERGE_FAILED/
+    );
+  } finally {
+    for (const value of created.reverse()) await collaboration.removeWorktree(value.path, true).catch(() => undefined);
     await rm(item.root, { recursive: true, force: true });
   }
 });

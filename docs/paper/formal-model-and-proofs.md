@@ -19,7 +19,7 @@ $$
 where:
 - $V$ is a finite set of **invariant responsibility seats** (Roles), decoupled from transient model sessions or backend processes.
 - $E \subseteq V \times V$ is the directed handoff relation.
-- $\Sigma$ is a finite, closed **LTS business-event vocabulary** declared in Semantic IR (`SemanticIR.version`). Any event $e \notin \Sigma$ is rejected fail-closed at runtime.
+- $\Sigma$ is the finite, closed system-level **LTS transition event vocabulary** (`READY`, `APPROVED`, `REJECTED`, `NEEDS_REWORK`, `BLOCKED`, together with system events `START` and `ERROR` / `ERROR.<CODE>`), bound to Semantic IR (`SemanticIR.version`) transition rules; runtime control/audit events such as `loop_exhausted` are emitted by loop-exhaustion guards rather than authored as Role flow events. Any event $e \notin \Sigma$ is rejected fail-closed at runtime.
 - $\mathcal{X} = \mathcal{X}_{\text{biz}} \times \mathcal{X}_{\text{ctx}} \times \mathcal{X}_{\text{join}} \times \mathcal{X}_{\text{loop}} \times \mathcal{X}_{\text{ws}} \times \mathcal{X}_{\text{ctrl}}$ is the typed, persisted extended state space:
   - $\mathcal{X}_{\text{biz}}$: structured business state and reducer outputs;
   - $\mathcal{X}_{\text{ctx}}$: immutable task brief and per-hop projected context;
@@ -27,45 +27,45 @@ where:
   - $\mathcal{X}_{\text{loop}}$: lineage-bound loop iteration counters $c(\ell) \in \mathbb{N}$ for each static cycle $\ell$;
   - $\mathcal{X}_{\text{ws}}$: Git + LFS Workspace state (canonical ref head $h_{\text{canon}}$, Role commits, merge commits, Release records);
   - $\mathcal{X}_{\text{ctrl}}$: human-control / review pause state, checkpoint version, and plan fingerprint $H(\mathcal{M})$.
-- $\kappa : E \to \mathcal{P}(\mathcal{F}_{\text{data}}) \times \mathcal{P}(\mathcal{F}_{\text{ref}})$ assigns each handoff edge a typed **Context Map contract** specifying the exact permitted data fields $\mathcal{F}_{\text{data}}$ and authorized read-only `WorkspaceRef` projections $\mathcal{F}_{\text{ref}}$.
-- $\alpha : V \to 2^{\mathcal{T}} \times \Pi_{\text{env}}$ binds each Role seat to its Technical Binding (`allowedTools`, `EnvironmentIntent`), which Runtime intersects with independently verified backend capabilities:
+- $\kappa : V \to \mathcal{P}(\mathcal{F}_{\text{data}}) \times \mathcal{P}(\mathcal{F}_{\text{ref}})$ (with per-source selectors such as `source(<roleId>).*` at Joins, alongside ContractV2 per-edge schemas) assigns each Role seat declaring a `ContextMap` a typed **Context Map contract** specifying the exact permitted data fields $\mathcal{F}_{\text{data}}$ and authorized read-only `WorkspaceRef` projections $\mathcal{F}_{\text{ref}}$.
+- $\alpha : V \to 2^{\mathcal{T}} \times \Pi_{\text{env}}$ binds each Role seat to its Technical Binding (`allowedTools`, `EnvironmentIntent`), which Runtime validates fail-closed against independently verified backend capabilities (`V2_READINESS_TOOL_MISSING` if any configured tool is unverified):
   $$
-  \mathcal{T}_{\text{eff}}(v) = \text{allowedTools}(v) \cap \text{verifiedTools}(v).
+  \mathcal{T}_{\text{eff}}(v) = \text{allowedTools}(v) \quad \text{subject to } \text{allowedTools}(v) \subseteq \text{verifiedTools}(v).
   $$
-- $\beta : \mathcal{L}(\mathcal{M}) \to \mathbb{N}^+$ assigns every directed cycle $\ell \in \mathcal{L}(\mathcal{M})$ a compile-time **finite loop budget** $B(\ell) \ge 1$ together with a static exhaustion exit edge $e_{\text{exhaust}}(\ell)$.
+- $\beta : \mathcal{L}(\mathcal{M}) \to \mathbb{N}^+$ assigns a compile-time **finite loop budget** $B(\ell) \ge 1$ (`loop.max.<roleId>` validated on every cycle strongly connected component in `parse-mermaid.ts`) together with review/exhaustion metadata (`onExhausted` / `waiting_review`).
 - $\delta : (V \times \Sigma \times \mathcal{X}) \rightharpoonup (2^V \times \mathcal{X} \times \mathcal{W})$ is the partial transition function emitting next active seats, updated extended state, and durable WAL facts $\mathcal{W}$ (`events.ndjson`) prior to CAS state-snapshot updates (`state.json`).
 - $s_0 \in V \times \mathcal{X}$ is the initial configuration; $F \subseteq V \times \mathcal{X}$ is the set of terminal configurations (`completed`, `failed`, `terminated`, `paused_for_review`).
 
 ### Remark 1 (Strict Inclusion of DAGs: $\text{DAG} \subsetneq \text{EFSM}_{\text{OGS}}$)
 
-Any acyclic workflow graph $G = (V, E)$ with $\mathcal{L}(G) = \emptyset$ is a degenerate instance of $\mathcal{M}$ with trivial loop budget map $\beta = \emptyset$ and singleton event alphabet $\Sigma = \{\text{DONE}\}$. Conversely, $\mathcal{M}$ strictly subsumes DAGs by supporting bounded review/rework cycles ($\mathcal{L}(\mathcal{M}) \neq \emptyset$) with static exhaustion exits and four-valued concurrent Join scopes.
+Any acyclic workflow graph $G = (V, E)$ with $\mathcal{L}(G) = \emptyset$ is a degenerate instance of $\mathcal{M}$ with trivial loop budget map $\beta = \emptyset$ and singleton handoff event alphabet $\Sigma_{\text{DAG}} = \{\text{READY}\}$ (plus system `START`). Conversely, $\mathcal{M}$ strictly subsumes DAGs by supporting bounded review/rework cycles ($\mathcal{L}(\mathcal{M}) \neq \emptyset$) with static exhaustion exits and four-valued concurrent Join scopes.
 
 ---
 
 ## 2. Context Map Projection Closure / 上下文映射投影封闭性
 
-Let $\mathcal{U}$ be the universe of candidate context keys and workspace references available in the global extended state $x \in \mathcal{X}$. For a handoff edge $e = (u, v) \in E$ with declared contract $\kappa(e) = (K_{\text{data}}(e), K_{\text{ref}}(e))$, define the **Context Map projection operator** $\pi_{\text{in}}(x, e)$:
+Let $\mathcal{U}$ be the universe of candidate context keys and workspace references available in the global extended state $x \in \mathcal{X}$. For a target Role seat $v \in V$ declaring a `ContextMap` contract $\kappa(v) = (K_{\text{data}}(v), K_{\text{ref}}(v))$ (with optional per-source qualifiers for incoming edges), define the **Context Map projection operator** $\pi_{\text{in}}(x, v)$:
 
 $$
-\pi_{\text{in}}(x, e) = \Big(
-  \{(k, x.\text{biz}[k]) \mid k \in K_{\text{data}}(e) \cap \text{dom}(x.\text{biz})\},\;
-  \{r \in x.\text{refs} \mid \text{authorized}(r, K_{\text{ref}}(e)) \land \text{validRef}(r)\}
+\pi_{\text{in}}(x, v) = \Big(
+  \{(k, x.\text{biz}[k]) \mid k \in K_{\text{data}}(v) \cap \text{dom}(x.\text{biz})\},\;
+  \{r \in x.\text{refs} \mid \text{authorized}(r, K_{\text{ref}}(v)) \land \text{validRef}(r)\}
 \Big)
 $$
 
-where $\text{validRef}(r)$ requires: (i) $r.\text{commit}$ is a full 40-char immutable Git commit hash in the project Workspace; (ii) $r.\text{path}$ is normalized inside the committed tree with no symlink escape or path traversal; and (iii) the content digest of `(r.commit, r.path)` matches $r.\text{digest}$.
+where $\text{validRef}(r)$ guarantees: (i) $r.\text{commit}$ is a full 40- or 64-character immutable Git commit hash in the project Workspace; (ii) $r.\text{path}$ is normalized inside the committed tree with no symlink escape or path traversal; and (iii) the content digest of `(r.commit, r.path)` matches $r.\text{digest}$ (checked against the Git tree/LFS store at commit time and structurally validated on every projection).
 
 ### Proposition 1 (Fail-Closed Field Closure and Default Non-Exposure of Workspace References)
 
-Under the V2 Context Map contract:
-1. **Field Closure:** For every Role invocation on edge $e = (u, v)$, the input domain visible to Role $v$ satisfies $\text{dom}(\pi_{\text{in}}(x, e)_{\text{data}}) \subseteq K_{\text{data}}(e)$. Any undeclared field $k^* \in \text{dom}(x.\text{biz}) \setminus K_{\text{data}}(e)$ (including canary fields) is absent from $v$'s projected input.
-2. **Default Ref Non-Exposure:** If $K_{\text{ref}}(e) = \emptyset$ (the default), then $\pi_{\text{in}}(x, e)_{\text{ref}} = \emptyset$; no `WorkspaceRef` crosses the Role boundary.
-3. **Commit Immutability:** Every reference $r \in \pi_{\text{in}}(x, e)_{\text{ref}}$ resolves to an immutable committed Git object rather than a mutable working-tree path.
+Under the V2 Context Map contract (for every Role seat $v$ with a declared `ContextMap`; when omitted, runtime falls back to upstream summary text without exposing `WorkspaceRef` values):
+1. **Field Closure:** For every invocation of Role $v$, the input domain visible to $v$ satisfies $\text{dom}(\pi_{\text{in}}(x, v)_{\text{data}}) \subseteq K_{\text{data}}(v)$. Any undeclared field $k^* \in \text{dom}(x.\text{biz}) \setminus K_{\text{data}}(v)$ (including canary fields) is absent from $v$'s projected input.
+2. **Default Ref Non-Exposure:** If $K_{\text{ref}}(v) = \emptyset$ (the default), then $\pi_{\text{in}}(x, v)_{\text{ref}} = \emptyset$; no `WorkspaceRef` crosses the Role boundary.
+3. **Commit Immutability:** Every reference $r \in \pi_{\text{in}}(x, v)_{\text{ref}}$ resolves to an immutable committed Git object rather than a mutable working-tree path.
 
 **Proof.**
-1. By construction, $\pi_{\text{in}}$ iterates exclusively over the statically compiled allowlist $K_{\text{data}}(e)$ rather than blacklisting fields from $\text{dom}(x.\text{biz})$. Hence $k^* \notin K_{\text{data}}(e) \implies k^* \notin \text{dom}(\pi_{\text{in}}(x, e)_{\text{data}})$. Missing required fields fail compilation/projection rather than falling back to unfiltered state.
-2. When $K_{\text{ref}}(e) = \emptyset$, $\text{authorized}(r, \emptyset) = \bot$ for all $r$, yielding $\pi_{\text{in}}(x, e)_{\text{ref}} = \emptyset$.
-3. The predicate $\text{validRef}(r)$ (implemented in `assertWorkspaceRef` in [`src/runtime/workspace-contracts.ts`](../../src/runtime/workspace-contracts.ts)) rejects symbolic refs, branch names, tags, uncommitted paths, path traversals, and digest mismatches before projection. $\blacksquare$
+1. By construction (`buildProjectedContext` in [`src/runtime/role-input-projector.ts`](../../src/runtime/role-input-projector.ts)), $\pi_{\text{in}}$ iterates exclusively over the statically compiled allowlist $K_{\text{data}}(v)$ rather than blacklisting fields from $\text{dom}(x.\text{biz})$. Hence $k^* \notin K_{\text{data}}(v) \implies k^* \notin \text{dom}(\pi_{\text{in}}(x, v)_{\text{data}})$. Missing required selectors fail closed (`ROLE_CONTEXT_PATH_MISSING`) rather than falling back to unfiltered state.
+2. When $K_{\text{ref}}(v) = \emptyset$, $\text{authorized}(r, \emptyset) = \bot$ for all $r$, yielding $\pi_{\text{in}}(x, v)_{\text{ref}} = \emptyset$.
+3. Commit-time Git tree/blob/symlink/LFS/digest verification (`workspaceRefsForCommit` / `readCommittedBlob` in [`src/runtime/git-collaboration.ts`](../../src/runtime/git-collaboration.ts)) together with projection-time structural validation (`assertWorkspaceRef` in [`src/runtime/workspace-contracts.ts`](../../src/runtime/workspace-contracts.ts)) reject symbolic refs, branch names, tags, uncommitted paths, path traversals, symlinks, and digest mismatches. $\blacksquare$
 
 *Implementation reference:* [`tests/context-map-compiler.test.mjs`](../../tests/context-map-compiler.test.mjs), [`tests/context-selector.test.mjs`](../../tests/context-selector.test.mjs), [`tests/workspace-contracts.test.mjs`](../../tests/workspace-contracts.test.mjs).
 
@@ -137,20 +137,21 @@ Assume Git's ref-update CAS primitive is atomic with respect to concurrent ref w
 
 ## 5. Bounded Control-Loop Termination / 有界控制循环终止性
 
-### Proposition 4 (Finite Control-Flow Termination under Static Loop Budgets)
+### Proposition 4 (Finite Control-Flow Termination under Loop Budgets and Global Transition Cap)
 
-Let $\mathcal{M}$ be a compiled V2 workflow with finite Role set $|V| < \infty$, finite cycle set $\mathcal{L}(\mathcal{M})$, and positive integer budgets $B(\ell) \in \mathbb{N}^+$ for every directed cycle $\ell \in \mathcal{L}(\mathcal{M})$. Assume every individual Role invocation terminates within its configured execution timeout (returning either a declared event $e \in \Sigma$ or a timeout/failure status). Then every Run of $\mathcal{M}$ terminates in a finite number of control transitions bounded by:
-
-$$
-T_{\max}(\mathcal{M}) \le |V| \cdot \prod_{\ell \in \mathcal{L}(\mathcal{M})} \big(B(\ell) + 1\big).
-$$
+Let $\mathcal{M}$ be a compiled V2 workflow with finite Role set $|V| < \infty$, finite cycle set $\mathcal{L}(\mathcal{M})$ where every simple cycle is covered by an allocated loop budget $B(\ell) \in \mathbb{N}^+$ (checked per SCC at compile time in `parse-mermaid.ts` and bounded globally for arbitrary multi-cycle topologies by `effectiveLaw.maxTransitions` / `maxTransitionsPerRun` in `role-executor.ts`). Assume every individual Role invocation terminates within its configured execution timeout (returning either a declared event $e \in \Sigma$ or a timeout/failure status). Then:
+1. Within any single budget epoch (without human `additionalBudget` grants), every Run enters a terminal or `waiting_review` (`loop_exhausted`) configuration in a finite number of control transitions bounded by:
+   $$
+   T_{\max}(\mathcal{M}) \le |V| \cdot \prod_{\ell \in \mathcal{L}(\mathcal{M})} \big(B(\ell) + 1\big).
+   $$
+2. Across arbitrary human `additionalBudget` authorizations or nested multi-cycle SCCs, total execution transitions remain strictly bounded by `effectiveLaw.maxTransitions` (`maxTransitionsPerRun`).
 
 **Proof.**
-Define the lexicographic progress measure over the finite set of active cycle budgets and remaining acyclic topological depth:
+Define the lexicographic progress measure over the finite set of active cycle budgets and remaining acyclic topological depth within a budget epoch:
 $$
 \Phi(x) = \Big(\sum_{\ell \in \mathcal{L}(\mathcal{M})} \max(0, B(\ell) - c(\ell)),\; d_{\text{DAG}}(v)\Big) \in \mathbb{N} \times \mathbb{N},
 $$
-where $d_{\text{DAG}}(v)$ is the longest acyclic path length from seat $v$ to a terminal seat in the cycle-broken condensation graph. Every back-edge along cycle $\ell$ strictly increments $c(\ell)$ (strictly decreasing the first component of $\Phi$) while $c(\ell) < B(\ell)$; once $c(\ell) = B(\ell)$, the runtime forces transition along the static exhaustion exit $e_{\text{exhaust}}(\ell)$ (e.g., `paused_for_review` or terminal failure). Every non-back-edge strictly decreases $d_{\text{DAG}}(v)$ while keeping the first component non-increasing. Since $(\mathbb{N} \times \mathbb{N}, <_{\text{lex}})$ is well-founded, no infinite control-transition sequence exists. $\blacksquare$
+where $d_{\text{DAG}}(v)$ is the longest acyclic path length from seat $v$ to a terminal seat in the cycle-broken condensation graph. Every back-edge iteration strictly increments $c(\ell)$ (strictly decreasing the first component of $\Phi$) while $c(\ell) < B(\ell)$; once $c(\ell) = B(\ell)$, the runtime halts cycle progression and parks the Run in `waiting_review` (`loop_exhausted`, recording `onExhausted` metadata). Every non-back-edge strictly decreases $d_{\text{DAG}}(v)$ while keeping the first component non-increasing. Since $(\mathbb{N} \times \mathbb{N}, <_{\text{lex}})$ is well-founded, no infinite control-transition sequence exists within an epoch, and `role-executor.ts` enforces `nextTransitionCount <= effectiveLaw.maxTransitions` globally before any role execution. $\blacksquare$
 
 *Note on Scope:* Proposition 4 guarantees termination of the **Framework control plane** (preventing unbounded agent ping-pong loops). It relies on per-invocation timeouts to bound individual LLM/tool calls.
 
@@ -165,4 +166,4 @@ To maintain strict academic rigor (aligned with [`ogs-submission-paper-en.md`](o
 | **A1. Trusted Framework Runtime** | Framework executes projection, Join merge, locking, and CAS faithfully. | Host OS compromise, malicious modification of `.ogs/` files on disk, or bypassing the runtime. |
 | **A2. Atomic Git Ref CAS & Filesystem Rename** | Local single-host expected-head CAS and WAL/snapshot atomicity. | Distributed multi-host split-brain without an external consensus lock service. |
 | **A3. Bounded Per-Step Tool/LLM Execution** | Control-plane termination under static loop budgets. | Semantic quality, factual accuracy, or convergence of LLM-generated content. |
-| **A4. Explicit Scope of Evidence** | Protocol properties are backed by formal proofs + deterministic unit/fault tests (486+ core tests). | Comparative task accuracy, hallucination reduction, and cost-efficiency require the controlled empirical study in [`experimental-validation-plan-bilingual.md`](experimental-validation-plan-bilingual.md). |
+| **A4. Explicit Scope of Evidence** | Protocol properties are backed by formal proofs + deterministic unit/fault tests (488 core tests pass, 596 total baseline). | Comparative task accuracy, hallucination reduction, and cost-efficiency require the controlled empirical study in [`experimental-validation-plan-bilingual.md`](experimental-validation-plan-bilingual.md). |
